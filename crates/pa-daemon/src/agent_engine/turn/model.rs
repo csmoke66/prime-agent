@@ -628,48 +628,6 @@ impl AgentSessionEngine {
             },
             Ok(message) => Ok(message),
         };
-        // A guardrail on the parent model follows the same protected path as
-        // a guardrailed child. The rejected request is never reissued: the
-        // immutable Sol workflow reviews the original user task, and only an
-        // allowed decision queues a new turn carrying its compliant plan.
-        if let (Some((task, message)), Some(children)) = (
-            parent_guardrail_context(&result, prompt),
-            self.children.as_ref(),
-        ) {
-            let rejected_model = format!("{}/{}", message.provider, message.model);
-            match self
-                .runtime
-                .block_on(children.diagnose_guardrail_task(task, &rejected_model))
-            {
-                Ok(Some(decision)) if decision.allowed => {
-                    let follow_up = format!(
-                        "[guardrail-recovery]\n\n\
-                         A protected Sol 5.6 diagnosis determined that the original user \
-                         request is allowed. Continue that request now without repeating the \
-                         blocked provider request or trying to evade safeguards.\n\n\
-                         Diagnosis: {}\n\nCompliant solution:\n{}",
-                        decision.diagnosis, decision.solution
-                    );
-                    if let Some(admit) = self
-                        .autonomous_admission
-                        .lock()
-                        .expect("autonomous admission lock")
-                        .clone()
-                    {
-                        admit(follow_up);
-                    } else {
-                        eprintln!(
-                            "pa-daemon: allowed guardrail diagnosis could not queue its \
-                             continuation"
-                        );
-                    }
-                }
-                Ok(Some(_)) | Ok(None) => {}
-                Err(error) => {
-                    eprintln!("pa-daemon: parent guardrail diagnosis failed closed: {error:#}");
-                }
-            }
-        }
         // The parked delivery's acceptance: the driver never saw a settled
         // turn, so no reply, retry, or failover classification applies.
         if let Err(error) = &result {
@@ -701,65 +659,5 @@ impl AgentSessionEngine {
                 assistant: None,
             },
         }
-    }
-}
-
-fn parent_guardrail_context<'a>(
-    result: &'a anyhow::Result<pa_agent::types::AssistantMessage>,
-    prompt: &'a TurnPrompt,
-) -> Option<(&'a str, &'a pa_agent::types::AssistantMessage)> {
-    let message = result.as_ref().ok()?;
-    let guardrail = matches!(
-        pa_core::session_engine::provider_retry::provider_stream_failure_kind(message).as_deref(),
-        Some("refusal" | "safety")
-    ) || message.error_message.as_deref().is_some_and(|error| {
-        pa_core::session_engine::error_classify::classify_error_message(error).subtype == "refusal"
-    });
-    if message.stop_reason != StopReason::Error || !guardrail {
-        return None;
-    }
-    match prompt {
-        TurnPrompt::User { text, .. } => Some((text, message)),
-        TurnPrompt::Injected { .. } => None,
-    }
-}
-
-#[cfg(test)]
-mod guardrail_tests {
-    use super::*;
-
-    #[test]
-    fn direct_codex_guardrail_selects_the_original_user_task_for_diagnosis() {
-        let message = pa_agent::types::AssistantMessage {
-            content: Vec::new(),
-            api: "openai-codex-responses".to_string(),
-            provider: "openai-codex".to_string(),
-            model: "gpt-5.6-astra".to_string(),
-            response_model: None,
-            response_id: None,
-            diagnostics: Some(vec![pa_agent::types::AssistantMessageDiagnostic {
-                kind: "provider_stream_failure".to_string(),
-                timestamp: 0,
-                error: None,
-                details: Some(serde_json::json!({"kind": "safety", "status": 400})),
-            }]),
-            usage: pa_agent::types::Usage::zero(),
-            stop_reason: StopReason::Error,
-            stop_reason_raw: None,
-            error_message: Some(
-                "Codex error: This content was flagged for possible cybersecurity risk."
-                    .to_string(),
-            ),
-            timestamp: 0,
-        };
-        let prompt = TurnPrompt::User {
-            text: "inspect the rejected task".to_string(),
-            images: Vec::new(),
-            batch: Vec::new(),
-        };
-        let result = Ok(message);
-        let (task, _) =
-            parent_guardrail_context(&result, &prompt).expect("guardrail must be diagnosed");
-        assert_eq!(task, "inspect the rejected task");
     }
 }

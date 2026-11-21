@@ -78,7 +78,7 @@ In an attached session, type `/harness` to browse what the agent has saved. **Lo
 
 ### Guardrail isolation
 
-When the current model hits a provider guardrail, Prime pauses new session input and runs the immutable `diagnose-guardrail` workflow once for that exact task using only `openai-codex/gpt-5.6-sol`; the account’s advertised Daybreak Blue capability is applied by the normal OpenAI request path. If the diagnosis establishes that the underlying work is allowed, Prime queues a new parent turn with the workflow’s compliant recovery plan instead of retrying the rejected provider request. A guardrailed sub-agent is also permanently stopped before this recovery runs. An uncertain, disallowed, unavailable, duplicate, or over-budget diagnosis fails closed. Diagnoses are serialized, duplicate tasks are suppressed, and each parent session is capped at three diagnostic calls.
+When a sub-agent hits a provider guardrail, Prime permanently stops that child and pauses new parent input. It runs the immutable `diagnose-guardrail` workflow once for that exact task using only `openai-codex/gpt-5.6-sol`; the account’s advertised Daybreak Blue capability is applied by the normal OpenAI request path. Codex cybersecurity blocks are classified as safety failures even when the provider supplies a generic error code, so the blocked request is not retried. If the diagnosis establishes that the underlying work is allowed, the parent resumes with the workflow’s compliant recovery plan. An uncertain, disallowed, unavailable, duplicate, or over-budget diagnosis fails closed. Diagnoses are serialized, duplicate tasks are suppressed, and each parent session is capped at three diagnostic calls.
 
 ## Install
 

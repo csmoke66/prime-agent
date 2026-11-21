@@ -19,10 +19,10 @@ const GUARDRAIL_CHILD_FAILURE: &str =
     "Child stopped by a safety guardrail; no child result is available.";
 const MAX_GUARDRAIL_DIAGNOSES_PER_SESSION: usize = 3;
 
-pub(crate) struct GuardrailDecision {
-    pub(crate) allowed: bool,
-    pub(crate) diagnosis: String,
-    pub(crate) solution: String,
+struct GuardrailDecision {
+    allowed: bool,
+    diagnosis: String,
+    solution: String,
 }
 fn claim_guardrail_diagnosis(seen: &mut std::collections::HashSet<String>, task: &str) -> bool {
     if seen.contains(task) || seen.len() >= MAX_GUARDRAIL_DIAGNOSES_PER_SESSION {
@@ -798,8 +798,9 @@ impl SupervisorChildSessionsInner {
         recorder.record_child_cancelled(&child_session_id, reason);
     }
 
-    /// Read a guardrailed child's task and pass it through the same protected
-    /// diagnosis path used by a guardrail on the parent model.
+    /// Diagnose a provider safety refusal before any parent continuation is
+    /// released. The immutable workflow is serialized and deduplicated by
+    /// exact task so a refusal cannot become an automated retry loop.
     async fn diagnose_guardrail(
         self: &Arc<Self>,
         session_file: Option<&str>,
@@ -815,20 +816,9 @@ impl SupervisorChildSessionsInner {
         })
         .await
         .context("guardrail task read failed")??;
-        self.diagnose_guardrail_task(&task, child_model).await
-    }
-
-    /// Diagnose one exact rejected task before any continuation is released.
-    /// Calls are serialized and deduplicated so a refusal cannot become an
-    /// automated retry loop.
-    pub(super) async fn diagnose_guardrail_task(
-        self: &Arc<Self>,
-        task: &str,
-        model: &str,
-    ) -> Result<Option<GuardrailDecision>> {
         {
             let mut seen = self.guardrail_recovery_seen.lock().await;
-            if !claim_guardrail_diagnosis(&mut seen, task) {
+            if !claim_guardrail_diagnosis(&mut seen, &task) {
                 return Ok(None);
             }
         }
@@ -845,7 +835,7 @@ impl SupervisorChildSessionsInner {
             pa_core::workflows::GUARDRAIL_DIAGNOSIS_WORKFLOW,
             json!({
                 "task": task,
-                "childModel": if model.is_empty() { "unknown" } else { model },
+                "childModel": if child_model.is_empty() { "unknown" } else { child_model },
             }),
         )
         .await

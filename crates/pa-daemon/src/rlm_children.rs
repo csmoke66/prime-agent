@@ -517,14 +517,6 @@ impl SupervisorChildSessions {
             .expect("guardrail pause hook lock") = Some(hook);
     }
 
-    pub(crate) async fn diagnose_guardrail_task(
-        &self,
-        task: &str,
-        model: &str,
-    ) -> Result<Option<lifecycle::GuardrailDecision>> {
-        self.inner.diagnose_guardrail_task(task, model).await
-    }
-
     pub fn set_settle_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
         *self.inner.settle_hook.lock().expect("settle hook lock") = Some(hook);
     }

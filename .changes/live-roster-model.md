@@ -1,0 +1,1 @@
+- Running agents keep their recorded model in the agents list when the worker cannot supply live model metadata.

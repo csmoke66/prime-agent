@@ -231,6 +231,22 @@ fn live_summary_usage_is_the_catalog_fold() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn running_child_uses_its_recorded_model_only_when_live_metadata_is_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = crate::session_store::SessionFile::create("/tmp", None, 1);
+    store.path = dir.path().join("child.jsonl");
+    store.append_model_change("provider", "old");
+    store.append_model_change("provider", "selected");
+    store.rewrite().unwrap();
+    let mut core = SessionCore::test_core(Some(store), "/tmp".into());
+    core.busy = true;
+    assert_eq!(session_summary(&core, inputs()).model, Some(json!({"provider":"provider","id":"selected"})));
+    let live = json!({"provider":"provider","id":"new","reasoning":true});
+    let state = SummaryInputs { model: Some(live.clone()), ..inputs() };
+    assert_eq!(session_summary(&core, state).model, Some(live));
+}
+
 /// The live row bills the turn's own spend instead of reporting nothing.
 #[test]
 fn pathless_summary_usage_folds_the_in_memory_entries() {

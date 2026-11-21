@@ -577,7 +577,7 @@ impl SessionEngine for AgentSessionEngine {
     }
 
     fn model_metadata(&self) -> Option<Value> {
-        let model = self.resolve_model().ok()?;
+        let model = self.session_model().ok()?;
         Some(json!({
             "id": model.id,
             "name": model.name,

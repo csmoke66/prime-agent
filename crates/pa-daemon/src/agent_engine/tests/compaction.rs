@@ -254,6 +254,8 @@ fn threshold_compaction_stays_on_the_session_provider_after_a_resolution_drift()
         (session.provider.as_str(), session.id.as_str()),
         ("faux", "faux-1")
     );
+    assert_eq!(engine.model_metadata().unwrap()["id"], "faux-1",
+        "the worker reports the model actually serving the session, not the changed default");
 
     // The threshold arm compacts on the session's provider: the
     // summarizer runs through the faux provider, never the drift model.

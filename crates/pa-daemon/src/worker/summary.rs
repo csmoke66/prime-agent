@@ -530,15 +530,16 @@ pub(crate) fn session_summary(core: &SessionCore, inputs: SummaryInputs) -> Sess
         .or_else(|| store.map(|store| store.header.timestamp.clone()));
     // Usage: the whole-file own-usage fold (TS `getOwnUsageSummary`);
     // a pathless store folds its in-memory entries.
-    let usage = store
-        .and_then(|store| {
-            if store.path.as_os_str().is_empty() {
-                crate::session_usage::own_usage_summary_of(store.entries())
-            } else {
-                crate::session_store::read_session_info(&store.path).and_then(|info| info.usage)
-            }
-        })
-        .map(|usage| json!(usage));
+    let file_info = store.filter(|s| !s.path.as_os_str().is_empty())
+        .and_then(|s| crate::session_store::read_session_info(&s.path));
+    let model = inputs.model.or_else(|| {
+        let (provider, id) = file_info.as_ref()?.model.as_ref()?;
+        Some(json!({ "provider": provider, "id": id }))
+    });
+    let usage = match store {
+        Some(s) if s.path.as_os_str().is_empty() => crate::session_usage::own_usage_summary_of(s.entries()),
+        _ => file_info.and_then(|info| info.usage),
+    }.map(|usage| json!(usage));
     SessionSummary {
         id: core.active_session_id.clone(),
         lifecycle: active_lifecycle(&core.runtime_kind, scalars.message_count == 0, streaming)
@@ -589,7 +590,7 @@ pub(crate) fn session_summary(core: &SessionCore, inputs: SummaryInputs) -> Sess
         // pulls embed the live counter in `summary_locked` instead.
         roster_delta_sequence: None,
         worker_instance_id: None,
-        model: inputs.model,
+        model,
         model_fallback_message: inputs.model_fallback_message,
         runtime_kind: Some(core.runtime_kind.clone()),
         unfinished_action_count: Some(0),

@@ -200,6 +200,27 @@ impl AuthStorage {
             .api_key
     }
 
+    /// Resolve only a stored OAuth login (refreshing it if expired). Never
+    /// consult runtime overrides, API keys, the environment, or fallback auth.
+    pub(crate) fn get_stored_oauth_api_key(
+        &mut self,
+        provider_id: &str,
+    ) -> Result<Option<String>, OAuthRefreshFailure> {
+        let Some(credential @ AuthCredential::Oauth { expires, .. }) =
+            self.data.credential(provider_id)
+        else {
+            return Ok(None);
+        };
+        let credential = if now_epoch_ms() < expires {
+            Some(credential)
+        } else {
+            self.refresh_oauth(provider_id)?
+        };
+        Ok(credential
+            .as_ref()
+            .and_then(|credential| self.oauth.api_key_for(provider_id, credential)))
+    }
+
     /// The stored OAuth credential when it is fresh — a peer's completed
     /// refresh or a concurrent `/login` — else `None` (the expired
     /// credential stays stored for a later retry).

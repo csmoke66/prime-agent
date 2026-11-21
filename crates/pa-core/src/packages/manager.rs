@@ -171,8 +171,7 @@ impl PackageManager {
     }
 
     /// Settings flag for the bundled websearch skill: an explicit
-    /// `bundledSkills.websearch` value wins; unset rides with the selected
-    /// provider's credential (see [`Self::websearch_enabled_by_credential`]).
+    /// `bundledSkills.websearch` value wins; otherwise check search credentials.
     pub(super) fn bundled_websearch_enabled(&self) -> bool {
         self.settings
             .settings()
@@ -184,17 +183,16 @@ impl PackageManager {
                 Self::websearch_enabled_by_credential(
                     self.agent_dir(),
                     provider,
-                    std::env::var(provider.api_key_env()).ok().as_deref(),
+                    provider
+                        .api_key_env()
+                        .and_then(|key| std::env::var(key).ok())
+                        .as_deref(),
                 )
             })
     }
 
-    /// The unset-setting default: the skill follows its credential, so it is
-    /// enabled exactly when the machine carries a key for the selected
-    /// provider (its stored auth slot or a nonblank ambient key, e.g.
-    /// `SERPER_API_KEY`) and stays off on keyless installs. Existing
-    /// logged-in users keep the skill, and removing the credential (or
-    /// overriding with `bundledSkills.websearch: false`) drops it.
+    /// A subscription login enables both direct ChatGPT search and fallback
+    /// for a keyless primary provider. A plain OpenAI API key is not a login.
     fn websearch_enabled_by_credential(
         agent_dir: &std::path::Path,
         provider: crate::settings::WebSearchProvider,
@@ -203,14 +201,16 @@ impl PackageManager {
         if ambient_api_key.is_some_and(|value| !value.trim().is_empty()) {
             return true;
         }
-        let stored = std::fs::read_to_string(agent_dir.join("auth.json"))
+        std::fs::read_to_string(agent_dir.join("auth.json"))
             .ok()
-            .and_then(|content| {
-                crate::auth::parse_storage_data(Some(&content))
-                    .ok()
-                    .and_then(|data| data.credential(provider.id()))
-            });
-        stored.is_some()
+            .and_then(|content| crate::auth::parse_storage_data(Some(&content)).ok())
+            .is_some_and(|data| {
+                (provider.api_key_env().is_some() && data.credential(provider.id()).is_some())
+                    || matches!(
+                        data.credential(crate::auth::OPENAI_CODEX_PROVIDER_ID),
+                        Some(crate::auth::AuthCredential::Oauth { .. })
+                    )
+            })
     }
 
     /// Extra force-exclude patterns for built-in skills.
@@ -725,6 +725,20 @@ mod tests {
         .unwrap();
         assert!(enabled(WebSearchProvider::Eco, None));
         assert!(!enabled(WebSearchProvider::Serper, None));
+        assert!(!enabled(WebSearchProvider::ChatGpt, None));
+
+        std::fs::write(
+            agent_dir.join("auth.json"),
+            r#"{ "openai-codex": { "type": "oauth", "access": "token", "expires": 123 } }"#,
+        )
+        .unwrap();
+        for provider in [
+            WebSearchProvider::ChatGpt,
+            WebSearchProvider::Serper,
+            WebSearchProvider::Eco,
+        ] {
+            assert!(enabled(provider, None));
+        }
 
         // An unparseable store is no credential, not an error.
         std::fs::write(agent_dir.join("auth.json"), "{ not json").unwrap();

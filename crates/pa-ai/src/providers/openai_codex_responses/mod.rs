@@ -46,6 +46,7 @@ use crate::utils_inner::stream_failure::{record_stream_failure, ProviderError};
 mod errors;
 pub(crate) mod request;
 pub(crate) mod session;
+pub(crate) mod web_search;
 pub(crate) mod websocket;
 
 pub const API_OPENAI_CODEX_RESPONSES: &str = "openai-codex-responses";

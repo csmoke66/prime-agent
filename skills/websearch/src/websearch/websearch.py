@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -176,6 +177,60 @@ async def _fetch_eco(query: str, api_key: str, timeout: int = 45, num_results: i
     return _format_eco_results(data, query, num_results=num_results)
 
 
+async def _fetch_chatgpt(query: str, *, timeout: int, num_results: int) -> str:
+    """Search through the Prime Agent host using its ChatGPT login."""
+    from rlm import host_request
+
+    if type(num_results) is not int or num_results < 1:
+        raise ValueError("ChatGPT web search requires a positive integer number of results")
+    try:
+        reply = await asyncio.wait_for(
+            host_request("chatgpt_web_search", {"query": query, "numResults": num_results}),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError("ChatGPT web search timed out") from exc
+    text = reply.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("ChatGPT web search returned no result text")
+    return text
+
+
+def _missing_key(provider: str) -> str:
+    _, name, signup_url = _PROVIDERS[provider]
+    return (
+        f"Web search is not set up yet: no {name} API key is configured.\n"
+        "Tell the user how to enable it:\n"
+        f"  1. Get a free API key at {signup_url} (sign up, copy the key).\n"
+        f"  2. In Prime Agent, run /mcp, choose \"{name} (web search)\", and paste the key.\n"
+        "Do not ask the user to set environment variables. Once the key is saved, web search works automatically."
+    )
+
+
+async def _fetch_keyed(
+    provider: str,
+    query: str,
+    api_key: str,
+    *,
+    timeout: int,
+    num_results: int,
+    reserve_fallback: bool,
+) -> str:
+    fetch = _fetch_eco if provider == "eco" else _fetch_serper
+    if not reserve_fallback:
+        return await fetch(query, api_key, timeout=timeout, num_results=num_results)
+    # The normal cell deadline is 60s. Leave time for the host search even
+    # when the primary provider hangs, counting all HTTP phases together.
+    primary_timeout = min(timeout, 20)
+    try:
+        return await asyncio.wait_for(
+            fetch(query, api_key, timeout=primary_timeout, num_results=num_results),
+            timeout=primary_timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"{_PROVIDERS[provider][1]} search timed out") from exc
+
+
 async def run(
     query: str,
     *,
@@ -188,34 +243,55 @@ async def run(
     Args:
         query: Web search query.
         max_output: Truncate output to this many chars.
-        timeout: HTTP timeout in seconds.
-        num_results: Organic results to return.
+        timeout: Timeout in seconds for each provider attempt.
+        num_results: Requested number of results.
 
     Returns:
         Formatted search results.
     """
-    provider = os.environ.get("PRIME_AGENT_WEBSEARCH_PROVIDER") or "serper"
-    api_key = _resolve_api_key(provider)
-    if not api_key:
-        _, name, signup_url = _PROVIDERS[provider]
-        return (
-            f"Web search is not set up yet: no {name} API key is configured.\n"
-            "Tell the user how to enable it:\n"
-            f"  1. Get a free API key at {signup_url} (sign up, copy the key).\n"
-            f"  2. In Prime Agent, run /mcp, choose \"{name} (web search)\", and paste the key.\n"
-            "Do not ask the user to set environment variables. Once the key is saved, web search works automatically."
-        )
+    from rlm import repl
 
+    provider = os.environ.get("PRIME_AGENT_WEBSEARCH_PROVIDER") or "serper"
+    default_timeout = timeout is None and "PRIME_AGENT_WEBSEARCH_TIMEOUT" not in os.environ
     if timeout is None:
         timeout = _env_int("PRIME_AGENT_WEBSEARCH_TIMEOUT", 45)
     if num_results is None:
         num_results = _env_int("PRIME_AGENT_WEBSEARCH_NUM_RESULTS", 5)
 
-    fetch = _fetch_eco if provider == "eco" else _fetch_serper
-    try:
-        result = await fetch(query, api_key, timeout=timeout, num_results=num_results)
-    except Exception as e:
-        result = f"Error searching for '{query}': {e}"
+    if provider == "chatgpt":
+        try:
+            result = await _fetch_chatgpt(query, timeout=timeout, num_results=num_results)
+        except Exception as exc:
+            result = f"Error searching for '{query}': {exc}"
+    else:
+        api_key = _resolve_api_key(provider)
+        result = None
+        primary_error = ""
+        if api_key:
+            try:
+                result = await _fetch_keyed(
+                    provider,
+                    query,
+                    api_key,
+                    timeout=timeout,
+                    num_results=num_results,
+                    reserve_fallback=default_timeout and repl.is_active(),
+                )
+            except Exception as exc:
+                primary_error = f"Error searching for '{query}': {exc}"
+
+        # Standalone calls have no host. The bridge itself also rejects a
+        # closed connection before sending a request. Neither case probes
+        # credentials or makes a network call.
+        if result is None and repl.is_active():
+            try:
+                result = await _fetch_chatgpt(query, timeout=timeout, num_results=num_results)
+            except Exception:
+                pass  # Preserve the selected provider's error or setup guidance.
+        if result is None:
+            if not api_key:
+                return _missing_key(provider)
+            result = primary_error
     output = f'Results for query "{query}":\n\n{result}'
 
     if len(output) > max_output:

@@ -8,6 +8,7 @@ pub mod auto_retry;
 pub mod auxiliary_model;
 pub mod bash_notices;
 pub mod branch_summarization;
+mod chatgpt_web_search;
 pub mod compact_session;
 pub mod compaction;
 pub mod compaction_exec;

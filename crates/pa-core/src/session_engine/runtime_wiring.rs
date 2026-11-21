@@ -157,6 +157,7 @@ pub fn wire_session_runtime(
     let session = Arc::new(tokio::sync::Mutex::new(session));
     let mut handlers = HostRequestHandlers::default();
     runtime.register_host_handlers(session.clone(), &mut handlers);
+    super::chatgpt_web_search::register(&mut handlers, agent_dir.to_path_buf());
     let model_registry = rlm.model_registry.unwrap_or_else(|| {
         let auth = crate::auth::AuthStorage::create(agent_dir);
         Arc::new(crate::models::registry::ModelRegistry::create(
@@ -335,7 +336,10 @@ pub(crate) fn websearch_env(
         "PRIME_AGENT_WEBSEARCH_PROVIDER".to_string(),
         provider.id().to_string(),
     )];
-    if std::env::var(provider.api_key_env()).is_ok_and(|value| !value.trim().is_empty()) {
+    let Some(key_env) = provider.api_key_env() else {
+        return env; // The host owns ChatGPT OAuth; never inject it into the kernel.
+    };
+    if std::env::var(key_env).is_ok_and(|value| !value.trim().is_empty()) {
         return env;
     }
     let key = match credential {
@@ -347,7 +351,7 @@ pub(crate) fn websearch_env(
         _ => None,
     };
     if let Some(key) = key {
-        env.push((provider.api_key_env().to_string(), key));
+        env.push((key_env.to_string(), key));
     }
     env
 }

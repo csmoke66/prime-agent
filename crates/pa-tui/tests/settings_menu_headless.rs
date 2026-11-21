@@ -415,6 +415,8 @@ fn the_arrows_cycle_values_and_the_writes_persist() {
     }
     steps.push(HeadlessStep::Key(key(KeyCode::Right)));
     steps.push(HeadlessStep::WaitMs(150));
+    steps.push(HeadlessStep::Key(key(KeyCode::Right)));
+    steps.push(HeadlessStep::WaitMs(150));
     let (frames, settings) = run_plan(steps);
     // The row shows true (Enter's cycle landed last), and the seam recorded the exact write
     // sequence the arrows drove.
@@ -433,6 +435,7 @@ fn the_arrows_cycle_values_and_the_writes_persist() {
             "idle-eviction-minutes=180",
             "idle-eviction-minutes=90",
             "web-search-provider=eco",
+            "web-search-provider=chatgpt",
         ],
         "every arrow cycle persisted through the settings seam"
     );

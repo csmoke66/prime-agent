@@ -141,9 +141,8 @@ impl PackageManager {
                         path: Some(bundled_dir.display().to_string()),
                     });
                 }
-                // No key for the selected web search provider on the machine
-                // (and no explicit settings override): web search stays off
-                // so the prompt never advertises a tool that errors on use.
+                // No selected-provider key or ChatGPT login (and no explicit
+                // override): don't advertise a search tool that can't run.
                 let websearch_gate = if self.bundled_websearch_enabled() {
                     Vec::new()
                 } else {

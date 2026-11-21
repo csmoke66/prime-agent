@@ -1,0 +1,1 @@
+- Added ChatGPT to the web search provider setting. Serper and You.com Eco now try OpenAI-hosted search if they fail and a ChatGPT login is available; no extra search API key is required.

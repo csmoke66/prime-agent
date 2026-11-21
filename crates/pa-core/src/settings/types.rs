@@ -230,25 +230,28 @@ pub enum WebSearchProvider {
     Serper,
     /// You.com Eco Search.
     Eco,
+    /// OpenAI-hosted search using the user's ChatGPT subscription login.
+    ChatGpt,
 }
 
 impl WebSearchProvider {
-    /// The provider's id: its settings value, its auth-store slot, and the
-    /// kernel's `PRIME_AGENT_WEBSEARCH_PROVIDER` value.
+    /// The settings value passed to the kernel as `PRIME_AGENT_WEBSEARCH_PROVIDER`.
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             WebSearchProvider::Serper => crate::auth::SERPER_CREDENTIAL_ID,
             WebSearchProvider::Eco => crate::auth::ECO_CREDENTIAL_ID,
+            WebSearchProvider::ChatGpt => "chatgpt",
         }
     }
 
     /// The environment variable whose nonblank value overrides the stored key.
     #[must_use]
-    pub fn api_key_env(self) -> &'static str {
+    pub fn api_key_env(self) -> Option<&'static str> {
         match self {
-            WebSearchProvider::Serper => "SERPER_API_KEY",
-            WebSearchProvider::Eco => "YOU_API_KEY",
+            WebSearchProvider::Serper => Some("SERPER_API_KEY"),
+            WebSearchProvider::Eco => Some("YOU_API_KEY"),
+            WebSearchProvider::ChatGpt => None,
         }
     }
 }

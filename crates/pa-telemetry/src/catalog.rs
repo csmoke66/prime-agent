@@ -1250,7 +1250,7 @@ const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
     since: 2,
     properties: &[(
         "provider",
-        required(enum_rule(&["serper", "eco"], "serper")),
+        required(enum_rule(&["serper", "eco", "chatgpt"], "serper")),
     )],
 };
 

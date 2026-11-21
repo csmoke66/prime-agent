@@ -849,6 +849,48 @@ impl AgentSessionEngine {
         register_agent_message_host_handlers(sender, &mut handlers);
         register_agent_observe_host_handlers(observer, &mut handlers);
         self.register_kernel_notice_host_handlers(&mut handlers);
+        if let Some(host) = &self.children {
+            use pa_core::kernel::shared::host_handler;
+            let host = Arc::clone(host);
+            handlers.register("rlm.workflows.run", host_handler(move |mut request| {
+                let host = Arc::clone(&host);
+                async move {
+                    let input = request.data["input"].take();
+                    let name = request.data["name"].as_str().ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
+                    Ok(serde_json::json!({"output":host.run_workflow(name, input).await?}))
+                }
+            }));
+            let cwd = self.cwd();
+            let project = cwd.clone();
+            handlers.register("rlm.workflows.list", host_handler(move |_| {
+                let cwd = project.clone();
+                async move {
+                    let names = tokio::task::spawn_blocking(move || pa_core::workflows::list(&cwd)).await??;
+                    Ok(serde_json::json!({"names":names}))
+                }
+            }));
+            let project = cwd.clone();
+            handlers.register("rlm.workflows.describe", host_handler(move |request| {
+                let cwd = project.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let name = request.data["name"].as_str().ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
+                        Ok(serde_json::to_value(pa_core::workflows::load(&cwd, name)?)?)
+                    }).await?
+                }
+            }));
+            handlers.register("rlm.workflows.create", host_handler(move |mut request| {
+                let cwd = cwd.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let definition = serde_json::from_value(request.data["definition"].take())?;
+                        let name = request.data["name"].as_str().ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
+                        pa_core::workflows::create(&cwd, name, &definition)
+                    }).await??;
+                    Ok(serde_json::json!({}))
+                }
+            }));
+        }
         Some(handlers)
     }
 

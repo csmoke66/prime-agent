@@ -962,6 +962,10 @@ impl SessionEngine for AgentSessionEngine {
         }
     }
 
+    fn workflow_host(&self) -> anyhow::Result<Arc<crate::rlm_children::SupervisorChildSessions>> {
+        self.children.clone().ok_or_else(|| anyhow::anyhow!("Named workflows require a daemon-backed agent session"))
+    }
+
     fn on_turn_start(&self) {
         if let Some(children) = &self.children {
             children.notify_turn_started();

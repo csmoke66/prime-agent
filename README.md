@@ -31,6 +31,41 @@ Open `/settings` → **Models** to choose the main session’s model. Under **Ag
 
 Use inheritance to follow your global policy, or allow all models to remove the session restriction. Session overrides survive reattaching and apply to subsequent spawns in the same session family, not to other sessions.
 
+### Named workflows
+
+A workflow is a reusable job with its own model and child settings. Save a definition such as `.prime/workflows/review.json` in the session's working directory:
+
+```json
+{
+  "version": 1,
+  "model": "openai-codex/gpt-6.2-astra",
+  "effort": "high",
+  "subagents": { "allowedModels": ["openai-codex/gpt-6.2-sol"], "effort": "medium" },
+  "prompt": "Review the supplied files, paying particular attention to the requested focus.",
+  "inputFields": {
+    "files": {"type": "array", "required": true},
+    "focus": {"type": "string", "required": false}
+  },
+  "outputFields": {
+    "summary": {"type": "string", "required": true},
+    "findings": {"type": "array", "required": false}
+  }
+}
+```
+
+`/run review` opens a form built from `inputFields`. Enter the values and select **Run workflow**, or press **Esc** to cancel. You do not redefine the prompt or the result when you run it. From the REPL:
+
+```python
+names = await rlm.workflows.list()
+definition = await rlm.workflows.describe("review")
+result = await rlm.workflows.run("review", {"files": ["src/parser.rs"], "focus": "error handling"})
+print(result["summary"])
+```
+
+Both field maps are required; use `{}` if there are no fields. Types are `string`, `integer`, `number`, `boolean`, `object`, `array`, and `null`. Optional means the key may be absent, not that a value of the wrong type is accepted. Missing required fields, undeclared keys and mistyped values are errors on input and output. The caller's model and session settings are unchanged. A workflow cannot expand the caller's allowed models.
+
+`await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected names take precedence over project files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
+
 ### Inbox reminders
 
 Configure inbox reminders in `/settings` for the attached session. **Preview** (the default) shows the first five unread messages, up to 200 characters each. **Full** includes every unread message body, which can use considerably more context. **Count** shows only the unread count. None of these marks a message as read or changes when the parent wakes.

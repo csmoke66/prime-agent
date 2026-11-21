@@ -414,6 +414,10 @@ pub trait SessionEngine: Send + Sync {
     /// session: the child's terminal no-reply notice can be withheld.
     fn mark_child_reply(&self, _child_active_session_id: &str) {}
 
+    fn workflow_host(&self) -> Result<Arc<crate::rlm_children::SupervisorChildSessions>> {
+        anyhow::bail!("Named workflows require a daemon-backed agent session")
+    }
+
     /// The session's RLM children as wire snapshots (the `get_rlm_children`
     /// response and the context-tree children).
     fn rlm_child_snapshots(

@@ -761,6 +761,33 @@ class _HarnessProxy:
 _harness_state = _HarnessProxy()
 
 
+class _WorkflowNamespace:
+    """Named workflows available to this daemon session."""
+
+    async def list(self) -> list[str]:
+        reply = await host_request("rlm.workflows.list")
+        names = reply.get("names")
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+            raise RuntimeError("Invalid workflow listing from host")
+        return names
+
+    async def describe(self, name: str) -> dict[str, Any]:
+        """Read the effective definition, including the prompt and both field schemas."""
+        return await host_request("rlm.workflows.describe", {"name": name})
+
+    async def create(self, name: str, definition: dict[str, Any]) -> None:
+        """Create a new project definition; never replace an existing workflow."""
+        await host_request("rlm.workflows.create", {"name": name, "definition": definition})
+
+    async def run(self, name: str, input: dict[str, Any]) -> dict[str, Any]:
+        """Supply input values; return the output validated against the named definition."""
+        reply = await host_request("rlm.workflows.run", {"name": name, "input": input})
+        output = reply.get("output")
+        if not isinstance(output, dict):
+            raise RuntimeError("Workflow host returned no JSON output object")
+        return output
+
+
 class _RLMInboxNamespace:
     """The session inbox of machine-generated notices:
     ``await rlm.inbox.read()`` drains and returns the waiting messages
@@ -994,6 +1021,7 @@ class _RLMNamespace:
 
     factory = _RLMFactoryNamespace()
     inbox = _RLMInboxNamespace()
+    workflows = _WorkflowNamespace()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         raise TypeError(_NOT_CALLABLE_MESSAGE)
@@ -1008,6 +1036,7 @@ class _RLMNamespace:
 rlm = _RLMNamespace()
 harness = _harness_state
 factory = rlm.factory
+workflows = rlm.workflows
 
 
 class _NotCallableModule(types.ModuleType):
@@ -1053,6 +1082,7 @@ __all__ = [
     "rename",
     "rlm",
     "spawn",
+    "workflows",
 ]
 
 # Lazily re-export the MCP base class. Kept lazy so `import rlm` never requires

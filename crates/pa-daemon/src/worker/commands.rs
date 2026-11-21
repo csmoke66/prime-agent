@@ -39,6 +39,27 @@ impl Worker {
             "attach" => self.handle_attach(payload),
             "detach" => self.handle_detach(payload),
             "prompt" => self.handle_prompt(payload, false).await,
+            "run_workflow" => self.start_workflow(payload),
+            "list_workflows" => {
+                let cwd = self.core.lock().unwrap().cwd.clone();
+                match tokio::task::spawn_blocking(move || -> anyhow::Result<Value> {
+                    let cwd = std::path::Path::new(&cwd);
+                    let names = pa_core::workflows::list(cwd)?;
+                    let mut definitions = serde_json::Map::new();
+                    let mut errors = serde_json::Map::new();
+                    for name in &names {
+                        match pa_core::workflows::load(cwd, name) {
+                            Ok(def) => { definitions.insert(name.clone(), serde_json::to_value(def)?); }
+                            Err(e) => { errors.insert(name.clone(), Value::String(format!("{e:#}"))); }
+                        }
+                    }
+                    Ok(json!({"names": names, "definitions": definitions, "errors": errors}))
+                }).await {
+                    Ok(Ok(listing)) => response_success(None, command_type, Some(listing)),
+                    Ok(Err(e)) => response_failure(None, command_type, &format!("{e:#}"), None),
+                    Err(e) => response_failure(None, command_type, &e.to_string(), None),
+                }
+            }
             "prompt_and_wait" => self.handle_prompt(payload, true).await,
             "steer" => self.handle_queue(payload, Lane::Steering),
             "follow_up" => self.handle_queue(payload, Lane::FollowUp),
@@ -166,6 +187,35 @@ impl Worker {
                 None,
             ),
         }
+    }
+
+    fn start_workflow(&self, payload: &Value) -> DaemonResponse {
+        const COMMAND: &str = "run_workflow";
+        if let Err(reply) = self.require_created(COMMAND) { return reply }
+        let Some(name) = payload["name"].as_str().filter(|s| !s.trim().is_empty()) else {
+            return response_failure(None, COMMAND, "Workflow name is required", None);
+        };
+        let host = match self.engine.workflow_host() {
+            Ok(host) => host,
+            Err(e) => return response_failure(None, COMMAND, &e.to_string(), None),
+        };
+        let (name, input) = (name.to_owned(), payload["input"].clone());
+        let core = self.core.clone();
+        let events = self.events.clone();
+        let session = core.lock().unwrap().generation.clone();
+        tokio::spawn(async move {
+            let (text, details) = match host.run_workflow(&name, input).await {
+                Ok(output) => (format!("Workflow {name}\n{output:#}"), json!({"workflow":name, "severity":"info", "output":output})),
+                Err(e) => (format!("Workflow {name} failed: {e:#}"), json!({"workflow":name, "severity":"error", "error":format!("{e:#}")})),
+            };
+            let mut core = core.lock().unwrap();
+            if core.generation != session { return }
+            let row = json!({"role":"custom","customType":pa_types::slash_commands::SESSION_SLASH_COMMAND_RESULT_CUSTOM_TYPE,
+                "content":text,"display":true,"timestamp":crate::util::now_ms(),"details":details});
+            persist_custom_row(&mut core, &row);
+            super::broadcast_custom_row_locked(&mut core, &events, &row);
+        });
+        response_success(None, COMMAND, Some(json!({"started":true})))
     }
 
     // DaemonResponse is the wire response struct and is deliberately wide; the

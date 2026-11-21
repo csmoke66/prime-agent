@@ -258,11 +258,12 @@ impl AgentSessionEngine {
             return crate::model_allowlist::DaemonAllowlist::Unrestricted;
         }
         let file = self.session_file.lock().expect("session file lock").clone();
-        match crate::model_allowlist::child_policy(
+        match crate::model_allowlist::policy_for(
             &self.cwd(),
             &self.config.agent_dir,
             file.as_deref(),
             depth,
+            true,
         ) {
             Ok((allowlist, _)) => allowlist,
             Err(error) => crate::model_allowlist::DaemonAllowlist::Unreadable(format!("{error:#}")),

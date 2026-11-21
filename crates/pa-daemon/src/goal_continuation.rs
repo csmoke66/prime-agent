@@ -244,6 +244,9 @@ impl AgentSessionEngine {
     /// relaunch-on-fire, so the port BLOCKS while any job is armed. An unwired jobs
     /// probe passes.
     pub(crate) async fn settled_passivation_gates_pass(&self) -> bool {
+        if self.children.as_ref().is_some_and(|host| host.has_active_workflows()) {
+            return false;
+        }
         if self.has_unsettled_rlm_work().await || self.has_live_background_bash_handles() {
             return false;
         }

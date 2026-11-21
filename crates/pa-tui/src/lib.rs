@@ -121,6 +121,7 @@ pub(crate) mod update_restart_wait;
 pub mod user_message_selector;
 pub mod view;
 pub mod width;
+pub(crate) mod workflow_form;
 
 use ratatui::style::Style;
 

@@ -28,12 +28,51 @@ pub struct SessionSubagentPolicy {
     pub effort: Option<ThinkingLevelSetting>,
 }
 
+/// The immutable-at-admission snapshot for this workflow run. Unlike the
+/// editable family defaults, this narrows descendants and pins the runner.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowRunPolicy {
+    pub runner_model: String,
+    pub allowed_models: Option<Vec<String>>,
+    pub effort: Option<ThinkingLevelSetting>,
+}
+
+fn workflow_file(log: &Path) -> Result<PathBuf> {
+    Ok(session_artifact_dir_for_log(log).context("workflow requires a session log")?
+        .join("workflow-policy.json"))
+}
+
+pub fn set_workflow_policy(log: &Path, runner_model: &str, allowed_models: Option<Vec<String>>, effort: Option<ThinkingLevelSetting>) -> Result<()> {
+    let path = workflow_file(log)?;
+    fs::create_dir_all(path.parent().context("missing workflow policy directory")?)?;
+    let _lock = LockDir::acquire_owned_retrying(&path, Duration::from_secs(30), 50, Duration::from_millis(10))?;
+    anyhow::ensure!(!path.try_exists()?, "workflow policy is already set");
+    let policy = WorkflowRunPolicy { runner_model: runner_model.to_owned(), allowed_models, effort };
+    atomic_write_with(&path, &serde_json::to_string(&policy)?, AtomicWriteOptions { fsync: true })?;
+    Ok(())
+}
+
+pub fn workflow_policy(log: &Path) -> Result<Option<WorkflowRunPolicy>> {
+    let path = workflow_file(log)?;
+    match fs::read(&path) {
+        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| format!("invalid workflow policy at {}", path.display()))?)),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("read {}", path.display())),
+    }
+}
+
 impl SessionSubagentPolicy {
     /// Follow RLM child headers to the session that owns the policy. A normal
     /// depth-zero fork is independent even when its header records a parent.
     pub fn owner_log(session_log: &Path, depth: u32) -> Result<Cow<'_, Path>> {
+        Self::visit_ancestors(session_log, depth, |_, _| Ok(()))
+    }
+
+    pub fn visit_ancestors<'a>(session_log: &'a Path, depth: u32, mut visit: impl FnMut(&Path, u32) -> Result<()>) -> Result<Cow<'a, Path>> {
         let mut log = Cow::Borrowed(session_log);
         for expected in (1..=depth).rev() {
+            visit(&log, expected)?;
             let header = crate::session::manager::read_session_header(&log)
                 .with_context(|| format!("cannot read sub-agent ancestry at {}", log.display()))?;
             anyhow::ensure!(

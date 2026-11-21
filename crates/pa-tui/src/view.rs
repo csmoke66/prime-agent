@@ -101,6 +101,7 @@ pub struct AgentView {
     pub reload_box: Option<String>,
     pub side_pane: Option<crate::side_question::SideQuestionPane>,
     pub settings_menu: Option<crate::settings_menu::SettingsMenu>,
+    pub(crate) workflow_form: Option<crate::workflow_form::WorkflowForm>,
     /// The read-only info panel (operator directive 2026-09-26: the
     /// `/context`-family displays dock instead of flooding the transcript).
     pub info_panel: Option<crate::info_panel::InfoPanel>,
@@ -245,6 +246,10 @@ impl AgentView {
             auth.paste(text);
             return true;
         }
+        if let Some(form) = &mut self.workflow_form {
+            form.paste(text);
+            return true;
+        }
         if let Some(menu) = self.settings_menu.as_mut() {
             menu.paste(text);
             return true;
@@ -309,6 +314,7 @@ impl AgentView {
             reload_box: None,
             side_pane: None,
             settings_menu: None,
+            workflow_form: None,
             info_panel: None,
             show_images: true,
             show_hardware_cursor: false,

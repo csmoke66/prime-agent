@@ -81,6 +81,7 @@ impl SupervisorChildSessionsInner {
         thinking: Option<&str>,
         cwd: &str,
         session_dir: &Path,
+        session_path: Option<&str>,
         // The parent's in-flight turn request the child anchors to (TS
         // `spawnedByRequestId` rides the child's session options, never
         // the runtime metadata).
@@ -139,7 +140,7 @@ impl SupervisorChildSessionsInner {
         });
         let create = DaemonCommand::Create {
             id: None,
-            session_path: None,
+            session_path: session_path.map(str::to_string),
             continue_recent: None,
             no_session: None,
             name: name.map(str::to_string),
@@ -188,6 +189,7 @@ impl SupervisorChildSessionsInner {
                 thinking,
                 cwd,
                 session_dir,
+                None,
                 /*spawned_by_request_id*/ None,
                 runtime_metadata,
                 identity,

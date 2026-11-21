@@ -61,5 +61,7 @@ pub mod session_engine;
 pub mod settings;
 pub mod skills;
 pub mod slash_command_args;
+pub mod workflow_io;
 pub mod update;
+pub mod workflows;
 pub use kernel::ReplKernelManager;

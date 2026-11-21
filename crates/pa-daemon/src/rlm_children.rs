@@ -363,6 +363,8 @@ struct SupervisorChildSessionsInner {
     // an await, so sync engine paths can set it without a runtime `block_on`.
     identity: std::sync::Mutex<ParentIdentity>,
     children: Mutex<Vec<Arc<Mutex<ChildRecord>>>>,
+    /// Private workflow workers are not RLM roster entries.
+    workflows: workflow::WorkflowRuns,
     /// Confirmed-dead children whose final usage remains owed. Not roster or slot owners.
     retired_usage: std::sync::Mutex<Vec<Arc<Mutex<ChildRecord>>>>,
     /// Spawn-name reservations held until admission is durable, so
@@ -437,6 +439,7 @@ impl SupervisorChildSessions {
                 parent_session_name: std::sync::Mutex::new(None),
                 identity: std::sync::Mutex::new(ParentIdentity::with_default_depth()),
                 children: Mutex::new(Vec::new()),
+                workflows: workflow::WorkflowRuns::default(),
                 retired_usage: std::sync::Mutex::new(Vec::new()),
                 pending_spawn_names: std::sync::Mutex::new(std::collections::HashSet::new()),
                 deleted_children: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -574,6 +577,7 @@ impl SupervisorChildSessions {
     ///
     /// Returns the first close failure after walking every child (kept tracked for retry).
     pub async fn close_children(&self, reason: ChildCloseReason) -> Result<()> {
+        self.inner.workflows.cancel_and_wait().await;
         self.inner.close_children_inner(reason).await
     }
 
@@ -584,6 +588,7 @@ impl SupervisorChildSessions {
     /// Panics when the identity mutex is poisoned.
     pub fn set_identity(&self, identity: ParentIdentity) {
         *self.inner.identity.lock().expect("identity lock") = identity;
+        self.inner.workflows.reopen();
     }
 
     /// Replace the parent session's live name (the worker's summary — the
@@ -1086,6 +1091,7 @@ mod registry;
 mod retirement;
 mod run_state;
 mod usage;
+mod workflow;
 
 #[cfg(test)]
 mod watch_tests;

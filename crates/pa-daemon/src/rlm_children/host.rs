@@ -220,6 +220,7 @@ impl RlmSubagentHost for SupervisorChildSessions {
                         thinking,
                         &cwd.to_string_lossy(),
                         &child_dir,
+                        None,
                         request.spawned_by_request_id.as_deref(),
                         Some(runtime_metadata),
                         &identity,

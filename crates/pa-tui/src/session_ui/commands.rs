@@ -8,6 +8,25 @@ use super::{
 };
 
 impl SessionUi {
+    pub(super) async fn submit_workflow(
+        &mut self,
+        name: String,
+        input: Value,
+        view: &mut AgentView,
+    ) -> Result<()> {
+        let command = DaemonCommand::RunWorkflow {
+            id: None,
+            active_session_id: self.active_session_id.clone(),
+            name: name.clone(),
+            input,
+        };
+        match self.bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command).await {
+            Ok(_) => self.note(&format!("Workflow {name} started."), view),
+            Err(e) => self.error_row(&format!("Cannot start workflow: {e:#}"), view),
+        }
+        Ok(())
+    }
+
     /// Slash-command dispatch: builtin client commands without a UI report unavailability, session
     /// commands forward to the session, unknown commands get the suggestion error or pass through
     /// as a prompt; `behavior` passes through, so a slash-prefixed follow-up keeps its lane.
@@ -38,7 +57,7 @@ impl SessionUi {
         match name.as_str() {
             "help" => {
                 self.note(
-                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/settings       configure models, sub-agents, and preferences\n/exit           detach and exit",
+                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/run [name]     choose a workflow or open its input form\n/run name JSON  run with a JSON object of input values\n/settings       configure models, sub-agents, and preferences\n/exit           detach and exit",
                     view,
                 );
                 return Ok(());
@@ -291,6 +310,43 @@ impl SessionUi {
             // The auth flows run in the client process; other management subcommands
             // surface through the `mcp` CLI command instead of the TUI.
             "mcp" => self.handle_mcp_command(resolved, view).await?,
+            "run" => {
+                let args = resolved.args.trim();
+                if let Some((name, raw)) = args.split_once(char::is_whitespace) {
+                    match serde_json::from_str::<Map<String, Value>>(raw.trim()) {
+                        Ok(input) => {
+                            self.submit_workflow(name.to_owned(), Value::Object(input), view)
+                                .await?;
+                        }
+                        Err(error) => {
+                            view.editor.set_text(text);
+                            self.error_row(&format!("Invalid workflow input object: {error}"), view);
+                        }
+                    }
+                } else {
+                    let command = DaemonCommand::ListWorkflows {
+                        id: None,
+                        active_session_id: self.active_session_id.clone(),
+                    };
+                    let form = match self
+                        .bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command)
+                        .await
+                    {
+                        Ok(result) => crate::workflow_form::WorkflowForm::open(args, result),
+                        Err(error) => Err(format!("Cannot list workflows: {error:#}")),
+                    };
+                    match form {
+                        Ok(form) => {
+                            view.workflow_form = Some(form);
+                            self.dirty = true;
+                        }
+                        Err(error) => {
+                            view.editor.set_text(text);
+                            self.error_row(&error, view);
+                        }
+                    }
+                }
+            }
             "harness" => {
                 if !resolved.args.is_empty() {
                     view.editor.set_text(text);

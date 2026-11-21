@@ -115,9 +115,38 @@ pub(crate) fn child_policy(
     DaemonAllowlist,
     Option<pa_core::settings::ThinkingLevelSetting>,
 )> {
+    policy_for(cwd, agent_dir, session_file, depth, false)
+}
+
+pub(crate) fn policy_for(
+    cwd: &Path, agent_dir: &Path, session_file: Option<&Path>, depth: u32, own_model: bool,
+) -> Result<(DaemonAllowlist, Option<pa_core::settings::ThinkingLevelSetting>)> {
     use pa_core::session::subagent_policy::SessionSubagentPolicy;
+    let mut selected: Option<Vec<String>> = None;
+    let mut workflow_effort = None;
     let policy = match session_file {
-        Some(file) => SessionSubagentPolicy::load(&SessionSubagentPolicy::owner_log(file, depth)?)?,
+        Some(file) => {
+            let root = SessionSubagentPolicy::visit_ancestors(file, depth, |log, at| {
+                let Some(policy) = pa_core::session::subagent_policy::workflow_policy(log)? else { return Ok(()) };
+                let models = if own_model && at == depth {
+                    Some(vec![policy.runner_model])
+                } else {
+                    if let Some(effort) = policy.effort {
+                        anyhow::ensure!(workflow_effort.is_none_or(|previous| previous == effort), "conflicting nested workflow effort constraints");
+                        workflow_effort = Some(effort);
+                    }
+                    policy.allowed_models
+                };
+                if let Some(models) = models {
+                    match &mut selected {
+                        Some(existing) => existing.retain(|m| models.contains(m)),
+                        None => selected = Some(models),
+                    }
+                }
+                Ok(())
+            })?;
+            SessionSubagentPolicy::load(&root)?
+        }
         None if depth == 0 => SessionSubagentPolicy::default(),
         None => anyhow::bail!("sub-agent policy cannot be read without the child's session log"),
     };
@@ -125,7 +154,16 @@ pub(crate) fn child_policy(
         || load(cwd, agent_dir),
         |models| DaemonAllowlist::session_override(models, policy.exact_model_selectors),
     );
-    Ok((allowlist, policy.effort))
+    let allowlist = match selected {
+        Some(mut models) if !matches!(allowlist, DaemonAllowlist::Unreadable(_)) => {
+            models.retain(|m| allowlist.allows(m));
+            DaemonAllowlist::Selected(models)
+        }
+        _ => allowlist,
+    };
+    anyhow::ensure!(workflow_effort.is_none() || policy.effort.is_none() || workflow_effort == policy.effort,
+        "workflow effort conflicts with the session's child effort policy");
+    Ok((allowlist, workflow_effort.or(policy.effort)))
 }
 
 /// Enforce the allowlist on a resolved selector: `Ok(())` when allowed
@@ -220,6 +258,32 @@ mod tests {
     fn write_settings(dir: &Path, value: &str) {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join("settings.json"), value).unwrap();
+    }
+
+    #[test]
+    fn workflow_runner_and_descendants_obey_different_intersected_model_sets() {
+        use pa_core::session::subagent_policy::{set_workflow_policy, SessionSubagentPolicy};
+        use pa_core::settings::ThinkingLevelSetting;
+        let tmp = tempfile::tempdir().unwrap();
+        let sessions = tmp.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let root = sessions.join("root.jsonl");
+        let workflow = sessions.join("flow.jsonl");
+        let nested = sessions.join("child.jsonl");
+        for (file, parent, depth) in [(&workflow, &root, 1), (&nested, &workflow, 2)] {
+            std::fs::write(file, serde_json::json!({"type":"session","id":"id","cwd":"/","timestamp":"2026-01-01","rlmDepth":depth,"parentSession":parent}).to_string()).unwrap();
+        }
+        SessionSubagentPolicy::set_model_selectors(&root, Some(vec!["p/main".into(),"p/child".into()])).unwrap();
+        set_workflow_policy(&workflow, "p/main", Some(vec!["p/child".into(),"p/blocked".into()]), Some(ThinkingLevelSetting::Low)).unwrap();
+        let read = |log: &Path, depth, own| policy_for(tmp.path(), tmp.path(), Some(log), depth, own).unwrap();
+        assert_eq!(read(&workflow, 1, true).0, DaemonAllowlist::Selected(vec!["p/main".into()]));
+        let (children, effort) = read(&nested, 2, true);
+        assert_eq!(children, DaemonAllowlist::Selected(vec!["p/child".into()]));
+        assert_eq!(effort, Some(ThinkingLevelSetting::Low));
+        assert_eq!(read(&workflow, 1, false).0, children);
+        SessionSubagentPolicy::set_model_selectors(&root, Some(vec!["p/main".into()])).unwrap();
+        assert!(!read(&workflow, 1, false).0.allows("p/child"));
+        assert!(read(&root, 0, false).0.allows("p/main"));
     }
 
     #[test]

@@ -110,6 +110,7 @@ impl AgentView {
             || self.auth_panel.is_some()
             || self.reload_box.is_some()
             || self.settings_menu.is_some()
+            || self.workflow_form.is_some()
         {
             // TS's editor container holds the prompt context and the
             // editor; `showSelector` replaces the editor part.
@@ -129,6 +130,8 @@ impl AgentView {
                 dock.extend(panel.render(&self.theme, width, kb));
             } else if let Some(message) = self.reload_box.as_ref() {
                 dock.extend(self.render_reload_box(message, width));
+            } else if let Some(form) = &self.workflow_form {
+                dock.extend(form.render(&self.theme, width));
             } else if let Some(menu) = self.settings_menu.as_ref() {
                 dock.extend(menu.render(&self.theme, width, self.editor.keybindings()));
             }
@@ -286,6 +289,7 @@ impl AgentView {
             || self.auth_panel.is_some()
             || self.reload_box.is_some()
             || self.settings_menu.is_some()
+            || self.workflow_form.is_some()
             || self.factory_view.is_some()
         {
             return None;

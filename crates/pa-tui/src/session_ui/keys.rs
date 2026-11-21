@@ -84,6 +84,7 @@ impl SessionUi {
             return;
         }
         let overlay_focused = view.model_picker.is_some()
+            || view.workflow_form.is_some()
             || view.heartbeats_picker.is_some()
             || view.harness_browser.is_some()
             || view.goal_panel.is_some()
@@ -355,6 +356,20 @@ impl SessionUi {
         }
         if view.auth_panel.is_some() {
             return self.handle_auth_panel_key(key, view);
+        }
+        if let Some(form) = &mut view.workflow_form {
+            use crate::workflow_form::WorkflowFormAction;
+            if let Some(id) = id {
+                match form.handle_key(&id, view.editor.keybindings()) {
+                    WorkflowFormAction::None => {}
+                    WorkflowFormAction::Cancel => view.workflow_form = None,
+                    WorkflowFormAction::Submit { name, input } => {
+                        view.workflow_form = None;
+                        self.submit_workflow(name, input, view).await?;
+                    }
+                }
+            }
+            return Ok(());
         }
         if view.settings_menu.is_some() {
             return self.handle_settings_menu_key(key, view).await;

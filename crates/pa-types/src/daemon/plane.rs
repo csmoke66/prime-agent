@@ -47,6 +47,7 @@ pub fn command_plane(command_type: &str) -> DaemonCommandPlane {
         | "get_connection_state"
         | "get_messages"
         | "get_rlm_children"
+        | "run_workflow" | "list_workflows"
         | "get_session_stats"
         | "get_context_tree"
         | "get_commands"
@@ -132,6 +133,7 @@ const READ_ONLY_DAEMON_COMMANDS: &[&str] = &[
     "get_messages",
     "get_session_messages",
     "get_rlm_children",
+    "list_workflows",
     "get_session_stats",
     "get_context_tree",
     "get_commands",

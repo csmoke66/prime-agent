@@ -694,6 +694,18 @@ pub enum DaemonCommand {
         #[serde(flatten)]
         rest: JsonMap,
     },
+    ListWorkflows {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+    },
+    RunWorkflow {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        name: String,
+        input: Value,
+    },
     GetRlmChildren {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,

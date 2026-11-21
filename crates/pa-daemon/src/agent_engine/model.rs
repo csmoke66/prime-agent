@@ -250,13 +250,36 @@ impl AgentSessionEngine {
             .note_refused(surface, selector, &self.cwd());
     }
 
-    /// Resolve the model through the composed registry, then enforce the
-    /// settings `allowedModels` allowlist: a resolution outside the allowlist
-    /// fails loudly here (never a silent fallback), emitting `model refused`.
+    /// A human's session is not constrained by the spawn policy. A child remains
+    /// bound to its family's policy when its model is restored, switched or retried.
+    pub(crate) fn model_selection_policy(&self) -> crate::model_allowlist::DaemonAllowlist {
+        let depth = self.rlm_depth.load(std::sync::atomic::Ordering::Relaxed);
+        if depth == 0 {
+            return crate::model_allowlist::DaemonAllowlist::Unrestricted;
+        }
+        let file = self.session_file.lock().expect("session file lock").clone();
+        match crate::model_allowlist::child_policy(
+            &self.cwd(),
+            &self.config.agent_dir,
+            file.as_deref(),
+            depth,
+        ) {
+            Ok((allowlist, _)) => allowlist,
+            Err(error) => crate::model_allowlist::DaemonAllowlist::Unreadable(format!("{error:#}")),
+        }
+    }
+
+    /// Resolve the selected model, enforcing the spawn policy only for children.
     pub(super) fn resolve_registry_model(&self) -> anyhow::Result<Model> {
         let model = self.resolve_registry_model_unchecked()?;
+        let allowlist = self.model_selection_policy();
+        if matches!(
+            allowlist,
+            crate::model_allowlist::DaemonAllowlist::Unrestricted
+        ) {
+            return Ok(model);
+        }
         let selector = format!("{}/{}", model.provider, model.id);
-        let allowlist = crate::model_allowlist::load(&self.cwd(), &self.config.agent_dir);
         if let Err(refusal) = crate::model_allowlist::assert_allowed(&allowlist, &selector) {
             if let Some(refusal) = refusal.downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
             {

@@ -38,7 +38,7 @@ impl SessionUi {
         match name.as_str() {
             "help" => {
                 self.note(
-                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/exit           detach and exit",
+                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/subagent-settings  session-specific child models and effort\n/exit           detach and exit",
                     view,
                 );
                 return Ok(());
@@ -196,6 +196,31 @@ impl SessionUi {
                 self.open_model_picker(view, "").await?;
                 self.track_menu_opened("model", "command");
                 self.track_feature_outcome("model", "initiated", None);
+            }
+            "subagent-settings" | "inbox-reminders" => {
+                let (Some(settings), Some(file)) =
+                    (self.client_settings.clone(), self.session_file.clone())
+                else {
+                    self.error_row("This setting requires an attached, saved session.", view);
+                    return Ok(());
+                };
+                let args = resolved.args.clone();
+                let inbox = resolved.name == "inbox-reminders";
+                match tokio::task::spawn_blocking(move || {
+                    if inbox {
+                        settings.inbox_reminders(&file, &args)
+                    } else {
+                        settings.subagent_settings(&file, &args)
+                    }
+                })
+                .await
+                {
+                    Ok(Ok(report)) => self.note(&report, view),
+                    Ok(Err(error)) => self.error_row(&format!("{error:#}"), view),
+                    Err(error) => {
+                        self.error_row(&format!("Could not access session settings: {error}"), view)
+                    }
+                }
             }
             "effort" => {
                 let Some(state) = self.connection_state(view).await else {

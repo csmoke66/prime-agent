@@ -9,6 +9,8 @@
 //! message (`bash.consumed`), so a collected job leaves nothing
 //! waiting.
 
+pub mod reminders;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -968,6 +970,36 @@ mod tests {
             text: text.to_string(),
             meta,
         }
+    }
+
+    #[test]
+    fn reminder_modes_show_only_waiting_bodies_without_consuming_them() {
+        use super::reminders::ReminderMode;
+        let inbox = SessionInbox::in_memory();
+        let long = format!("{}tail", "λ".repeat(200));
+        for i in 0..6 {
+            inbox.push(
+                notice(
+                    "child",
+                    INBOX_CLASS_AGENT_MESSAGE,
+                    if i == 0 { &long } else { "short" },
+                    Value::Null,
+                ),
+                i,
+            );
+        }
+        assert_eq!(
+            inbox.unread_reminder(ReminderMode::Count),
+            reminder_notice(6)
+        );
+        let preview = inbox.unread_reminder(ReminderMode::Preview);
+        assert!(preview.contains("child: λ") && preview.contains("1 more unread"));
+        assert!(!preview.contains("tail"));
+        let full = inbox.unread_reminder(ReminderMode::Full);
+        assert!(full.contains(&long));
+        assert_eq!(full.matches("child: short").count(), 5);
+        assert_eq!(inbox.drain().len(), 6);
+        assert!(!inbox.unread_reminder(ReminderMode::Full).contains("short"));
     }
 
     /// Push, drain, and count round-trip through the store's in-memory

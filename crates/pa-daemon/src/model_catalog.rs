@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::model_allowlist::{self, DaemonAllowlist};
+use crate::model_allowlist::DaemonAllowlist;
 use crate::protocol::{response_success, DaemonResponse};
 use crate::worker::{OutboundFrame, Worker};
 
@@ -19,6 +19,13 @@ pub(crate) struct RefreshGate {
 }
 
 impl Worker {
+    pub(crate) fn model_selection_policy(&self) -> DaemonAllowlist {
+        self.agent_engine.as_ref().map_or_else(
+            || DaemonAllowlist::Unrestricted,
+            |engine| engine.model_selection_policy(),
+        )
+    }
+
     /// `get_model_catalog`: the picker loads this response off the UI thread.
     pub(crate) async fn handle_get_model_catalog(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_model_catalog") {
@@ -30,8 +37,7 @@ impl Worker {
             pa_core::auth::AuthStorage::create(&agent_dir),
             models_json.clone(),
         );
-        let cwd = self.core.lock().unwrap().cwd.clone();
-        let allowlist = model_allowlist::load(cwd.as_ref(), &agent_dir);
+        let allowlist = self.model_selection_policy();
         let available = registry.get_available();
         let mut served = catalog_payload(&registry, available.iter().copied(), &allowlist);
         // An observed credential-scope change forces the refresh; the
@@ -602,7 +608,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daemon_picker_and_available_models_respect_global_policy_across_refresh() {
+    async fn root_picker_includes_models_outside_global_policy_across_refresh() {
         let mut fixture = fixture(create_phase_answers()).await;
         std::fs::write(
             fixture.agent_dir.join("settings.json"),
@@ -620,10 +626,7 @@ mod tests {
             ))));
 
         let served = get_model_catalog(&fixture.worker, "catalog-session").await;
-        let served_models = served["models"].as_array().expect("models array");
-        assert_eq!(served_models.len(), 1);
         assert!(has_model(&served, "mock-1"));
-        assert_eq!(served["configuredProviders"], json!(["prime-inference"]));
 
         let available = fixture
             .worker
@@ -636,18 +639,14 @@ mod tests {
             available.success,
             "get_available_models failed: {available:?}"
         );
-        assert_eq!(
-            available.data.expect("available models")["models"],
-            served["models"]
-        );
+        let available = available.data.expect("available models");
+        assert!(has_model(&available, "mock-1"));
+        assert!(!has_model(&available, "probe-v1"));
 
         let _ = release.send(ok_json(&catalog_aggregate(&["probe-v1", "probe-v2"])));
         await_catalog_changed(&mut fixture.events).await;
         let refreshed = get_model_catalog(&fixture.worker, "catalog-session").await;
-        assert_eq!(
-            refreshed["models"].as_array().expect("models array").len(),
-            2
-        );
+        assert!(has_model(&refreshed, "probe-v1"));
         assert!(has_model(&refreshed, "mock-1"));
         assert!(has_model(&refreshed, "probe-v2"));
     }

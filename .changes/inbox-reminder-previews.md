@@ -1,0 +1,1 @@
+- Inbox reminders now preview unread messages without consuming them. `/inbox-reminders count|preview|full` changes the detail level for the attached session.

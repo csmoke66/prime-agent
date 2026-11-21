@@ -26,7 +26,7 @@ impl AgentSessionEngine {
 
     /// The failover chain for `model`: the other auth-configured providers
     /// serving the same model id, in catalog order after the current one,
-    /// filtered by the daemon model allowlist. Faux-script sessions never
+    /// filtered by the family spawn policy for children. Faux-script sessions never
     /// fail over.
     pub(super) fn failover_candidates(
         &self,
@@ -41,7 +41,7 @@ impl AgentSessionEngine {
         let available: Vec<pa_types::ai::Model> =
             registry.get_available().into_iter().cloned().collect();
         let candidates = pa_core::models::failover_candidates(model, &available);
-        match crate::model_allowlist::load(&self.cwd(), &self.config.agent_dir) {
+        match self.model_selection_policy() {
             DaemonAllowlist::Unrestricted => candidates,
             DaemonAllowlist::Allowed(patterns) => candidates
                 .into_iter()

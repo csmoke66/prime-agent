@@ -609,10 +609,8 @@ impl SettingsManager {
             .filter(|m| !m.is_empty())
     }
 
-    /// The daemon-level model allowlist (settings `allowedModels`), enforced at every
-    /// daemon model resolution — a model outside fails loudly, never a fallback.
-    /// Rust-only guardrail; `None` is unrestricted; global scope only, so a project
-    /// cannot weaken a box-level pin; a list that trims to empty behaves as unset.
+    /// Global default child-model patterns. A session override replaces this list.
+    /// A list that trims to empty is unrestricted; project settings do not participate.
     #[must_use]
     pub fn get_allowed_models(&self) -> Option<Vec<String>> {
         let patterns = self.global.allowed_models.as_ref()?;

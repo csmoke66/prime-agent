@@ -1,7 +1,5 @@
-//! The daemon-level model allowlist (settings `allowedModels`): the model
-//! patterns a daemon may resolve to — a daemon policy, not a session
-//! preference; an outside model fails loudly with [`ModelAllowlistRefusal`].
-//! Rust-only guardrail (no TS equivalent; unset means unrestricted).
+//! Pattern matching and typed refusals for child-model selection. The daemon
+//! resolves the effective pattern list for the session before checking it.
 
 /// A model the daemon refused to resolve: the resolved selector is outside
 /// the configured allowlist, typed so enforcement seams can downcast the
@@ -16,9 +14,8 @@ impl std::fmt::Display for ModelAllowlistRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Model \"{}\" is blocked by the daemon model allowlist (settings \"allowedModels\"); \
-             the daemon never falls back to a different model. Allow it in the settings \
-             or pick an allowed model.",
+            "Model \"{}\" is blocked by the daemon model allowlist for sub-agents. \
+             Pick an allowed model or change this session's list with /subagent-settings.",
             self.selector
         )
     }
@@ -107,19 +104,5 @@ mod tests {
         assert!(!model_allowed(SELECTOR, &[]));
         assert!(!model_allowed(SELECTOR, &["  ".to_string()]));
         assert!(!model_allowed(SELECTOR, &allow("[")));
-    }
-
-    #[test]
-    fn the_refusal_error_carries_the_selector() {
-        let refusal = ModelAllowlistRefusal {
-            selector: "zai/glm-5.3".to_string(),
-        };
-        assert_eq!(refusal.selector, "zai/glm-5.3");
-        let message = refusal.to_string();
-        assert!(
-            message.contains("Model \"zai/glm-5.3\" is blocked by the daemon model allowlist"),
-            "{message}"
-        );
-        assert!(message.contains("never falls back"), "{message}");
     }
 }

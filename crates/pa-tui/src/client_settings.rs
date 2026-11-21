@@ -18,6 +18,16 @@ pub trait ClientSettings: Send + Sync {
         anyhow::bail!("Harness refinement settings are unavailable")
     }
 
+    /// Read or update the attached session's child policy without mutating global settings.
+    fn subagent_settings(&self, _session_file: &str, _arguments: &str) -> Result<String> {
+        anyhow::bail!("Session sub-agent settings are unavailable")
+    }
+
+    /// Configure non-consuming reminder previews for the attached session.
+    fn inbox_reminders(&self, _session_file: &str, _arguments: &str) -> Result<String> {
+        anyhow::bail!("Session inbox reminder settings are unavailable")
+    }
+
     /// Load raw harness entries from the global and active session's local stores.
     ///
     /// # Errors

@@ -1,0 +1,1 @@
+- `/model` is independent of sub-agent restrictions. Use `/subagent-settings` to change the child model list and reasoning effort for one session without editing global settings.

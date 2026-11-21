@@ -135,6 +135,7 @@ async fn sessions_with_gated_supervisor(
         rename_verdict_rx,
     )
     .await;
+    let session_file = socket.with_extension("").join("parent.jsonl");
     let link = Arc::new(crate::supervisor_link::SupervisorLink::new(socket));
     let sessions = SupervisorChildSessions::new(
         link,
@@ -149,6 +150,7 @@ async fn sessions_with_gated_supervisor(
     sessions.set_identity(ParentIdentity {
         model: Some("mock/mock-1".to_string()),
         cwd: Some(std::env::temp_dir().to_string_lossy().to_string()),
+        session_file: Some(session_file.to_string_lossy().into_owned()),
         ..ParentIdentity::with_default_depth()
     });
     sessions
@@ -163,6 +165,115 @@ fn spawn_request(name: &str, prompt: &str) -> RlmSpawnRequest {
         cwd: None,
         spawned_by_request_id: None,
         factory: None,
+    }
+}
+
+#[tokio::test]
+async fn pathless_parent_cannot_spawn_an_unrecordable_child() {
+    let (create_seen_tx, mut create_seen_rx) = mpsc::unbounded_channel();
+    let (_verdict_tx, verdict_rx) = mpsc::unbounded_channel();
+    let (rename_seen_tx, _rename_seen_rx) = mpsc::unbounded_channel();
+    let sessions =
+        sessions_with_gated_supervisor(create_seen_tx, verdict_rx, rename_seen_tx, None).await;
+    for session_file in [None, Some(String::new())] {
+        sessions.set_identity(ParentIdentity {
+            model: Some("mock/mock-1".into()),
+            session_file,
+            ..ParentIdentity::with_default_depth()
+        });
+        let error = sessions
+            .spawn(spawn_request("pathless", "do not launch"))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "rlm.spawn requires a saved parent session to record the child"
+        );
+    }
+    assert!(create_seen_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn nested_spawns_use_the_roots_live_policy_and_forward_its_effort() {
+    use pa_core::session::subagent_policy::SessionSubagentPolicy;
+    use pa_core::settings::ThinkingLevelSetting;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("sessions/root.jsonl");
+    let child = dir.path().join("sessions/child.jsonl");
+    std::fs::create_dir(child.parent().unwrap()).unwrap();
+    SessionSubagentPolicy::set_models(&root, Some(vec!["different/*".into()])).unwrap();
+    // A descendant cannot replace its root's policy with its own sidecar.
+    SessionSubagentPolicy::set_models(&child, Some(vec![])).unwrap();
+    std::fs::write(
+        &child,
+        json!({
+            "type": "session", "id": "child-id", "cwd": dir.path(),
+            "timestamp": "2026-01-01T00:00:00Z", "rlmDepth": 1, "parentSession": &root,
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let (create_seen_tx, mut create_seen_rx) = mpsc::unbounded_channel();
+    let (verdict_tx, verdict_rx) = mpsc::unbounded_channel();
+    let (rename_seen_tx, _rename_seen_rx) = mpsc::unbounded_channel();
+    let sessions =
+        sessions_with_gated_supervisor(create_seen_tx, verdict_rx, rename_seen_tx, None).await;
+    sessions.set_identity(ParentIdentity {
+        rlm_depth: 1,
+        rlm_max_depth: 2,
+        model: Some("mock/mock-1".into()),
+        cwd: Some(dir.path().to_string_lossy().into_owned()),
+        session_id: Some("child-id".into()),
+        session_file: Some(child.to_string_lossy().into_owned()),
+        thinking: Some("medium".into()),
+        child_script: None,
+    });
+
+    for model in [None, Some("mock/mock-1".into())] {
+        let mut request = spawn_request("blocked", "must not launch");
+        request.model = model;
+        let error = sessions.spawn(request).await.unwrap_err();
+        assert_eq!(
+            error
+                .downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
+                .unwrap()
+                .selector,
+            "mock/mock-1"
+        );
+        assert!(error.to_string().contains("/subagent-settings"), "{error}");
+    }
+    assert!(create_seen_rx.try_recv().is_err());
+
+    SessionSubagentPolicy::set_models(&root, Some(vec!["mock/*".into()])).unwrap();
+    for (name, effort, model, requested) in [
+        ("first", ThinkingLevelSetting::High, None, Some("off")),
+        (
+            "second",
+            ThinkingLevelSetting::Off,
+            Some("mock/mock-1"),
+            None,
+        ),
+    ] {
+        SessionSubagentPolicy::set_effort(&root, Some(effort)).unwrap();
+        let mut request = spawn_request(name, "admit using the current session policy");
+        request.model = model.map(str::to_string);
+        request.thinking = requested.map(str::to_string);
+        let spawned = tokio::spawn(sessions.spawn(request));
+        let create = tokio::time::timeout(Duration::from_secs(5), create_seen_rx.recv())
+            .await
+            .expect("the spawn must send a create")
+            .unwrap();
+        assert_eq!(create["config"]["provider"], "mock");
+        assert_eq!(create["config"]["model"], "mock-1");
+        assert_eq!(create["config"]["rlmDepth"], 2);
+        assert_eq!(
+            create["config"]["thinking"],
+            effort.model_level().wire_name()
+        );
+        verdict_tx.send(true).unwrap();
+        assert_eq!(spawned.await.unwrap().unwrap().model, "mock/mock-1");
     }
 }
 

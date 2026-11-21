@@ -84,6 +84,31 @@ pub fn load(cwd: &Path, agent_dir: &Path) -> DaemonAllowlist {
     }
 }
 
+/// Resolve both child controls from one session-policy snapshot. A session
+/// override *replaces* the global list; it is not an intersection.
+pub(crate) fn child_policy(
+    cwd: &Path,
+    agent_dir: &Path,
+    session_file: Option<&Path>,
+    depth: u32,
+) -> Result<(
+    DaemonAllowlist,
+    Option<pa_core::settings::ThinkingLevelSetting>,
+)> {
+    use pa_core::session::subagent_policy::SessionSubagentPolicy;
+    let policy = match session_file {
+        Some(file) => SessionSubagentPolicy::load(&SessionSubagentPolicy::owner_log(file, depth)?)?,
+        None if depth == 0 => SessionSubagentPolicy::default(),
+        None => anyhow::bail!("sub-agent policy cannot be read without the child's session log"),
+    };
+    let allowlist = match policy.allowed_models {
+        Some(models) if models.is_empty() => DaemonAllowlist::Unrestricted,
+        Some(models) => DaemonAllowlist::Allowed(models),
+        None => load(cwd, agent_dir),
+    };
+    Ok((allowlist, policy.effort))
+}
+
 /// Enforce the allowlist on a resolved selector: `Ok(())` when allowed
 /// (and when no allowlist is configured), the typed refusal for an
 /// off-allowlist model, and a fail-closed error when the policy is
@@ -93,7 +118,7 @@ pub(crate) fn assert_allowed(allowlist: &DaemonAllowlist, selector: &str) -> Res
         DaemonAllowlist::Unreadable(error) => Err(anyhow::anyhow!(
             "The daemon model allowlist could not be read ({error}); \
              refusing to resolve model \"{selector}\" — the daemon fails closed instead of \
-             bypassing the configured allowedModels policy. Fix settings.json and retry."
+             bypassing the configured policy. Check the session override and settings.json."
         )),
         _ if allowlist.allows(selector) => Ok(()),
         _ => Err(ModelAllowlistRefusal {

@@ -27,10 +27,24 @@ Support for more web search options:
 
 ### Allowed models
 
-Better support for allowed models:
-* `/models` only shows allowed models
-* Agents can only see allowed models when listing models
-* Allowed models are listed if an agent attempts to spawn a non-allowed model.
+`/model` lets you choose the main session's model from the full catalog. Sub-agents use a separate allowlist: they can query which models are allowed, and a rejected spawn lists the allowed choices.
+
+In an attached session, `/subagent-settings` shows the effective child model list and effort. For example:
+
+```text
+/subagent-settings models openai-codex/gpt-6.2-astra openai-codex/gpt-6.2-sol
+/subagent-settings effort high
+```
+
+Use `models all` for unrestricted child selection or `models inherit` to use `settings.json` again. `effort inherit` restores the normal spawn or parent effort. These overrides survive reattaching, apply to subsequent spawns in that session family, and leave other sessions alone.
+
+### Inbox reminders
+
+Use `/inbox-reminders` to see the setting for the attached session. `preview` (the default) shows the first five unread messages, up to 200 characters each. `/inbox-reminders full` includes every unread message body in each reminder, which can use considerably more context. `/inbox-reminders count` restores the count-only notice. None of these marks a message as read or changes when the parent wakes.
+
+### Inspect the harness
+
+In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
 
 ## Install
 

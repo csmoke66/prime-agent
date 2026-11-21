@@ -813,8 +813,6 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
             .retain(|item| item.queue_key.as_deref() != Some(INBOX_REMINDER_QUEUE_KEY));
         changed |= core_guard.steering.len() + core_guard.follow_up.len() != before;
     } else {
-        let reminder = inbox
-            .with_persistence_error_clause(pa_core::session_engine::inbox::reminder_notice(count));
         let core_guard = &mut *core_guard;
         let (steering, follow_up) = (&mut core_guard.steering, &mut core_guard.follow_up);
         for item in steering
@@ -822,6 +820,15 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
             .chain(follow_up.iter_mut())
             .filter(|item| item.queue_key.as_deref() == Some(INBOX_REMINDER_QUEUE_KEY))
         {
+            use pa_core::session_engine::inbox::reminders::ReminderMode;
+            let mode = item
+                .custom_message
+                .as_ref()
+                .and_then(|row| row.pointer("/details/reminderMode"))
+                .and_then(Value::as_str)
+                .and_then(|s| ReminderMode::parse(s).ok())
+                .unwrap_or(ReminderMode::Count);
+            let reminder = inbox.with_persistence_error_clause(inbox.unread_reminder(mode));
             if rerender_inbox_notice(item, &reminder) {
                 changed = true;
             }
@@ -851,6 +858,19 @@ pub(crate) fn admit_inbox_reminder(
     session_is_closed: impl Fn() -> bool,
     engine: Option<&crate::agent_engine::AgentSessionEngine>,
 ) {
+    use pa_core::session_engine::inbox::reminders::ReminderMode;
+    // Load outside the queue lock. The inbox identity is checked again below.
+    let log = core
+        .lock()
+        .unwrap()
+        .store
+        .as_ref()
+        .map(|store| store.path.clone());
+    let mode = log
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or(ReminderMode::default(), |p| {
+            ReminderMode::load(&p).unwrap_or(ReminderMode::Count)
+        });
     let mut core_guard = core.lock().unwrap();
     if session_is_closed() {
         return;
@@ -878,15 +898,15 @@ pub(crate) fn admit_inbox_reminder(
         return;
     }
     let now = pa_core::autonomous::now_millis();
-    let message =
-        inbox.with_persistence_error_clause(pa_core::session_engine::inbox::reminder_notice(count));
+    let message = inbox.with_persistence_error_clause(inbox.unread_reminder(mode));
     // The custom twin rides the turn: the reminder delivers as the inbox
     // system's attributed custom row, its content the model-visible text.
-    let custom_message = pa_core::session_engine::inbox::create_inbox_notice_row(
+    let mut custom_message = pa_core::session_engine::inbox::create_inbox_notice_row(
         &message,
         pa_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER,
         now,
     );
+    custom_message["details"]["reminderMode"] = json!(mode.name());
     let (policy, queue_visible) = if core_guard.busy {
         (TurnPolicy::Queued, true)
     } else {

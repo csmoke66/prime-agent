@@ -9,6 +9,8 @@ use pa_core::session_engine::harness_digest::local_harness_dir_for_log;
 use pa_tui::client_settings::ClientSettings;
 use serde_json::Value;
 
+mod subagent;
+
 /// The seam handle the interactive run carries.
 #[derive(Clone)]
 pub struct CliClientSettings {
@@ -74,6 +76,31 @@ impl ClientSettings for CliClientSettings {
             });
         }
         Ok(())
+    }
+
+    fn inbox_reminders(&self, session_file: &str, arguments: &str) -> Result<String> {
+        use pa_core::session_engine::inbox::reminders::ReminderMode;
+        let file = Path::new(session_file);
+        let mode = if arguments.is_empty() {
+            ReminderMode::load(file)?
+        } else {
+            let mode = ReminderMode::parse(arguments.trim())?;
+            mode.save(file)?;
+            mode
+        };
+        Ok(format!(
+            "This session's inbox reminders: {}\n/inbox-reminders count | preview | full",
+            mode.name()
+        ))
+    }
+
+    fn subagent_settings(&self, session_file: &str, arguments: &str) -> Result<String> {
+        subagent::configure(
+            Path::new(session_file),
+            &self.cwd,
+            &self.agent_dir,
+            arguments,
+        )
     }
 
     fn harness_entries(&self, session_file: Option<&str>) -> Result<Vec<Value>> {

@@ -351,25 +351,16 @@ async fn the_reminder_repeats_while_the_inbox_stays_unread() {
         Some("inbox:reminder"),
         "the reminder carries its coalescing key: {queue_key:?}"
     );
-    // The reminder's custom twin: the same inbox-notice row, class
-    // `reminder`, its content the model-visible reminder text —
-    // whole-object equality against the builder, the admission
-    // timestamp read back.
     let row = custom_message
         .as_ref()
         .expect("the reminder row carries its custom twin");
-    let admitted_at = row["timestamp"]
-        .as_u64()
-        .expect("the twin carries the admission timestamp");
-    assert_eq!(
-        row,
-        &pa_core::session_engine::inbox::create_inbox_notice_row(
-            message,
-            pa_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER,
-            admitted_at,
-        ),
-        "the reminder twin is exactly the builder's row"
+    assert!(
+        message.contains(": waiting"),
+        "the unread body reaches the model"
     );
+    assert_eq!(row["content"], message.as_str());
+    assert_eq!(row["details"]["class"], "reminder");
+    assert_eq!(row["details"]["reminderMode"], "preview");
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 
@@ -579,24 +570,17 @@ async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
                 .starts_with("[inbox reminder] 1 message still waiting"),
             "the reminder re-rendered over the live count: {reminder:?}"
         );
-        // THE TWIN-SYNC (the stale-twin trap): the re-render rewrote the
-        // row's text, and the twin keeps its identity (sender, class,
-        // timestamp — the sentinel stamped in BEFORE the sweep) while
-        // its content moves with the row — whole-object equality against
-        // the builder.
+        // Re-render the remaining unread body, not withdrawn or previously read bodies.
+        assert!(reminder.message.contains("job three: [bash-done pid:4323"));
+        assert!(!reminder.message.contains("job one") && !reminder.message.contains("job two"));
         let row = reminder
             .custom_message
             .as_ref()
             .expect("the re-rendered reminder keeps its custom twin");
-        assert_eq!(
-            row,
-            &pa_core::session_engine::inbox::create_inbox_notice_row(
-                &reminder.message,
-                pa_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER,
-                SENTINEL_TIMESTAMP,
-            ),
-            "the re-rendered twin keeps its identity and only its content moved: {row}"
-        );
+        assert_eq!(row["content"], reminder.message);
+        assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
+        assert_eq!(row["details"]["class"], "reminder");
+        assert_eq!(row["details"]["reminderMode"], "preview");
         assert_eq!(
             core.steering
                 .iter()
@@ -975,15 +959,13 @@ async fn a_withdrawal_inside_a_covered_batch_rerenders_the_queued_rows() {
             } else {
                 panic!("the re-rendered rows keep their inbox keys: {key}")
             };
-            assert_eq!(
-                row,
-                &pa_core::session_engine::inbox::create_inbox_notice_row(
-                    &item.message,
-                    class,
-                    SENTINEL_TIMESTAMP,
-                ),
-                "the re-rendered twin keeps its identity and only its content moved: {row}"
-            );
+            assert_eq!(row["details"]["class"], class);
+            assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
+            assert_eq!(row["content"], item.message);
+            if key == INBOX_REMINDER_QUEUE_KEY {
+                assert!(item.message.contains("sender-factory-progress: second"));
+                assert_eq!(row["details"]["reminderMode"], "preview");
+            }
         }
     }
     // The re-render reached the recovery journal: a crash now revives

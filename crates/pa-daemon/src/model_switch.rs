@@ -13,11 +13,37 @@ use crate::worker::Worker;
 const THINKING_LEVELS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 impl Worker {
+    /// Check the family guard before switching so a child gets the policy reason
+    /// rather than a generic engine-switch error. Human sessions skip this check.
+    pub(crate) fn model_selection_refusal(
+        &self,
+        command: &str,
+        model: &pa_types::ai::Model,
+    ) -> Option<DaemonResponse> {
+        let policy = self.model_selection_policy();
+        if matches!(
+            policy,
+            crate::model_allowlist::DaemonAllowlist::Unrestricted
+        ) {
+            return None;
+        }
+        let selector = format!("{}/{}", model.provider, model.id);
+        let refusal = crate::model_allowlist::assert_allowed(&policy, &selector).err()?;
+        if refusal
+            .downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
+            .is_some()
+        {
+            if let Some(engine) = &self.agent_engine {
+                engine.note_model_refused(command, &selector);
+            }
+        }
+        Some(response_failure(None, command, &refusal.to_string(), None))
+    }
+
     /// `set_model { provider, modelId }`: resolve through the registry's
-    /// available catalog, enforce the daemon model allowlist (outside it
-    /// fails loudly, never a fallback), switch the engine, record the
-    /// durable `model_change` row, and persist the settings default. The
-    /// switch parks the runtime, so it runs on the blocking pool.
+    /// available catalog, switch the engine, record the durable `model_change`
+    /// row, and persist the settings default. A child's selection must still
+    /// meet its family's sub-agent policy. The switch runs on the blocking pool.
     pub(crate) async fn handle_set_model(&self, payload: &Value) -> DaemonResponse {
         if let Err(response) = self.require_created("set_model") {
             return response;
@@ -58,28 +84,8 @@ impl Worker {
             }
             Err(error) => return response_failure(None, "set_model", &error.to_string(), None),
         };
-        // The daemon model allowlist (settings `allowedModels`): outside
-        // it fails loudly, never a fallback.
-        let selector = format!("{provider}/{model_id}");
-        let cwd = {
-            let core = self.core.lock().unwrap();
-            core.cwd.clone()
-        };
-        let allowlist =
-            crate::model_allowlist::load(std::path::Path::new(&cwd), &self.config.agent_dir);
-        if let Err(refusal) = crate::model_allowlist::assert_allowed(&allowlist, &selector) {
-            // The event rides the typed refusal only (the other seams'
-            // rule): a fail-closed unreadable-allowlist error is a
-            // settings problem, not an allowlist refusal.
-            if refusal
-                .downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
-                .is_some()
-            {
-                if let Some(agent_engine) = &self.agent_engine {
-                    agent_engine.note_model_refused("set_model", &selector);
-                }
-            }
-            return response_failure(None, "set_model", &refusal.to_string(), None);
+        if let Some(refusal) = self.model_selection_refusal("set_model", &model) {
+            return refusal;
         }
         let engine = std::sync::Arc::clone(&self.engine);
         let core = std::sync::Arc::clone(&self.core);
@@ -288,7 +294,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_model_refuses_models_outside_the_allowlist() {
+    async fn root_set_model_defers_to_engine_not_child_allowlist() {
         async fn dispatch_set_model(
             worker: &std::sync::Arc<crate::worker::Worker>,
         ) -> crate::protocol::DaemonResponse {
@@ -318,33 +324,10 @@ mod tests {
             .await;
         assert!(created.success, "create failed: {created:?}");
         let response = dispatch_set_model(&worker).await;
-        assert!(!response.success);
-        assert_eq!(response.command, "set_model");
-        assert_eq!(
-            response.error.as_deref(),
-            Some("Model \"prime-inference/mock-1\" is blocked by the daemon model allowlist (settings \"allowedModels\"); the daemon never falls back to a different model. Allow it in the settings or pick an allowed model.")
-        );
-
-        // An allowing allowlist opens the gate: the scripted engine then
-        // fails with its own non-switching message.
-        std::fs::write(
-            dir.join("agent").join("settings.json"),
-            json!({ "allowedModels": ["prime-inference/*"] }).to_string(),
-        )
-        .unwrap();
-        let response = dispatch_set_model(&worker).await;
         assert!(
             !response.success,
             "the scripted harness does not switch models"
         );
-        assert_eq!(
-            response.error.as_deref(),
-            Some("This session does not support model switching")
-        );
-
-        // No allowlist configured: the TS behavior (the gate is a no-op).
-        std::fs::remove_file(dir.join("agent").join("settings.json")).unwrap();
-        let response = dispatch_set_model(&worker).await;
         assert_eq!(
             response.error.as_deref(),
             Some("This session does not support model switching")

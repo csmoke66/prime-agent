@@ -8,33 +8,45 @@ use super::{
     assert_thinking_supported, bail, create_default_rlm_subagent_session_name, json, now_ms,
     resolve_child_cwd, resolve_child_model, rlm_child_label, rlm_depth_limit_error,
     spawn_name_unavailable_error, Arc, ChildCloseReason, ChildObservationSource, ChildRecord,
-    Context, DaemonCommand, Duration, Instant, Mutex, Path, Result, RlmChildResult,
+    Context, DaemonCommand, Duration, Instant, Mutex, ParentIdentity, Path, Result, RlmChildResult,
     RlmCreateSessionHandle, RlmCreateSessionRequest, RlmDeleteSubagentResult, RlmHostFuture,
     RlmSpawnHandle, RlmSpawnRequest, RlmSubagentEntry, RlmSubagentHost, SpawnNameReservationGuard,
     SupervisorChildSessions, SupervisorChildSessionsInner, Value, KILL_TIMEOUT_MS,
     RENAME_TIMEOUT_MS, STATE_TIMEOUT_MS,
 };
 use pa_core::kernel::rlm_runtime::RlmModelInfo;
+use pa_core::settings::ThinkingLevelSetting;
 
+use crate::model_allowlist;
 use crate::rlm_child_model::discoverable_models;
 
-/// Resolve the child model with the daemon `allowedModels` allowlist enforced, refusing loudly with
-/// the typed error and the `model refused` event; the settings read runs on the blocking pool.
+/// Resolve an admission against a fresh snapshot of the family's child policy.
+/// A blocked selector carries the typed refusal and emits `model refused`.
 async fn resolve_child_model_allowlisted(
     this: &SupervisorChildSessionsInner,
+    identity: &ParentIdentity,
     reference: Option<&str>,
     surface: &'static str,
     target: &str,
-) -> Result<String> {
-    let identity = this.identity.lock().expect("identity lock").clone();
-    let cwd = identity.cwd.clone().unwrap_or_else(|| "/".to_string());
-    let load_cwd = cwd.clone();
+) -> Result<(String, Option<ThinkingLevelSetting>)> {
+    let cwd = Path::new(identity.cwd.as_deref().unwrap_or("/"));
+    let load_cwd = identity.cwd.clone();
+    let session_file = identity
+        .session_file
+        .clone()
+        .filter(|path| !path.is_empty());
+    let depth = identity.rlm_depth;
     let agent_dir = this.agent_dir.clone();
-    let allowlist = tokio::task::spawn_blocking(move || {
-        crate::model_allowlist::load(Path::new(&load_cwd), &agent_dir)
+    let (allowlist, effort) = tokio::task::spawn_blocking(move || {
+        model_allowlist::child_policy(
+            Path::new(load_cwd.as_deref().unwrap_or("/")),
+            &agent_dir,
+            session_file.as_deref().map(Path::new),
+            depth,
+        )
     })
     .await
-    .context("the allowlist load task join failed")?;
+    .context("the sub-agent policy load task join failed")??;
     match resolve_child_model(
         &this.agent_dir,
         reference,
@@ -42,18 +54,29 @@ async fn resolve_child_model_allowlisted(
         target,
         &allowlist,
     ) {
-        Ok(model) => Ok(model),
+        Ok(model) => Ok((model, effort)),
         Err(error) => {
             if let Some(refusal) = error.downcast_ref::<pa_core::models::ModelAllowlistRefusal>() {
-                this.model_refusal_telemetry.note_refused(
-                    surface,
-                    &refusal.selector,
-                    Path::new(&cwd),
-                );
+                this.model_refusal_telemetry
+                    .note_refused(surface, &refusal.selector, cwd);
             }
             Err(error)
         }
     }
+}
+
+fn resolve_child_thinking<'a>(
+    agent_dir: &Path,
+    model: &str,
+    effort: Option<ThinkingLevelSetting>,
+    requested: Option<&'a str>,
+    inherited: Option<&'a str>,
+) -> Result<Option<&'a str>> {
+    let configured = effort.map(|effort| effort.model_level().wire_name());
+    let selected = configured.or(requested);
+    // An override is a requirement, not an inherited default that a worker may clamp.
+    assert_thinking_supported(agent_dir, selected, model)?;
+    Ok(selected.or(inherited))
 }
 
 /// The `rlm.create_session` launch env (TS `createRlmRootSession`'s
@@ -95,8 +118,24 @@ impl RlmSubagentHost for SupervisorChildSessions {
         let this = Arc::clone(&self.inner);
         Some(Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let cwd = this.identity.lock().expect("identity lock").cwd.clone();
-                discoverable_models(Path::new(cwd.as_deref().unwrap_or("/")), &this.agent_dir)
+                let (cwd, session_file, depth) = {
+                    let identity = this.identity.lock().expect("identity lock");
+                    (
+                        identity.cwd.clone(),
+                        identity
+                            .session_file
+                            .clone()
+                            .filter(|path| !path.is_empty()),
+                        identity.rlm_depth,
+                    )
+                };
+                let (allowlist, _) = model_allowlist::child_policy(
+                    Path::new(cwd.as_deref().unwrap_or("/")),
+                    &this.agent_dir,
+                    session_file.as_deref().map(Path::new),
+                    depth,
+                )?;
+                discoverable_models(&this.agent_dir, &allowlist)
             })
             .await
             .context("the RLM model discovery task join failed")?
@@ -112,6 +151,9 @@ impl RlmSubagentHost for SupervisorChildSessions {
                     identity.rlm_depth,
                     identity.rlm_max_depth
                 ));
+            }
+            if identity.session_file.as_deref().is_none_or(str::is_empty) {
+                bail!("rlm.spawn requires a saved parent session to record the child");
             }
             let child_id = format!("sub-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
             let name = request.name.clone().unwrap_or_else(|| {
@@ -136,15 +178,21 @@ impl RlmSubagentHost for SupervisorChildSessions {
             let admission = async {
                 this.assert_name_available(&name, identity.rlm_depth + 1)
                     .await?;
-                let model = resolve_child_model_allowlisted(
+                let (model, effort) = resolve_child_model_allowlisted(
                     &this,
+                    &identity,
                     request.model.as_deref(),
                     "spawn",
                     "subagent",
                 )
                 .await?;
-                assert_thinking_supported(&this.agent_dir, request.thinking.as_deref(), &model)?;
-                let thinking = request.thinking.as_deref().or(identity.thinking.as_deref());
+                let thinking = resolve_child_thinking(
+                    &this.agent_dir,
+                    &model,
+                    effort,
+                    request.thinking.as_deref(),
+                    identity.thinking.as_deref(),
+                )?;
                 let child_dir = this.child_session_dir(&child_id, &identity)?;
                 let cwd = resolve_child_cwd(
                     Path::new(identity.cwd.as_deref().unwrap_or("/")),
@@ -351,14 +399,21 @@ impl RlmSubagentHost for SupervisorChildSessions {
             if identity.rlm_depth != 0 {
                 bail!("rlm.create_session is available only from a depth-0 session");
             }
-            let model = resolve_child_model_allowlisted(
+            let (model, effort) = resolve_child_model_allowlisted(
                 &this,
+                &identity,
                 request.model.as_deref(),
                 "create_session",
                 "top-level session",
             )
             .await?;
-            assert_thinking_supported(&this.agent_dir, request.thinking.as_deref(), &model)?;
+            let thinking = resolve_child_thinking(
+                &this.agent_dir,
+                &model,
+                effort,
+                request.thinking.as_deref(),
+                identity.thinking.as_deref(),
+            )?;
             // A depth-0 resident session is created exactly like a client
             // `create`: the shared sessions dir and the requested cwd.
             let cwd = resolve_child_cwd(
@@ -369,7 +424,6 @@ impl RlmSubagentHost for SupervisorChildSessions {
             let sessions_dir = crate::paths::sessions_dir(&this.agent_dir)?;
             std::fs::create_dir_all(&sessions_dir)
                 .with_context(|| format!("create sessions dir {}", sessions_dir.display()))?;
-            let thinking = request.thinking.as_deref().or(identity.thinking.as_deref());
             let created = this
                 .launch_child(
                     "root",

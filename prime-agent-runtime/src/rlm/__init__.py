@@ -253,9 +253,10 @@ async def spawn(
     """Spawn a recursive Prime Agent child and return once its task is admitted.
 
     ``name`` is required and must be unique among siblings.
-    ``model`` selects a child with an exact ``provider/model`` selector.
-    ``thinking`` sets the child reasoning level (e.g. 'off', 'low', 'medium', 'high');
-    defaults to the parent level; levels invalid for the resolved model fail the spawn.
+    ``model`` selects a child with an exact ``provider/model`` selector. Use
+    ``find_models`` for the choices available to this session's children.
+    The session's configured sub-agent effort takes precedence over ``thinking``.
+    Without an override, omitted ``thinking`` inherits the parent level.
     ``cwd`` starts the child in that directory (relative to the session cwd); defaults
     to the session cwd.
     """
@@ -329,7 +330,7 @@ async def create_session(
 
 
 async def find_models(query: str = "", limit: int = 8) -> list[RLMModel]:
-    """Search a bounded list of models backed by active user credentials."""
+    """Search credential-backed models eligible for this session's sub-agents."""
     if not isinstance(query, str):
         raise TypeError(f"query must be str, got {type(query).__name__}")
     if not isinstance(limit, int):

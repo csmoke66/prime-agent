@@ -1,6 +1,6 @@
 //! RLM child model discovery and resolution against the authenticated catalog and
-//! daemon policy, plus the spawn-time thinking and working-directory checks and
-//! roster text caps.
+//! effective child policy, plus the spawn-time thinking and working-directory checks
+//! and roster text caps.
 
 use std::path::{Path, PathBuf};
 
@@ -26,14 +26,16 @@ pub const LABEL_MAX_CHARS: usize = 200;
 pub const ANSWER_TEXT_MAX_CHARS: usize = 65_536;
 const ELLIPSIS: &str = "...";
 
-/// The authenticated RLM catalog, narrowed to the global daemon policy before ranking.
-pub(super) fn discoverable_models(cwd: &Path, agent_dir: &Path) -> Result<Vec<RlmModelInfo>> {
-    let allowlist = model_allowlist::load(cwd, agent_dir);
-    require_readable_policy(&allowlist)?;
+/// The authenticated RLM catalog, narrowed to the effective child policy before ranking.
+pub(super) fn discoverable_models(
+    agent_dir: &Path,
+    allowlist: &DaemonAllowlist,
+) -> Result<Vec<RlmModelInfo>> {
+    require_readable_policy(allowlist)?;
     let registry = crate::state_getters::worker_model_registry(agent_dir);
     Ok(eligible_models(
         registry.get_rlm_searchable_models(),
-        &allowlist,
+        allowlist,
     ))
 }
 
@@ -41,7 +43,7 @@ fn require_readable_policy(allowlist: &DaemonAllowlist) -> Result<()> {
     if let DaemonAllowlist::Unreadable(error) = allowlist {
         bail!(
             "The daemon model allowlist could not be read ({error}); \
-             refusing model discovery. Fix settings.json and retry."
+             refusing child model selection. Fix settings.json and retry."
         );
     }
     Ok(())
@@ -63,9 +65,9 @@ fn eligible_models(models: Vec<&Model>, allowlist: &DaemonAllowlist) -> Vec<RlmM
         .collect()
 }
 
-/// Resolve the child model reference, then enforce the daemon
-/// `allowedModels` allowlist on the resolved selector (inherited parent
-/// model included): outside the allowlist fails loudly, never a fallback.
+/// Resolve the child model reference, then enforce the effective allowlist on
+/// the resolved selector (inherited parent model included): outside the
+/// allowlist fails loudly, never a fallback.
 ///
 /// # Errors
 /// Returns an error when the reference cannot be resolved or the selector is outside the allowlist.
@@ -355,11 +357,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daemon_find_models_filters_global_policy_before_ranking_and_fails_closed() {
+    async fn daemon_find_models_uses_live_session_policy_before_ranking_and_fails_closed() {
         use std::sync::Arc;
 
         use pa_core::kernel::shared::HostRequestPayload;
         use pa_core::session::manager::SessionManager;
+        use pa_core::session::subagent_policy::SessionSubagentPolicy;
+        use pa_core::session_engine::harness_digest::session_artifact_dir_for_log;
         use pa_core::session_engine::runtime_wiring::{wire_session_runtime, RlmWiring};
 
         use crate::rlm_children::{ParentIdentity, SupervisorChildSessions};
@@ -380,6 +384,7 @@ mod tests {
             r#"{"allowedModels":["test-provider/glm-5.3"]}"#,
         )
         .unwrap();
+        let session_file = dir.path().join("sessions/root.jsonl");
         let host = SupervisorChildSessions::new(
             Arc::new(crate::supervisor_link::SupervisorLink::new(
                 dir.path().join("supervisor.sock"),
@@ -394,6 +399,7 @@ mod tests {
         );
         host.set_identity(ParentIdentity {
             cwd: Some(dir.path().to_string_lossy().into_owned()),
+            session_file: Some(session_file.to_string_lossy().into_owned()),
             ..ParentIdentity::with_default_depth()
         });
         let wiring = wire_session_runtime(
@@ -407,12 +413,12 @@ mod tests {
             None,
         );
         let handler = wiring.handlers.get("rlm.find_models").unwrap();
-        let search = || {
+        let search = |query| {
             handler(HostRequestPayload {
-                data: json!({ "query": "test-provider/glm-5.3", "limit": 1 }),
+                data: json!({ "query": query, "limit": 1 }),
             })
         };
-        let response = search().await.unwrap();
+        let response = search("test-provider/glm-5.3").await.unwrap();
         assert_eq!(
             response["models"],
             json!([{
@@ -423,11 +429,39 @@ mod tests {
             }])
         );
         std::fs::write(&settings, r#"{"allowedModels":"invalid"}"#).unwrap();
-        let error = search().await.unwrap_err();
+        let error = search("glm-5.3").await.unwrap_err();
         assert!(
             error
                 .to_string()
                 .contains("daemon model allowlist could not be read"),
+            "{error}"
+        );
+
+        // A session list replaces even an invalid global setting. The host
+        // does not need to be rebuilt or reconfigured to observe the edit.
+        SessionSubagentPolicy::set_models(&session_file, Some(vec!["other-provider/*".into()]))
+            .unwrap();
+        let response = search("glm-5.3").await.unwrap();
+        assert_eq!(response["models"][0]["selector"], "other-provider/glm-5.3");
+
+        SessionSubagentPolicy::set_models(&session_file, Some(vec![])).unwrap();
+        let response = search("test-provider/glm-5.3").await.unwrap();
+        assert_eq!(response["models"][0]["selector"], "test-provider/glm-5.3");
+
+        SessionSubagentPolicy::set_models(&session_file, None).unwrap();
+        assert!(search("glm-5.3")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("daemon model allowlist could not be read"));
+
+        let policy = session_artifact_dir_for_log(&session_file)
+            .unwrap()
+            .join("subagent-policy.json");
+        std::fs::write(policy, r#"{"effort":"broken"}"#).unwrap();
+        let error = search("glm-5.3").await.unwrap_err();
+        assert!(
+            error.to_string().contains("invalid sub-agent policy"),
             "{error}"
         );
     }
@@ -699,10 +733,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(discoverable_models(dir.path(), dir.path())
-            .unwrap()
-            .iter()
-            .any(|model| model.id == "internal/glm-5.3-fast"));
+        assert!(
+            discoverable_models(dir.path(), &DaemonAllowlist::Unrestricted)
+                .unwrap()
+                .iter()
+                .any(|model| model.id == "internal/glm-5.3-fast")
+        );
         let resolved = resolve_child_model(
             dir.path(),
             Some("prime-inference/internal/glm-5.3-fast"),
@@ -793,7 +829,7 @@ mod tests {
         )
         .unwrap();
         let selector = format!("openai-codex/{PROBE_ID}");
-        let catalog = discoverable_models(dir.path(), dir.path()).unwrap();
+        let catalog = discoverable_models(dir.path(), &DaemonAllowlist::Unrestricted).unwrap();
         let probe = catalog
             .iter()
             .find(|model| model.selector() == selector)

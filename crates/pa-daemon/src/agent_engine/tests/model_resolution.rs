@@ -328,13 +328,16 @@ fn restore_test_engine(
 }
 
 #[test]
-fn the_startup_chain_refuses_models_outside_the_allowlist() {
+fn root_startup_chain_ignores_child_allowlist() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
     write_custom_provider_models_json(&agent_dir, "http://127.0.0.1:9");
     std::fs::write(
         agent_dir.join("settings.json"),
-        serde_json::json!({ "allowedModels": ["anthropic/*"] }).to_string(),
+        serde_json::json!({
+            "defaultProvider": "battery", "defaultModel": "mock-1", "allowedModels": ["anthropic/*"]
+        })
+        .to_string(),
     )
     .unwrap();
     let engine = AgentSessionEngine::new(AgentEngineConfig {
@@ -352,25 +355,6 @@ fn the_startup_chain_refuses_models_outside_the_allowlist() {
         cron_store: None,
         queued_steering_probe: None,
     })
-    .unwrap();
-    let error = engine
-        .resolve_registry_model()
-        .expect_err("off-allowlist model refused");
-    let refusal = error
-        .downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
-        .expect("typed refusal");
-    assert_eq!(refusal.selector, "battery/mock-1");
-    assert!(
-        error
-            .to_string()
-            .contains("blocked by the daemon model allowlist"),
-        "{error}"
-    );
-
-    std::fs::write(
-        engine.config.agent_dir.join("settings.json"),
-        serde_json::json!({ "allowedModels": ["battery/*"] }).to_string(),
-    )
     .unwrap();
     let model = engine.resolve_registry_model().expect("resolved model");
     assert_eq!(model.provider, "battery");
@@ -840,20 +824,20 @@ async fn a_replacement_re_clamps_the_thinking_level_against_the_restored_model()
 }
 
 #[test]
-fn switch_model_never_poisons_the_selection_with_a_refused_candidate() {
+fn root_switch_accepts_a_model_outside_the_child_allowlist() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_custom_provider_models_json(&agent_dir, "http://127.0.0.1:9");
+    write_thinking_pair_models_json(&agent_dir, "http://127.0.0.1:9");
     std::fs::write(
         agent_dir.join("settings.json"),
-        serde_json::json!({ "allowedModels": ["battery/mock-1"] }).to_string(),
+        serde_json::json!({ "allowedModels": ["battery/mock-plain"] }).to_string(),
     )
     .unwrap();
     let engine = AgentSessionEngine::new(AgentEngineConfig {
         cwd: dir.path().to_path_buf(),
         agent_dir,
-        provider: None,
-        model: None,
+        provider: Some("battery".into()),
+        model: Some("mock-plain".into()),
         api_key: None,
         thinking: None,
         session_dir: None,
@@ -866,25 +850,16 @@ fn switch_model_never_poisons_the_selection_with_a_refused_candidate() {
     })
     .unwrap();
     let model = engine.resolve_registry_model().expect("resolved model");
-    assert_eq!(model.id, "mock-1");
+    assert_eq!(model.id, "mock-plain");
     let switched = engine.switch_model(EngineModelSelection {
         provider: Some("battery".to_string()),
-        model: Some("mock-2".to_string()),
+        model: Some("mock-reason".to_string()),
         api_key: None,
         thinking: None,
     });
-    assert!(!switched, "off-allowlist switch refused");
-    let model = engine.resolve_registry_model().expect("still resolvable");
-    assert_eq!(model.id, "mock-1");
-    let switched = engine.switch_model(EngineModelSelection {
-        provider: Some("battery".to_string()),
-        model: Some("mock-1".to_string()),
-        api_key: None,
-        thinking: None,
-    });
-    assert!(switched, "allowed switch proceeds");
+    assert!(switched);
     let model = engine.resolve_registry_model().expect("resolved model");
-    assert_eq!(model.id, "mock-1");
+    assert_eq!(model.id, "mock-reason");
 }
 
 #[test]

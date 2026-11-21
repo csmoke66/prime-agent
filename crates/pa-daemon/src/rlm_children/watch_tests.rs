@@ -426,6 +426,7 @@ async fn sessions_with_fake_child_subagents(
         },
     )
     .await;
+    let session_file = socket.with_extension("").join("parent.jsonl");
     let link = Arc::new(crate::supervisor_link::SupervisorLink::new(socket));
     let sessions = SupervisorChildSessions::new(
         link,
@@ -442,6 +443,7 @@ async fn sessions_with_fake_child_subagents(
     sessions.set_identity(ParentIdentity {
         model: Some("mock/mock-1".to_string()),
         cwd: Some(std::env::temp_dir().to_string_lossy().to_string()),
+        session_file: Some(session_file.to_string_lossy().into_owned()),
         ..ParentIdentity::with_default_depth()
     });
     (sessions, kill_rx)
@@ -521,6 +523,7 @@ async fn sessions_with_roster_peers(
         },
     )
     .await;
+    let session_file = socket.with_extension("").join("parent.jsonl");
     let link = Arc::new(crate::supervisor_link::SupervisorLink::new(socket));
     let sessions = SupervisorChildSessions::new(
         link,
@@ -535,6 +538,7 @@ async fn sessions_with_roster_peers(
     sessions.set_identity(ParentIdentity {
         model: Some("mock/mock-1".to_string()),
         cwd: Some(std::env::temp_dir().to_string_lossy().to_string()),
+        session_file: Some(session_file.to_string_lossy().into_owned()),
         ..ParentIdentity::with_default_depth()
     });
     (sessions, kill_rx)

@@ -48,6 +48,10 @@ At 20 unread agent-to-agent messages, the worker bypasses the reminder setting a
 
 In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
 
+### Guardrail isolation
+
+When sub-agents hit guardrails their sent inbox messages and transcriptions will be cleaned to prevent derailing the other agents (which are presumably permitted to perform the work). Their sessions will be killed.
+
 ## Install
 
 Install the latest stable version with the one-command installer:

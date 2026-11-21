@@ -1,0 +1,1 @@
+- Press Esc at the first-run welcome screen to open Prime Agent without connecting a Prime Inference account. Use `/login` whenever you want to connect a provider.

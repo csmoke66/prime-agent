@@ -41,10 +41,8 @@ pub trait OnboardingSink: Send + Sync {
 /// flow's own steps can change the answer (the Prime sign-in configures the startup model).
 pub type ModelReadiness = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
 
-/// The first-run flow to run before the session screen: the model-ready branch asks the trace
-/// question on the immediate splash; a home with no usable model runs the full flow — the
-/// welcome login, the Prime Inference sign-in, the default-model apply, the
-/// connect-more-providers picker, and the trace question.
+/// The first-run flow before the session screen. An unconfigured home can connect
+/// Prime Inference now or skip straight to the trace-sharing choice and session.
 #[derive(Clone)]
 pub struct OnboardingTask {
     pub sink: std::sync::Arc<dyn OnboardingSink>,
@@ -319,17 +317,38 @@ async fn run_onboarding_flow(
     view: &mut AgentView,
     drive: &mut PaneDrive<'_>,
 ) -> Result<bool> {
-    if (task.model_ready)() {
-        // The ready branch's standing-choice gate (the operator ruling): a home that already
-        // carries a trace-sharing choice never sees the question — the standing choice stands and
-        // the flow completes silently.
+    let login_screen = if (task.model_ready)() {
+        None
+    } else {
+        let (screen, outcome) = drive_onboarding_pane(
+            view,
+            &mut *drive,
+            crate::onboarding::OnboardingScreen::welcome(),
+            None,
+            &mut session.osc_sink,
+        )
+        .await?;
+        match outcome {
+            PaneOutcome::InputClosed => return Ok(false),
+            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
+            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Begin) => Some(screen),
+            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Cancelled) => None,
+            PaneOutcome::Decision(
+                crate::onboarding::OnboardingDecision::Selected(_)
+                | crate::onboarding::OnboardingDecision::Pick(_),
+            )
+            | PaneOutcome::Flow(_) => unreachable!("unexpected welcome screen outcome"),
+        }
+    };
+
+    let Some(mut screen) = login_screen else {
+        // No provider setup: keep a standing trace choice, even without a model.
         if task.sink.agent_traces_choice_written() {
             if let Err(error) = task.sink.mark_onboarding_complete() {
                 warn_onboarding_persist_failure(session, view, &error);
             }
             return Ok(false);
         }
-        // The model-ready branch: the immediate splash mounts the trace question alone.
         let screen = crate::onboarding::OnboardingScreen::new();
         let (_screen, outcome) =
             drive_onboarding_pane(view, &mut *drive, screen, None, &mut session.osc_sink).await?;
@@ -357,28 +376,7 @@ async fn run_onboarding_flow(
             warn_onboarding_persist_failure(session, view, &error);
         }
         return Ok(false);
-    }
-
-    // The full flow (the not-ready branch): Signing in is instant when a Prime CLI token is already
-    // on disk, so users who arrive with credentials still reach the same account, provider and
-    // trace questions. A flow that aborts leaves the marker unset — the next launch retries.
-    let screen = crate::onboarding::OnboardingScreen::welcome();
-    let (mut screen, outcome) =
-        drive_onboarding_pane(view, &mut *drive, screen, None, &mut session.osc_sink).await?;
-    // The welcome binds one key: Enter starts the flow (cancel is deliberately unbound).
-    match outcome {
-        PaneOutcome::InputClosed => return Ok(false),
-        PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
-        PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Begin) => {}
-        PaneOutcome::Decision(
-            crate::onboarding::OnboardingDecision::Selected(_)
-            | crate::onboarding::OnboardingDecision::Cancelled
-            | crate::onboarding::OnboardingDecision::Pick(_),
-        )
-        | PaneOutcome::Flow(_) => {
-            unreachable!("the welcome screen yields Begin or Exit only")
-        }
-    }
+    };
 
     let Some(provider_auth) = task.provider_auth.clone() else {
         return Ok(false);

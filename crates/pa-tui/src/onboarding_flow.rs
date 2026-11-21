@@ -1,5 +1,5 @@
 //! The full first-run flow's own surfaces: the welcome block's description
-//! paragraphs and single login action, the connect-more-providers picker,
+//! paragraphs and highlighted login action, the connect-more-providers picker,
 //! and the panel hosting that mounts each step's surface inside the splash
 //! (the flow never nests its panels, so one slot covers the sequence).
 
@@ -483,8 +483,8 @@ pub(crate) fn welcome_rows(theme: &Theme, width: usize) -> Vec<Line> {
     lines
 }
 
-/// The welcome screen's single action: the bold `> Log in with Prime Intellect` row washed across
-/// its highlight band.
+/// The welcome screen's primary action: the bold `> Log in with Prime Intellect` row washed
+/// across its highlight band.
 pub(crate) fn welcome_action_row(theme: &Theme, width: usize) -> Line {
     let band = MIN_HIGHLIGHT_WIDTH
         .max(MARKER_WIDTH + crate::width::str_width(LOGIN_ACTION_LABEL) + HIGHLIGHT_TRAILING)

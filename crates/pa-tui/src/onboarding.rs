@@ -1,10 +1,11 @@
 //! First-run onboarding surface: the brand mark over its animated lab field, the welcome line, and
 //! the flow panels the first-run flow mounts inside the block. [`OnboardingChoice`] is the reusable
-//! question panel. A startup model that is ready skips to the question (TS `immediate: true`); no
-//! usable model runs the full flow (TS `runOnboardingFlow`).
+//! question panel. A startup model that is ready skips to the question; otherwise, the welcome
+//! pane offers Prime Inference login before the trace question.
 
 use crate::keybindings::KeybindingsManager;
 use crate::keys::KeyId;
+use crate::menu_panel::{hint_row, key_hint};
 use crate::onboarding_choice::{OnboardingChoice, OnboardingChoiceOption, OnboardingChoiceOptions};
 use crate::onboarding_flow::{welcome_action_row, welcome_rows, OnboardingPanel};
 use crate::theme::{Theme, ThemeColor};
@@ -102,7 +103,7 @@ fn cell(character: char, tone: ThemeColor, priority: u8) -> SplashCell {
 pub enum OnboardingDecision {
     /// Enter on a choice row: the index of the selected option.
     Selected(usize),
-    /// Cancel: the flow completed without an answer.
+    /// Cancel: skip login on the welcome pane or dismiss a choice without an answer.
     Cancelled,
     /// Exit keys while onboarding owns the pane: quit the app.
     Exit,
@@ -145,8 +146,7 @@ impl OnboardingScreen {
         Self::default()
     }
 
-    /// The full flow's splash: the welcome text and the single login action, until Enter starts the
-    /// flow.
+    /// The welcome splash: confirm to start login, or cancel to skip it.
     #[must_use]
     pub fn welcome() -> Self {
         Self {
@@ -182,10 +182,13 @@ impl OnboardingScreen {
         if let Some(panel) = self.panel.as_mut() {
             return panel.handle_key(key, kb, osc_sink);
         }
-        // The welcome screen binds one key: Enter starts the flow (cancel is
-        // deliberately unbound — signing in is the only way forward).
-        if !self.flow_started && kb.matches(key, "tui.select.confirm") {
-            return Some(OnboardingDecision::Begin);
+        if !self.flow_started {
+            if kb.matches(key, "tui.select.confirm") {
+                return Some(OnboardingDecision::Begin);
+            }
+            if kb.matches(key, "tui.select.cancel") {
+                return Some(OnboardingDecision::Cancelled);
+            }
         }
         None
     }
@@ -264,7 +267,7 @@ impl OnboardingScreen {
         }
     }
 
-    /// The full pane frame; the keybindings manager feeds the mounted panel's hint row.
+    /// The full pane frame; the keybindings manager supplies its hints.
     pub(crate) fn render(
         &mut self,
         theme: &Theme,
@@ -273,26 +276,29 @@ impl OnboardingScreen {
         kb: &crate::keybindings::KeybindingsManager,
     ) -> Vec<Line> {
         let width = width.max(1);
-        let auth_panel_open = matches!(self.panel.as_ref(), Some(OnboardingPanel::Auth { .. }));
+        let keep_actions_visible =
+            !self.flow_started || matches!(self.panel.as_ref(), Some(OnboardingPanel::Auth { .. }));
         let mut lines: Vec<Line> = vec![Vec::new()];
         lines.extend(self.mark_rows(theme, width));
         lines.push(Vec::new());
         lines.push(self.heading_line(theme));
-        // The welcome text and action render only before the flow starts; once a panel owns the
+        // The welcome text and actions render only before the flow starts; once a panel owns the
         // block, its rows mount directly under the heading.
         match self.panel.as_mut() {
             None if !self.flow_started => {
                 lines.extend(welcome_rows(theme, width));
                 lines.push(welcome_action_row(theme, width));
+                if let Some(hint) = key_hint(kb, &["tui.select.cancel"], "skip login") {
+                    lines.push(hint_row(theme, width, &hint));
+                }
             }
             // A started flow with no mounted panel keeps one blank row in the gap.
             None => lines.push(Vec::new()),
             Some(panel) => lines.extend(panel.render(theme, width, kb)),
         }
-        // A long sign-in link can wrap through the splash's fixed logo rows. Yield the logo
-        // first so the full auth block fits whenever the pane can hold it. On a shorter terminal,
-        // keep the block's final input and action rows visible like the session dock does.
-        if auth_panel_open && lines.len() > height {
+        // A long sign-in link or narrow welcome pane can wrap into the splash's fixed logo rows.
+        // Yield the logo first, then keep the final action rows visible on shorter terminals.
+        if keep_actions_visible && lines.len() > height {
             lines.drain(..(LOGO_LINES.len() + 2));
             if lines.len() > height {
                 lines.drain(..lines.len() - height);
@@ -566,6 +572,67 @@ mod tests {
     fn custom_theme(json: &str, mode: ColorMode) -> Theme {
         let json: ThemeJson = serde_json::from_str(json).expect("valid theme json");
         Theme::from_json(&json, mode)
+    }
+
+    #[test]
+    fn welcome_keeps_login_and_skip_visible_on_a_short_terminal() {
+        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let rows = OnboardingScreen::welcome().render(&theme, 40, 12, &kb());
+        let text: Vec<String> = rows
+            .iter()
+            .map(|row| row.iter().map(|span| span.content.as_str()).collect())
+            .collect();
+        assert!(
+            text.iter()
+                .any(|row| row.contains("> Log in with Prime Intellect"))
+        );
+        assert!(text.iter().any(|row| row.contains("Esc skip login")));
+    }
+
+    #[test]
+    fn the_welcome_keys_start_login_skip_it_or_exit() {
+        let mut screen = OnboardingScreen::welcome();
+        let kb = kb();
+        let mut sink = crate::clipboard::OscSink::Buffer(Vec::new());
+        let mut press = |key| screen.handle_key(&KeyId::from(key), &kb, &mut sink);
+        assert!(matches!(press("enter"), Some(OnboardingDecision::Begin)));
+        assert!(matches!(
+            press("escape"),
+            Some(OnboardingDecision::Cancelled)
+        ));
+        assert!(matches!(press("ctrl+c"), Some(OnboardingDecision::Exit)));
+        assert!(matches!(press("ctrl+d"), Some(OnboardingDecision::Exit)));
+    }
+
+    #[test]
+    fn the_welcome_skip_hint_and_key_follow_the_cancel_binding() {
+        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let mut screen = OnboardingScreen::welcome();
+        let mut sink = crate::clipboard::OscSink::Buffer(Vec::new());
+        for (keys, expected_hint) in [(vec!["f2".to_string()], true), (Vec::new(), false)] {
+            let mut bindings = crate::keybindings::KeybindingsConfig::new();
+            bindings.insert("tui.select.cancel".to_string(), keys);
+            let kb = KeybindingsManager::with_user_bindings(bindings);
+            let rows = screen.render(&theme, 80, 24, &kb);
+            let text = rows
+                .iter()
+                .flatten()
+                .map(|span| span.content.as_str())
+                .collect::<String>();
+            assert_eq!(text.contains("skip login"), expected_hint);
+            assert_eq!(text.contains("F2 skip login"), expected_hint);
+            assert!(!text.contains("Esc skip login"));
+            assert!(screen
+                .handle_key(&KeyId::from("escape"), &kb, &mut sink)
+                .is_none());
+            assert_eq!(
+                matches!(
+                    screen.handle_key(&KeyId::from("f2"), &kb, &mut sink),
+                    Some(OnboardingDecision::Cancelled)
+                ),
+                expected_hint,
+            );
+        }
     }
 
     /// The trace-question pane at 80x24, byte-identical to the pre-PR-C render: the golden was

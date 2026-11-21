@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use pa_types::daemon::DaemonCommand;
@@ -849,6 +850,7 @@ async fn provisioned_opt_out_home_completes_silently_without_the_question() {
 /// Prime Inference row, one api-key provider row, one `mcp:` service row.
 struct FullFlowProviderAuth {
     agent_dir: PathBuf,
+    login_started: AtomicBool,
 }
 
 impl FullFlowProviderAuth {
@@ -906,6 +908,7 @@ impl pa_tui::provider_auth::ProviderAuthCommands for FullFlowProviderAuth {
         provider: &pa_tui::provider_auth::ProviderRow,
         api_key: Option<&str>,
     ) -> pa_tui::provider_auth::ProviderAuthFuture {
+        self.login_started.store(true, Ordering::Relaxed);
         let agent_dir = self.agent_dir.clone();
         let provider_id = provider.id.clone();
         let provider_name = provider.name.clone();
@@ -935,6 +938,7 @@ impl pa_tui::provider_auth::ProviderAuthCommands for FullFlowProviderAuth {
         provider: &pa_tui::provider_auth::ProviderRow,
         panel: pa_tui::auth_panel::AuthPanelHandle,
     ) -> pa_tui::provider_auth::ProviderAuthFuture {
+        self.login_started.store(true, Ordering::Relaxed);
         let agent_dir = self.agent_dir.clone();
         let provider_id = provider.id.clone();
         let provider_name = provider.name.clone();
@@ -987,6 +991,113 @@ impl pa_tui::provider_auth::ProviderAuthCommands for FullFlowProviderAuth {
     }
 }
 
+#[tokio::test]
+async fn fresh_home_skips_login_and_asks_for_trace_choice() {
+    assert_fresh_home_skips_login(None).await;
+}
+
+#[tokio::test]
+async fn fresh_home_skips_login_and_keeps_standing_trace_choice() {
+    assert_fresh_home_skips_login(Some(false)).await;
+}
+
+async fn assert_fresh_home_skips_login(standing_trace_choice: Option<bool>) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use pa_tui::interactive::{HeadlessPlan, HeadlessStep, OnboardingTask};
+    use pa_tui::provider_auth::ProviderAuthCommandsHandle;
+
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let agent_dir = dir.path().join("agent");
+    let session_dir = agent_dir.join("sessions");
+    std::fs::create_dir_all(&session_dir).expect("session dir");
+    if let Some(enabled) = standing_trace_choice {
+        pa_core::settings::SettingsManager::create(dir.path(), &agent_dir)
+            .set_agent_traces_enabled(enabled)
+            .expect("provision trace choice");
+    }
+    let supervisor = spawn_supervisor(dir.path());
+    // The daemon's scripted engine proves the session is usable without making
+    // a provider model available to onboarding.
+    std::fs::write(
+        dir.path().join("script.json"),
+        r#"{ "responses": [{ "text": "hello after skipping login" }] }"#,
+    )
+    .expect("write script");
+
+    let auth = std::sync::Arc::new(FullFlowProviderAuth {
+        agent_dir: agent_dir.clone(),
+        login_started: AtomicBool::new(false),
+    });
+    let mut options = base_options(&supervisor, dir.path(), &session_dir);
+    options.onboarding = Some(OnboardingTask {
+        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
+            cwd: dir.path().to_path_buf(),
+            agent_dir: agent_dir.clone(),
+        }),
+        model_ready: std::sync::Arc::new(|| false),
+        current_model: None,
+        provider_auth: Some(ProviderAuthCommandsHandle(auth.clone())),
+    });
+    let trace_question = "Share agent traces";
+    let mut steps = vec![HeadlessStep::Key(KeyEvent::new(
+        KeyCode::Esc,
+        KeyModifiers::NONE,
+    ))];
+    if standing_trace_choice.is_none() {
+        steps.extend([
+            HeadlessStep::WaitRender {
+                needle: trace_question.to_string(),
+                timeout_ms: 5_000,
+            },
+            HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ]);
+    }
+    steps.extend([
+        HeadlessStep::Submit("hi".to_string()),
+        HeadlessStep::WaitIdle { timeout_ms: 30_000 },
+    ]);
+    let outcome = run_headless_bounded(
+        options,
+        HeadlessPlan {
+            steps,
+            width: 100,
+            height: 30,
+        },
+    )
+    .await
+    .expect("interactive run");
+
+    assert!(
+        !auth.login_started.load(Ordering::Relaxed),
+        "skipping did not start any provider login"
+    );
+    let rendered = outcome.frames.join("\n");
+    assert!(
+        rendered.contains("Log in with Prime Intellect"),
+        "the unconfigured home reached the welcome screen:\n{rendered}"
+    );
+    assert_eq!(
+        rendered.contains(trace_question),
+        standing_trace_choice.is_none(),
+        "skipping asked for a trace choice only when none was written:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("hello after skipping login"),
+        "skipping released the pane and the first session turn ran:\n{rendered}"
+    );
+    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
+    assert!(
+        settings.get_onboarding_shown(),
+        "skipping marked onboarding complete even with no model"
+    );
+    assert!(settings.agent_traces_choice_written());
+    assert_eq!(
+        settings.get_agent_traces_enabled(),
+        standing_trace_choice.unwrap_or(true),
+        "the standing opt-out or selected Share answer persisted"
+    );
+}
+
 /// The full first-run flow with no usable model (TS `runOnboardingFlow`'s
 /// not-ready branch): every answer, both credentials, and the flag persist.
 #[tokio::test]
@@ -1026,6 +1137,7 @@ async fn fresh_home_runs_the_full_sign_in_flow_to_completion() {
         provider_auth: Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             std::sync::Arc::new(FullFlowProviderAuth {
                 agent_dir: agent_dir.clone(),
+                login_started: AtomicBool::new(false),
             }),
         )),
     });

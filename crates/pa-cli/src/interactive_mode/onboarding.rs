@@ -258,11 +258,8 @@ impl pa_tui::interactive::OnboardingSink for SettingsOnboardingSink {
     }
 }
 
-/// First launch is defined by the settings flag alone — credentials found on
-/// disk never skip the flow, they only make the sign-in step instant. The task
-/// carries the startup model state (the readiness probe decides the branch and
-/// gates the completion marker) and the provider auth surface the full flow
-/// signs in through.
+/// The settings flag decides whether to show onboarding. Model readiness decides
+/// whether to offer provider setup before the trace-sharing question.
 pub(super) fn onboarding_task(
     options: &RunOptions,
     provider_auth: Option<pa_tui::provider_auth::ProviderAuthCommandsHandle>,

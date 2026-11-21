@@ -42,6 +42,8 @@ Use `models all` for unrestricted child selection or `models inherit` to use `se
 
 Use `/inbox-reminders` to see the setting for the attached session. `preview` (the default) shows the first five unread messages, up to 200 characters each. `/inbox-reminders full` includes every unread message body in each reminder, which can use considerably more context. `/inbox-reminders count` restores the count-only notice. None of these marks a message as read or changes when the parent wakes.
 
+At 20 unread agent-to-agent messages, the worker bypasses the reminder setting and sends **every unread message body** directly to the recipient. An idle parent wakes; a busy parent gets a steering message. Once the batch is saved to the delivery queue, inbox space is available again.
+
 ### Inspect the harness
 
 In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.

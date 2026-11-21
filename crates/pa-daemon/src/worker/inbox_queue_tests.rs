@@ -2168,10 +2168,9 @@ async fn a_clear_drops_unread_agent_messages_and_their_wake_rows() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The capacity gate refuses inside the admission's critical section:
-/// a full store of agent messages refuses the next delivery.
+/// A recovered full inbox must not strand the next sender.
 #[tokio::test]
-async fn a_full_agent_message_inbox_refuses_the_next_delivery() {
+async fn a_full_agent_message_inbox_delivers_every_body_and_accepts_new_mail() {
     let (worker, inbox, dir) = faux_worker_with_inbox();
     worker.dispatch("clear_queue", &json!({})).await;
     for index in 0..DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION {
@@ -2183,7 +2182,7 @@ async fn a_full_agent_message_inbox_refuses_the_next_delivery() {
             1_000 + index as u64,
         );
     }
-    let refused = worker
+    let delivered = worker
         .dispatch(
             "worker_deliver_message",
             &json!({
@@ -2193,19 +2192,18 @@ async fn a_full_agent_message_inbox_refuses_the_next_delivery() {
             }),
         )
         .await;
-    assert!(!refused.success, "the full store refuses: {refused:?}");
-    assert!(
-        refused
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("too many pending messages"),
-        "the TS refusal text rides: {refused:?}"
-    );
+    assert!(delivered.success, "{delivered:?}");
+    let rows = steering_rows(&worker);
+    let batch = &rows[0].0;
+    for index in 0..DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION {
+        assert!(batch
+            .lines()
+            .any(|line| line.ends_with(&format!(": waiting {index}"))));
+    }
     assert_eq!(
         inbox.count().0,
-        DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION,
-        "nothing leaked past the cap"
+        1,
+        "new mail remains available for the next read"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -2556,8 +2554,7 @@ async fn a_queued_notice_row_does_not_consume_the_capacity() {
         );
     }
     // 19 waiting messages + the queued notice row: the 20th delivery is
-    // still admitted (the notice row is not a pending message), and the
-    // next one refuses.
+    // admitted and triggers direct full delivery, without waiting for message 21.
     let twentieth = worker
         .dispatch(
             "worker_deliver_message",
@@ -2572,11 +2569,20 @@ async fn a_queued_notice_row_does_not_consume_the_capacity() {
         twentieth.success,
         "the 20th delivery still admits: {twentieth:?}"
     );
+    assert_eq!(inbox.count().0, 0);
+    let (steering, _, _) = WorkerRecoveryJournal::read_queue_snapshot(
+        &worker.config.recovery_journal_path,
+        "target-session",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(steering.len(), 1);
+    assert!(steering[0].message.contains("twenty"));
     assert_eq!(
-        inbox.count().0,
-        DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION
+        steering[0].custom_message.as_ref().unwrap()["content"],
+        steering[0].message
     );
-    let refused = worker
+    let admitted = worker
         .dispatch(
             "worker_deliver_message",
             &json!({
@@ -2586,15 +2592,8 @@ async fn a_queued_notice_row_does_not_consume_the_capacity() {
             }),
         )
         .await;
-    assert!(!refused.success, "the 21st refuses: {refused:?}");
-    assert!(
-        refused
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("too many pending messages"),
-        "{refused:?}"
-    );
+    assert!(admitted.success, "{admitted:?}");
+    assert_eq!(inbox.count().0, 1);
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 

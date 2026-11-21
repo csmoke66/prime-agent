@@ -594,6 +594,72 @@ pub(crate) const INBOX_ARRIVAL_QUEUE_KEY: &str = "inbox:arrival";
 /// The coalescing key of the periodic unread reminder.
 pub(crate) const INBOX_REMINDER_QUEUE_KEY: &str = "inbox:reminder";
 
+/// An overflow batch is an ordinary durable steering item, not a replaceable
+/// reminder. Only retire the original inbox records once recovery owns its text.
+fn flush_full_inbox(
+    core: &mut SessionCore,
+    inbox: &pa_core::session_engine::inbox::SessionInbox,
+    journal: &mut WorkerRecoveryJournal,
+) -> bool {
+    let is_wake = |key: Option<&str>| {
+        matches!(
+            key,
+            Some(INBOX_ARRIVAL_QUEUE_KEY | INBOX_REMINDER_QUEUE_KEY)
+        )
+    };
+    inbox.deliver_full_mailbox(|text| {
+        let row = pa_core::session_engine::inbox::create_inbox_notice_row(
+            &text,
+            pa_types::inbox_notice::INBOX_NOTICE_CLASS_ARRIVAL,
+            pa_core::autonomous::now_millis(),
+        );
+        core.steering.push_back(QueuedItem {
+            message: text,
+            preview: Some("Full inbox: all messages".into()),
+            custom_message: Some(row),
+            priority: QueuePriority::Background,
+            agent_message: None,
+            queue_key: None,
+            admission_id: None,
+            images: Vec::new(),
+            done: None,
+            queue_visible: core.busy,
+            policy: if core.busy {
+                TurnPolicy::Queued
+            } else {
+                TurnPolicy::Injected
+            },
+            forced_batch: false,
+        });
+        let mut lanes = queue_lanes(core);
+        lanes
+            .steering
+            .retain(|item| !is_wake(item.queue_key.as_deref()));
+        lanes
+            .follow_up
+            .retain(|item| !is_wake(item.queue_key.as_deref()));
+        let stored = journal.record_queue_checkpoint(
+            &core.active_session_id,
+            core.store.as_ref().map_or("", |s| s.session_id()),
+            core.store.as_ref().and_then(|s| s.path.to_str()),
+            true,
+            "steer_queued",
+            &lanes.steering,
+            &lanes.follow_up,
+            core.queued_input_suspended,
+        );
+        if stored.is_err() {
+            core.steering.pop_back();
+            return false;
+        }
+        core.steering
+            .retain(|item| !is_wake(item.queue_key.as_deref()));
+        core.follow_up
+            .retain(|item| !is_wake(item.queue_key.as_deref()));
+        true
+    })
+}
+
 /// Admit one inbox arrival (the daemon's inbox routing of a
 /// `bash.completed`, `factory.progress`, or agent-message notice): the
 /// message lands in the session's durable inbox and ONE short steering
@@ -626,6 +692,9 @@ pub(crate) fn admit_inbox_notice(
     // The busy sample, the batch, and the push share ONE critical
     // section, like the notice admission below: a turn starting between
     // them would queue an invisible row for a busy session.
+    let mut recovery_guard = (notice.class
+        == pa_core::session_engine::inbox::INBOX_CLASS_AGENT_MESSAGE)
+        .then(|| recovery.lock().unwrap());
     let mut core_guard = core.lock().unwrap();
     // A notice that raced past the sink's first check is refused here
     // (the close's clear wipes the lanes); its message already made the
@@ -637,7 +706,18 @@ pub(crate) fn admit_inbox_notice(
     // lengths it reads here: concurrent arrivals can never pass one
     // stale sample together.
     if let Some(error) = capacity_error(&core_guard.steering, &core_guard.follow_up) {
-        return Err(error);
+        if engine.is_some_and(|engine| !engine.is_live_inbox(inbox))
+            || !recovery_guard
+                .as_deref_mut()
+                .and_then(Option::as_mut)
+                .is_some_and(|journal| flush_full_inbox(&mut core_guard, inbox, journal))
+        {
+            return Err(error);
+        }
+        work_notify.notify_one();
+        if let Some(error) = capacity_error(&core_guard.steering, &core_guard.follow_up) {
+            return Err(error);
+        }
     }
     // The append is atomic with the session swap: the route-fetched store
     // is identity-checked under the slot's own mutex (push_to_live_inbox),
@@ -656,6 +736,16 @@ pub(crate) fn admit_inbox_notice(
     // follows THIS read (one critical section), never an earlier sample
     // taken outside the lock.
     let queued = core_guard.busy;
+    if recovery_guard
+        .as_deref_mut()
+        .and_then(Option::as_mut)
+        .is_some_and(|journal| flush_full_inbox(&mut core_guard, inbox, journal))
+    {
+        arrivals.lock().unwrap().clear();
+        drop(core_guard);
+        work_notify.notify_one();
+        return Ok(queued);
+    }
     let (policy, queue_visible) = if queued {
         (TurnPolicy::Queued, true)
     } else {
@@ -729,6 +819,7 @@ pub(crate) fn admit_inbox_notice(
     // The checkpoint re-locks the core (documented order: recovery lock
     // first), so the admission's guard must release first.
     drop(core_guard);
+    drop(recovery_guard);
     // The busy-evidence checkpoint: the notice is undelivered live
     // work until its turn settles.
     checkpoint_queue_recovery(
@@ -871,6 +962,7 @@ pub(crate) fn admit_inbox_reminder(
         .map_or(ReminderMode::default(), |p| {
             ReminderMode::load(&p).unwrap_or(ReminderMode::Count)
         });
+    let mut recovery_guard = recovery.lock().unwrap();
     let mut core_guard = core.lock().unwrap();
     if session_is_closed() {
         return;
@@ -895,6 +987,14 @@ pub(crate) fn admit_inbox_reminder(
     #[cfg(test)]
     super::inbox_queue_tests::pause_inbox_reminder_after_count(core);
     if count == 0 {
+        return;
+    }
+    if recovery_guard
+        .as_mut()
+        .is_some_and(|journal| flush_full_inbox(&mut core_guard, inbox, journal))
+    {
+        drop(core_guard);
+        work_notify.notify_one();
         return;
     }
     let now = pa_core::autonomous::now_millis();
@@ -935,6 +1035,7 @@ pub(crate) fn admit_inbox_reminder(
         });
     }
     drop(core_guard);
+    drop(recovery_guard);
     checkpoint_queue_recovery(
         recovery,
         core,

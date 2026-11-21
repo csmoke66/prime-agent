@@ -1,0 +1,1 @@
+- At 20 unread agent messages, the worker queues the entire unread inbox as a full-text steering message and frees its capacity without waiting for an inbox read.

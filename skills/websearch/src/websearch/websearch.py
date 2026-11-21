@@ -177,22 +177,25 @@ async def _fetch_eco(query: str, api_key: str, timeout: int = 45, num_results: i
     return _format_eco_results(data, query, num_results=num_results)
 
 
-async def _fetch_chatgpt(query: str, *, timeout: int, num_results: int) -> str:
-    """Search through the Prime Agent host using its ChatGPT login."""
+async def _fetch_host_search(
+    provider: str, query: str, *, timeout: int, num_results: int
+) -> str:
+    """Search through the Prime Agent host using its provider login."""
     from rlm import host_request
 
+    name = "Claude" if provider == "claude" else "ChatGPT"
     if type(num_results) is not int or num_results < 1:
-        raise ValueError("ChatGPT web search requires a positive integer number of results")
+        raise ValueError(f"{name} web search requires a positive integer number of results")
     try:
         reply = await asyncio.wait_for(
-            host_request("chatgpt_web_search", {"query": query, "numResults": num_results}),
+            host_request(f"{provider}_web_search", {"query": query, "numResults": num_results}),
             timeout=timeout,
         )
     except asyncio.TimeoutError as exc:
-        raise RuntimeError("ChatGPT web search timed out") from exc
+        raise RuntimeError(f"{name} web search timed out") from exc
     text = reply.get("text")
     if not isinstance(text, str) or not text.strip():
-        raise RuntimeError("ChatGPT web search returned no result text")
+        raise RuntimeError(f"{name} web search returned no result text")
     return text
 
 
@@ -260,36 +263,47 @@ async def run(
 
     if provider == "chatgpt":
         try:
-            result = await _fetch_chatgpt(query, timeout=timeout, num_results=num_results)
+            result = await _fetch_host_search(provider, query, timeout=timeout, num_results=num_results)
         except Exception as exc:
             result = f"Error searching for '{query}': {exc}"
     else:
-        api_key = _resolve_api_key(provider)
+        active = repl.is_active()
+        reserve_fallback = default_timeout and active
+        api_key = "" if provider == "claude" else _resolve_api_key(provider)
         result = None
         primary_error = ""
-        if api_key:
-            try:
+        try:
+            if provider == "claude":
+                if not active:
+                    raise RuntimeError("Claude web search requires a Prime Agent kernel")
+                result = await _fetch_host_search(
+                    provider,
+                    query,
+                    timeout=min(timeout, 20) if reserve_fallback else timeout,
+                    num_results=num_results,
+                )
+            elif api_key:
                 result = await _fetch_keyed(
                     provider,
                     query,
                     api_key,
                     timeout=timeout,
                     num_results=num_results,
-                    reserve_fallback=default_timeout and repl.is_active(),
+                    reserve_fallback=reserve_fallback,
                 )
-            except Exception as exc:
-                primary_error = f"Error searching for '{query}': {exc}"
+        except Exception as exc:
+            primary_error = f"Error searching for '{query}': {exc}"
 
         # Standalone calls have no host. The bridge itself also rejects a
         # closed connection before sending a request. Neither case probes
         # credentials or makes a network call.
         if result is None and repl.is_active():
             try:
-                result = await _fetch_chatgpt(query, timeout=timeout, num_results=num_results)
+                result = await _fetch_host_search("chatgpt", query, timeout=timeout, num_results=num_results)
             except Exception:
                 pass  # Preserve the selected provider's error or setup guidance.
         if result is None:
-            if not api_key:
+            if provider != "claude" and not api_key:
                 return _missing_key(provider)
             result = primary_error
     output = f'Results for query "{query}":\n\n{result}'

@@ -4,7 +4,7 @@ import asyncio
 import os
 import unittest
 from contextlib import ExitStack
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import httpx
 from rlm import repl
@@ -15,6 +15,7 @@ QUERY = "Prime Agent release"
 LINKED = "Result 0: Release notes\nURL: https://example.org/releases"
 REAL_HOST_REQUEST = repl.host_request
 LOGIN_REQUIRED = "ChatGPT web search requires a ChatGPT login"
+CLAUDE_LOGIN_REQUIRED = "Claude web search requires an Anthropic OAuth login"
 
 
 class WebSearchTests(unittest.IsolatedAsyncioTestCase):
@@ -59,6 +60,72 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "chatgpt"
         self.assertIn("positive integer", await websearch.run(QUERY, num_results=0))
         self.host.assert_not_awaited()
+
+    async def test_direct_claude_uses_only_the_host_and_returns_links(self):
+        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.assertIn(LINKED, await websearch.run(QUERY, num_results=3))
+        self.host.assert_awaited_once_with({"type": "claude_web_search", "query": QUERY, "numResults": 3})
+        self.key.assert_not_called()
+        self.serper.assert_not_awaited()
+        self.eco.assert_not_awaited()
+
+    async def test_claude_error_or_empty_text_falls_back_to_chatgpt_once(self):
+        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        for primary_reply in (
+            {"status": "error", "error": CLAUDE_LOGIN_REQUIRED},
+            {"status": "ok", "result": {"text": " "}},
+        ):
+            with self.subTest(primary_reply=primary_reply):
+                self.host.reset_mock()
+                self.host.side_effect = [primary_reply, {"status": "ok", "result": {"text": LINKED}}]
+                self.assertIn(LINKED, await websearch.run(QUERY, num_results=3))
+                self.assertEqual(self.host.await_args_list, [
+                    call({"type": "claude_web_search", "query": QUERY, "numResults": 3}),
+                    call({"type": "chatgpt_web_search", "query": QUERY, "numResults": 3}),
+                ])
+        self.key.assert_not_called()
+
+    async def test_claude_failure_is_preserved_when_chatgpt_fails(self):
+        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.host.side_effect = [
+            {"status": "error", "error": CLAUDE_LOGIN_REQUIRED},
+            {"status": "error", "error": LOGIN_REQUIRED},
+        ]
+        result = await websearch.run(QUERY)
+        self.assertIn(CLAUDE_LOGIN_REQUIRED, result)
+        self.assertNotIn(LOGIN_REQUIRED, result)
+        self.assertEqual(self.host.await_args_list, [
+            call({"type": "claude_web_search", "query": QUERY, "numResults": 5}),
+            call({"type": "chatgpt_web_search", "query": QUERY, "numResults": 5}),
+        ])
+        self.key.assert_not_called()
+
+    async def test_standalone_claude_does_not_call_host_or_resolve_api_keys(self):
+        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.active.return_value = False
+        self.assertIn("requires a Prime Agent kernel", await websearch.run(QUERY))
+        self.host.assert_not_awaited()
+        self.key.assert_not_called()
+
+    async def test_claude_timeout_cancels_host_wait_and_falls_back_once(self):
+        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        stopped = asyncio.Event()
+
+        async def host(request):
+            if request["type"] == "claude_web_search":
+                try:
+                    await asyncio.Future()
+                finally:
+                    stopped.set()
+            return {"status": "ok", "result": {"text": LINKED}}
+
+        self.host.side_effect = host
+        self.assertIn(LINKED, await websearch.run(QUERY, timeout=0.05))
+        self.assertTrue(stopped.is_set())
+        self.assertEqual(self.host.await_args_list, [
+            call({"type": "claude_web_search", "query": QUERY, "numResults": 5}),
+            call({"type": "chatgpt_web_search", "query": QUERY, "numResults": 5}),
+        ])
 
     async def test_keyed_success_does_not_call_host_and_reserves_time_by_default(self):
         self.assertIn(LINKED, await websearch.run(QUERY))

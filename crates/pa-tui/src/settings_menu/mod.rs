@@ -205,9 +205,9 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         SettingsMenuRow {
             id: "web-search-provider",
             label: "Web search provider",
-            description: "Search in new sessions. Serper and Eco use /mcp keys; on failure they try your ChatGPT login.",
+            description: "Search in new sessions. Claude and ChatGPT use your logins; Serper and Eco use /mcp keys. Failed searches can fall back to ChatGPT.",
             current: current.web_search_provider.clone(),
-            values: Some(vec!["serper".into(), "eco".into(), "chatgpt".into()]),
+            values: Some(vec!["serper".into(), "eco".into(), "chatgpt".into(), "claude".into()]),
             submenu: None,
         },
         SettingsMenuRow {

@@ -1,0 +1,1 @@
+- Select Claude in `/settings` → **Agents** → **Web search provider** to search with your Claude login. Failed searches can still fall back to ChatGPT.

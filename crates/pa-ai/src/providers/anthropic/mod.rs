@@ -21,6 +21,7 @@ use crate::utils_inner::diagnostics::now_ms;
 mod convert;
 mod params;
 mod stream;
+pub(crate) mod web_search;
 
 pub use stream::stream_anthropic;
 
@@ -28,6 +29,9 @@ pub use stream::stream_anthropic;
 mod stream_tests;
 
 pub const API_ANTHROPIC_MESSAGES: &str = "anthropic-messages";
+
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+const OAUTH_BETA: &str = "oauth-2025-04-20";
 
 /// Claude Code version mimicked in OAuth mode. The API gates newer models on the claimed client
 /// version (e.g. claude-opus-5.5 requires >= 2.280), so keep this at or above the latest released
@@ -406,7 +410,7 @@ pub(crate) fn build_request_headers(
             if is_oauth {
                 headers.insert(
                     "anthropic-beta".into(),
-                    json!(["claude-code-20250219", "oauth-2025-04-20"]
+                    json!(["claude-code-20250219", OAUTH_BETA]
                         .iter()
                         .chain(beta_features.iter())
                         .copied()
@@ -428,7 +432,7 @@ pub(crate) fn build_request_headers(
     let mut pairs = headers_to_pairs(&default_headers);
     crate::providers::opencode_headers::apply(&mut pairs, &model.provider, session_id);
     // The Anthropic SDK always sends the API version; mirror it.
-    pairs.insert(0, ("anthropic-version".into(), "2023-06-01".into()));
+    pairs.insert(0, ("anthropic-version".into(), ANTHROPIC_VERSION.into()));
     if model.provider == "cloudflare-ai-gateway" || model.provider == "github-copilot" || is_oauth {
         pairs.push(("Authorization".into(), format!("Bearer {api_key}")));
     } else {

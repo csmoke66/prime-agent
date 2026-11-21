@@ -232,6 +232,8 @@ pub enum WebSearchProvider {
     Eco,
     /// OpenAI-hosted search using the user's ChatGPT subscription login.
     ChatGpt,
+    /// Anthropic-hosted search using the user's Claude login.
+    Claude,
 }
 
 impl WebSearchProvider {
@@ -242,6 +244,7 @@ impl WebSearchProvider {
             WebSearchProvider::Serper => crate::auth::SERPER_CREDENTIAL_ID,
             WebSearchProvider::Eco => crate::auth::ECO_CREDENTIAL_ID,
             WebSearchProvider::ChatGpt => "chatgpt",
+            WebSearchProvider::Claude => "claude",
         }
     }
 
@@ -251,7 +254,7 @@ impl WebSearchProvider {
         match self {
             WebSearchProvider::Serper => Some("SERPER_API_KEY"),
             WebSearchProvider::Eco => Some("YOU_API_KEY"),
-            WebSearchProvider::ChatGpt => None,
+            WebSearchProvider::ChatGpt | WebSearchProvider::Claude => None,
         }
     }
 }

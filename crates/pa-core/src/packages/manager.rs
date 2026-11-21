@@ -191,8 +191,8 @@ impl PackageManager {
             })
     }
 
-    /// A subscription login enables both direct ChatGPT search and fallback
-    /// for a keyless primary provider. A plain OpenAI API key is not a login.
+    /// ChatGPT can stand in for a missing primary credential. A selected
+    /// subscription provider requires an OAuth login, not a stored API key.
     fn websearch_enabled_by_credential(
         agent_dir: &std::path::Path,
         provider: crate::settings::WebSearchProvider,
@@ -206,6 +206,11 @@ impl PackageManager {
             .and_then(|content| crate::auth::parse_storage_data(Some(&content)).ok())
             .is_some_and(|data| {
                 (provider.api_key_env().is_some() && data.credential(provider.id()).is_some())
+                    || (provider == crate::settings::WebSearchProvider::Claude
+                        && matches!(
+                            data.credential("anthropic"),
+                            Some(crate::auth::AuthCredential::Oauth { .. })
+                        ))
                     || matches!(
                         data.credential(crate::auth::OPENAI_CODEX_PROVIDER_ID),
                         Some(crate::auth::AuthCredential::Oauth { .. })
@@ -726,6 +731,13 @@ mod tests {
         assert!(enabled(WebSearchProvider::Eco, None));
         assert!(!enabled(WebSearchProvider::Serper, None));
         assert!(!enabled(WebSearchProvider::ChatGpt, None));
+        std::fs::write(
+            agent_dir.join("auth.json"),
+            r#"{ "anthropic": { "type": "oauth", "access": "token", "expires": 123 } }"#,
+        )
+        .unwrap();
+        assert!(enabled(WebSearchProvider::Claude, None));
+        assert!(!enabled(WebSearchProvider::ChatGpt, None));
 
         std::fs::write(
             agent_dir.join("auth.json"),
@@ -734,6 +746,7 @@ mod tests {
         .unwrap();
         for provider in [
             WebSearchProvider::ChatGpt,
+            WebSearchProvider::Claude,
             WebSearchProvider::Serper,
             WebSearchProvider::Eco,
         ] {

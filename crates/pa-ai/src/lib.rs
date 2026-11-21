@@ -29,6 +29,7 @@ pub mod codex_debug {
         reset_debug_stats as reset_websocket_debug_stats, WebSocketDebugStats,
     };
 }
+pub use providers::anthropic::web_search::search_claude_web;
 pub use providers::openai_codex_responses::web_search::search_chatgpt_web;
 pub use providers::openai_codex_responses::{
     codex_daybreak_blue, codex_daybreak_model_ids, is_codex_daybreak_target,

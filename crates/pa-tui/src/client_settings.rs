@@ -18,7 +18,7 @@ pub trait ClientSettings: Send + Sync {
         anyhow::bail!("Harness refinement settings are unavailable")
     }
 
-    /// `webSearchProvider` (`serper`/`eco`; default `serper`): the service the
+    /// `webSearchProvider` (default `serper`): the service the
     /// websearch skill queries in new sessions.
     fn web_search_provider(&self) -> String {
         "serper".to_string()

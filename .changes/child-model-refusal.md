@@ -1,0 +1,1 @@
+- When a child agent cannot use a requested model under `allowedModels`, the spawning agent now sees the exact allowed model IDs available with its current credentials.

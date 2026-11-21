@@ -76,8 +76,19 @@ pub fn resolve_child_model(
     target: &str,
     allowlist: &DaemonAllowlist,
 ) -> Result<String> {
-    let model = resolve_child_model_reference(agent_dir, reference, parent_model, target, allowlist)?;
-    model_allowlist::assert_allowed(allowlist, &model)?;
+    let registry =
+        std::cell::LazyCell::new(|| crate::state_getters::worker_model_registry(agent_dir));
+    let candidates = || registry.get_rlm_searchable_models();
+    let model =
+        resolve_child_model_reference(candidates, reference, parent_model, target, allowlist)?;
+    if let Err(error) = model_allowlist::assert_allowed(allowlist, &model) {
+        if matches!(allowlist, DaemonAllowlist::Allowed(_)) {
+            let choices = allowed_model_hint(candidates(), allowlist);
+            let message = format!("{error} {choices}");
+            return Err(error.context(message));
+        }
+        return Err(error);
+    }
     Ok(model)
 }
 
@@ -102,8 +113,23 @@ pub fn resolve_child_model_unchecked(
     )
 }
 
-fn resolve_child_model_reference(
-    agent_dir: &Path,
+fn allowed_model_hint(models: Vec<&Model>, policy: &DaemonAllowlist) -> String {
+    let mut choices: Vec<_> = models
+        .into_iter()
+        .filter(|m| policy.allows_model(m))
+        .map(model_selector)
+        .collect();
+    choices.sort_unstable();
+    choices.dedup();
+    if choices.is_empty() {
+        "No allowed models are available with the current credentials.".into()
+    } else {
+        format!("Allowed models: {}.", choices.join(", "))
+    }
+}
+
+fn resolve_child_model_reference<'a>(
+    candidates: impl FnOnce() -> Vec<&'a Model>,
     reference: Option<&str>,
     parent_model: Option<&str>,
     target: &str,
@@ -121,8 +147,7 @@ fn resolve_child_model_reference(
             return Ok(parent.to_string());
         }
     }
-    let registry = crate::state_getters::worker_model_registry(agent_dir);
-    let candidates = registry.get_rlm_searchable_models();
+    let candidates = candidates();
     // Resolve explicit selectors against the authenticated catalog so a blocked
     // selector still reaches the typed refusal rather than appearing unavailable.
     if normalized.contains('/') {
@@ -166,6 +191,12 @@ fn resolve_child_model_reference(
         }
     }
     require_readable_policy(allowlist)?;
+    if matches!(allowlist, DaemonAllowlist::Allowed(_)) {
+        bail!(
+            "Requested {target} model \"{reference}\" cannot be selected. {}",
+            allowed_model_hint(candidates, allowlist)
+        );
+    }
     let eligible = eligible_models(candidates, allowlist);
     Err(model_unavailable_error(reference, target, &eligible))
 }
@@ -425,14 +456,13 @@ mod tests {
                 .selector,
             "other-provider/glm-5.3"
         );
+        let choices = "Allowed models: test-provider/glm-5.3, test-provider/glm-5.3-turbo.";
+        assert!(refused.to_string().ends_with(choices), "{refused}");
 
         let error = resolve_child_model(dir.path(), Some("glm-5"), None, "subagent", &allow)
             .unwrap_err()
             .to_string();
-        assert!(
-            error.contains("close matches: \"test-provider/glm-5.3\""),
-            "{error}"
-        );
+        assert!(error.ends_with(choices), "{error}");
         assert!(!error.contains("other-provider"), "{error}");
     }
 

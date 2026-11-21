@@ -67,6 +67,31 @@ pub const AZURE_TOOL_CALL_PROVIDERS: [&str; 4] = [
     "azure-openai-responses",
 ];
 
+/// GPT-5.6 and later support message-based prompt cache breakpoints.
+pub(super) fn supports_message_cache_breakpoints(id: &str) -> bool {
+    let Some(id) = id.strip_prefix("gpt-") else {
+        return false;
+    };
+    let mut parts = id.split('-');
+    let version = parts.next().unwrap_or_default();
+    if parts.any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_alphanumeric())) {
+        return false;
+    }
+    let parse_number = |part: &str| -> Option<u32> {
+        if (part.len() > 1 && part.starts_with('0'))
+            || !part.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        part.parse().ok()
+    };
+    let (major, minor) = version.split_once('.').unwrap_or((version, "0"));
+    match (parse_number(major), parse_number(minor)) {
+        (Some(major), Some(minor)) => (major, minor) >= (5, 6),
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ConvertResponsesMessagesOptions {
     pub include_system_prompt: bool,
@@ -149,7 +174,10 @@ pub fn convert_responses_messages(
     let include_system_prompt = options.include_system_prompt;
     if include_system_prompt {
         if let Some(system_prompt) = &context.system_prompt {
-            let role = if model.reasoning {
+            let role = if model.reasoning
+                || (matches!(model.provider.as_str(), "openai" | "openai-codex")
+                    && supports_message_cache_breakpoints(&model.id))
+            {
                 "developer"
             } else {
                 "system"
@@ -393,6 +421,36 @@ mod tests {
         Message, StopReason, TextContent, ToolCall, ToolResultMessage, Usage, UserMessage,
         UserMessageContent, UserOrToolContent,
     };
+
+    #[test]
+    fn message_cache_breakpoints_require_a_supported_gpt_generation() {
+        for id in [
+            "gpt-5.6",
+            "gpt-5.6-terra-2026-08-01",
+            "gpt-5.10",
+            "gpt-6",
+            "gpt-6.2-sol",
+            "gpt-10",
+        ] {
+            assert!(supports_message_cache_breakpoints(id), "{id}");
+        }
+        for id in [
+            "gpt-4.10",
+            "gpt-5",
+            "gpt-5.5-codex",
+            "gpt-5.06",
+            "gpt-5.6foo",
+            "gpt-5.+6",
+            "gpt-6.",
+            "gpt-6.2.1",
+            "gpt-6-",
+            "gpt-6foo",
+            "openai/gpt-6",
+            "not-gpt-6",
+        ] {
+            assert!(!supports_message_cache_breakpoints(id), "{id}");
+        }
+    }
 
     fn codex_model() -> Model {
         Model {

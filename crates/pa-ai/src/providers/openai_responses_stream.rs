@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use serde_json::{json, Map, Value};
 
 use crate::event_stream::{AssistantMessageEvent, AssistantMessageEventWriter};
-use crate::models::calculate_cost;
+use crate::models::{calculate_cost, CostOverrides};
 pub use crate::providers::openai_responses_hooks::{
     apply_service_tier_pricing, ResponsesStreamHooks,
 };
@@ -761,33 +761,58 @@ impl<'a> ResponsesStreamProcessor<'a> {
                 if let Some(id) = response.get("id").and_then(|value| value.as_str()) {
                     self.output.response_id = Some(id.to_string());
                 }
-                if let Some(usage) = response.get("usage") {
-                    let cached_tokens = usage
-                        .get("input_tokens_details")
-                        .and_then(|details| details.get("cached_tokens"))
-                        .and_then(serde_json::Value::as_u64)
+                let cost_overrides = if let Some(usage) = response.get("usage") {
+                    let input_details = usage.get("input_tokens_details").unwrap_or(&Value::Null);
+                    let cached_tokens = input_details
+                        .get("cached_tokens")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    let cache_write_tokens = input_details
+                        .get("cache_write_tokens")
+                        .and_then(Value::as_u64)
                         .unwrap_or(0);
                     let input_tokens = usage
                         .get("input_tokens")
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(0);
-                    // OpenAI includes cached tokens in input_tokens; subtract them.
+                    // OpenAI bills each input token as ordinary input, a cache read, or a cache write.
                     self.output.usage = Usage {
-                        input: input_tokens.saturating_sub(cached_tokens),
+                        input: input_tokens
+                            .saturating_sub(cached_tokens)
+                            .saturating_sub(cache_write_tokens),
                         output: usage
                             .get("output_tokens")
                             .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0),
                         cache_read: cached_tokens,
-                        cache_write: 0,
+                        cache_write: cache_write_tokens,
                         total_tokens: usage
                             .get("total_tokens")
                             .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0),
                         cost: UsageCost::default(),
                     };
-                }
-                calculate_cost(self.model, &mut self.output.usage, None);
+                    (cache_write_tokens > 0).then(|| {
+                        let ttl_12h_tokens = input_details
+                            .get("cache_write_tokens_details")
+                            .and_then(|details| details.get("ttl_12h_tokens"))
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                            .min(cache_write_tokens);
+                        // The shared cost model takes one rate for all writes. Blend the 30m
+                        // and 12h rates by the share of tokens written at the longer TTL.
+                        #[allow(clippy::cast_precision_loss)]
+                        let ttl_12h_share = ttl_12h_tokens as f64 / cache_write_tokens as f64;
+                        CostOverrides {
+                            cache_write: Some(
+                                self.model.cost.input.as_f64() * (1.25 + (2.5 - 1.25) * ttl_12h_share),
+                            ),
+                        }
+                    })
+                } else {
+                    None
+                };
+                calculate_cost(self.model, &mut self.output.usage, cost_overrides.as_ref());
                 if let Some(apply) = &self.hooks.apply_service_tier_pricing {
                     let response_tier = response
                         .get("service_tier")
@@ -943,6 +968,58 @@ mod tests {
         convert_responses_messages, ConvertResponsesMessagesOptions, OPENAI_TOOL_CALL_PROVIDERS,
     };
     use crate::types::{Context, Message};
+
+    #[test]
+    fn completed_usage_prices_mixed_cache_write_lifetimes() {
+        let model: Model = serde_json::from_value(json!({
+            "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol", "provider": "openai",
+            "api": "openai-responses", "baseUrl": "https://unused.invalid",
+            "reasoning": true, "input": ["text"], "contextWindow": 100000, "maxTokens": 1000,
+            "cost": {"input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5}
+        }))
+        .unwrap();
+        let mut output = initial_assistant_message(&model.api, &model.provider, &model.id);
+        let (writer, _stream) = create_assistant_message_event_stream();
+        let mut processor = ResponsesStreamProcessor::new(
+            &model,
+            &mut output,
+            &writer,
+            ResponsesStreamHooks::default(),
+        );
+        processor
+            .handle_event(&json!({
+                "type": "response.completed",
+                "response": {
+                    "status": "completed",
+                    "usage": {
+                        "input_tokens": 12000,
+                        "input_tokens_details": {
+                            "cached_tokens": 4000,
+                            "cache_write_tokens": 7000,
+                            "cache_write_tokens_details": {
+                                "ttl_30m_tokens": 3000,
+                                "ttl_12h_tokens": 4000
+                            }
+                        },
+                        "output_tokens": 100,
+                        "total_tokens": 12100
+                    }
+                }
+            }))
+            .unwrap();
+
+        let usage = output.usage;
+        assert_eq!(usage.input, 1000);
+        assert_eq!(usage.cache_read, 4000);
+        assert_eq!(usage.cache_write, 7000);
+        assert_eq!(usage.output, 100);
+        assert_eq!(usage.total_tokens, 12100);
+        assert!((usage.cost.input.as_f64() - 0.002).abs() < 1e-9);
+        assert!((usage.cost.cache_read.as_f64() - 0.0004).abs() < 1e-9);
+        assert!((usage.cost.cache_write.as_f64() - 0.0275).abs() < 1e-9);
+        assert!((usage.cost.output.as_f64() - 0.001).abs() < 1e-9);
+        assert!((usage.cost.total.as_f64() - 0.0309).abs() < 1e-9);
+    }
 
     #[test]
     fn completed_reasoning_is_preserved_for_replay() {

@@ -684,12 +684,14 @@ fn build_request_body(
     context: &Context,
     options: &OpenAICodexResponsesOptions,
 ) -> Value {
+    let cacheable_guidance = context.system_prompt.is_some()
+        && super::openai_responses_shared::supports_message_cache_breakpoints(&model.id);
     let messages = convert_responses_messages(
         model,
         context,
         &OPENAI_TOOL_CALL_PROVIDERS,
         ConvertResponsesMessagesOptions {
-            include_system_prompt: false,
+            include_system_prompt: cacheable_guidance,
         },
     );
 
@@ -699,10 +701,16 @@ fn build_request_body(
     body.insert("stream".into(), json!(true));
     body.insert(
         "instructions".into(),
-        json!(context
-            .system_prompt
-            .clone()
-            .unwrap_or_else(|| "You are a helpful assistant.".to_string())),
+        json!(if cacheable_guidance {
+            // The ChatGPT endpoint accepts an empty instructions field. Keep reusable
+            // guidance only in input so it survives previous_response_id continuations.
+            ""
+        } else {
+            context
+                .system_prompt
+                .as_deref()
+                .unwrap_or("You are a helpful assistant.")
+        }),
     );
     body.insert("input".into(), Value::Array(messages));
     body.insert(
@@ -1049,6 +1057,37 @@ mod tests {
         }
         processor.finish().expect("stream finish");
         output
+    }
+
+    #[test]
+    fn codex_cache_prefix_survives_continuation_without_repeating_guidance() {
+        let model = Model {
+            id: "gpt-6.2-astra".into(),
+            ..codex_wire_model()
+        };
+        let options = OpenAICodexResponsesOptions::default();
+        let mut context = codex_test_context("first");
+        let first = build_request_body(&model, &context, &options);
+        assert_eq!(first["input"][0]["role"], "developer");
+        assert_eq!(first["input"][0]["content"], "You are a helpful assistant.");
+        assert_eq!(first["instructions"], "");
+        let continuation = ContinuationState {
+            last_request_body: first,
+            last_response_id: "resp_cache".into(),
+            last_response_items: vec![],
+            connection_id: 7,
+        };
+        context.messages.extend(codex_test_context("second").messages);
+        let followup = build_request_body(&model, &context, &options);
+        let delta = build_cached_websocket_request_body(Some(&continuation), &followup, 7);
+        assert_eq!(delta["previous_response_id"], "resp_cache");
+        assert_eq!(delta["input"], json!([followup["input"][2]]));
+        context.system_prompt = Some("Changed guidance".into());
+        let changed = build_request_body(&model, &context, &options);
+        assert_eq!(
+            build_cached_websocket_request_body(Some(&continuation), &changed, 7),
+            changed
+        );
     }
 
     fn followup_request_input(

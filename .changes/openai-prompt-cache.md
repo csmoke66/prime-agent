@@ -1,0 +1,2 @@
+- Modern OpenAI Codex requests now put reusable harness instructions in the initial developer message, allowing prompt cache reuse without resending the guidance on WebSocket continuations. The ChatGPT endpoint uses implicit caching; no API-only cache controls are sent.
+- Direct OpenAI Responses requests use the model-appropriate cache retention controls. Responses usage separates ordinary input, cache reads, and cache writes and accounts for the different write lifetimes.

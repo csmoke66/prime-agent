@@ -12,8 +12,8 @@ use crate::event_stream::{
 use crate::models::{clamp_thinking_level, supports_thinking};
 use crate::providers::openai_responses_shared::{
     apply_service_tier_pricing, convert_responses_messages, convert_responses_tools,
-    ConvertResponsesMessagesOptions, ConvertResponsesToolsOptions, ReasoningSummary,
-    ResponsesStreamHooks, OPENAI_TOOL_CALL_PROVIDERS,
+    supports_message_cache_breakpoints, ConvertResponsesMessagesOptions, ConvertResponsesToolsOptions,
+    ReasoningSummary, ResponsesStreamHooks, OPENAI_TOOL_CALL_PROVIDERS,
 };
 use crate::providers::simple_options::build_base_options;
 use crate::registry::Provider;
@@ -213,7 +213,18 @@ fn build_params(model: &Model, context: &Context, options: &OpenAIResponsesOptio
             params.insert("prompt_cache_key".into(), json!(session_id));
         }
     }
-    if let Some(retention) = get_prompt_cache_retention(&compat, cache_retention) {
+    if model.provider == "openai" && supports_message_cache_breakpoints(&model.id) {
+        match cache_retention {
+            // Explicit mode without any breakpoints disables reads and writes.
+            CacheRetention::None => {
+                params.insert("prompt_cache_options".into(), json!({ "mode": "explicit" }));
+            }
+            CacheRetention::Long if compat.supports_long_cache_retention => {
+                params.insert("prompt_cache_options".into(), json!({ "ttl": "12h" }));
+            }
+            _ => {}
+        }
+    } else if let Some(retention) = get_prompt_cache_retention(&compat, cache_retention) {
         params.insert("prompt_cache_retention".into(), json!(retention));
     }
     params.insert("store".into(), json!(false));
@@ -515,6 +526,67 @@ mod tests {
             "compat": raw,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn direct_openai_uses_message_cache_options_only_on_supported_models() {
+        let context = Context {
+            system_prompt: Some("Stable instructions".into()),
+            ..Default::default()
+        };
+        for (provider, id, base_url, modern) in [
+            ("openai", "gpt-6.2-sol", "https://api.openai.com/v1", true),
+            ("openai", "gpt-5.5", "https://api.openai.com/v1", false),
+            (
+                "opencode-go",
+                "gpt-5.6-luna",
+                "https://opencode.ai/zen/go/v1",
+                false,
+            ),
+        ] {
+            let mut model = compat_model(json!({}));
+            model.provider = provider.into();
+            model.id = id.into();
+            model.base_url = base_url.into();
+            model.reasoning = false;
+            for retention in [
+                CacheRetention::Long,
+                CacheRetention::Short,
+                CacheRetention::None,
+            ] {
+                let params = build_params(
+                    &model,
+                    &context,
+                    &OpenAIResponsesOptions::from_base(StreamOptions {
+                        cache_retention: Some(retention),
+                        session_id: Some("session".into()),
+                        ..Default::default()
+                    }),
+                );
+                let cache_options = match (modern, retention) {
+                    (true, CacheRetention::Long) => Some(json!({ "ttl": "12h" })),
+                    (true, CacheRetention::None) => Some(json!({ "mode": "explicit" })),
+                    _ => None,
+                };
+                assert_eq!(params.get("prompt_cache_options"), cache_options.as_ref());
+                assert_eq!(
+                    params.get("prompt_cache_retention").and_then(Value::as_str),
+                    (!modern && retention == CacheRetention::Long).then_some("24h")
+                );
+                assert_eq!(
+                    params.get("prompt_cache_key").and_then(Value::as_str),
+                    (retention != CacheRetention::None).then_some("session")
+                );
+                assert_eq!(
+                    params["input"],
+                    json!([{
+                        "role": if modern { "developer" } else { "system" },
+                        "content": "Stable instructions",
+                    }])
+                );
+                assert!(params.get("instructions").is_none());
+            }
+        }
     }
 
     /// An explicit Authorization from the model or the caller (a custom provider's `authHeader:

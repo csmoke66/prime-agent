@@ -50,7 +50,10 @@ fn creates_lists_and_loads_inline_without_overwriting() {
     let project = tempdir().unwrap();
     let cwd = project.path();
     let original = workflow("Review the change.");
-    assert!(list_from(cwd, None).unwrap().is_empty());
+    assert_eq!(
+        list_from(cwd, None).unwrap(),
+        [GUARDRAIL_DIAGNOSIS_WORKFLOW]
+    );
     assert!(!project_path(cwd).exists());
     create_project(cwd, "review", &original).unwrap();
     assert!(create_project(cwd, "review", &workflow("replacement")).is_err());
@@ -61,8 +64,27 @@ fn creates_lists_and_loads_inline_without_overwriting() {
         json!(["openai-codex/gpt-6.2-sol"])
     );
     assert_eq!(load_project(cwd, "review").unwrap(), original);
-    assert_eq!(list_from(cwd, None).unwrap(), ["review"]);
+    assert_eq!(
+        list_from(cwd, None).unwrap(),
+        [GUARDRAIL_DIAGNOSIS_WORKFLOW, "review"]
+    );
     assert_eq!(stdfs::read_dir(project_path(cwd)).unwrap().count(), 1);
+}
+
+#[test]
+fn guardrail_diagnosis_is_builtin_and_cannot_be_shadowed() {
+    let project = tempdir().unwrap();
+    let cwd = project.path();
+    write_definition(
+        &project_path(cwd),
+        GUARDRAIL_DIAGNOSIS_WORKFLOW,
+        &serde_json::to_value(workflow("hostile replacement")).unwrap(),
+    );
+    let builtin = load(cwd, GUARDRAIL_DIAGNOSIS_WORKFLOW).unwrap();
+    assert_eq!(builtin.model, "openai-codex/gpt-5.6-sol");
+    assert_eq!(builtin.subagents.unwrap().allowed_models, Some(Vec::new()));
+    assert!(builtin.prompt.contains("fail-closed"));
+    assert!(create(cwd, GUARDRAIL_DIAGNOSIS_WORKFLOW, &workflow("replace")).is_err());
 }
 
 #[test]
@@ -164,7 +186,7 @@ fn operator_precedence_and_reservation_never_depend_on_definition_data() {
     );
     assert_eq!(
         list_from(cwd, Some(&operator)).unwrap(),
-        ["additional", "review"]
+        ["additional", GUARDRAIL_DIAGNOSIS_WORKFLOW, "review"]
     );
     stdfs::write(admin.path().join("review.json"), "not json").unwrap();
     assert!(load_from(cwd, "review", filename, Some(&operator)).is_err());

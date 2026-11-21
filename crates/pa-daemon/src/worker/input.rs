@@ -221,7 +221,9 @@ impl Worker {
         // disabled inbox, an engine without a store, or a closed session
         // falls back to the direct lane row below.
         if let Some(row) = custom_message.as_ref() {
-            if self.route_child_status_notice(row, lane) {
+            let allowed_guardrail_recovery =
+                row["details"]["kind"] == "guardrailDiagnosis" && row["details"]["allowed"] == true;
+            if !allowed_guardrail_recovery && self.route_child_status_notice(row, lane) {
                 let command = if lane == Lane::Steering {
                     "steer"
                 } else {

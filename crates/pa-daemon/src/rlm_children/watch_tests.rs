@@ -1271,8 +1271,9 @@ async fn a_guardrailed_child_is_killed_and_cannot_steer_the_parent() {
         .expect("parent receives one sanitized status")
         .expect("follow-up channel remains open");
     let custom = &follow_up["customMessage"];
-    assert_eq!(custom["details"]["kind"], "guardrail");
-    assert_eq!(custom["details"]["result"], Value::Null);
+    assert_eq!(custom["details"]["kind"], "guardrailDiagnosis");
+    assert_eq!(custom["details"]["allowed"], false);
+    assert_eq!(custom["details"]["solution"], Value::Null);
     assert_eq!(custom["details"]["retryable"], false);
     assert!(
         !follow_up.to_string().contains("I cannot perform that request"),

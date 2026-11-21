@@ -120,6 +120,50 @@ pub fn create_rlm_child_guardrail_message(
         rest: serde_json::Map::default(),
     }
 }
+/// A single protected diagnosis replaced the rejected child attempt.
+/// Provider refusal text remains quarantined; only the structured decision
+/// and, for allowed work, its compliant recovery plan reach the parent.
+#[must_use]
+pub fn create_rlm_child_guardrail_diagnosis_message(
+    child_id: &str,
+    session_name: &str,
+    allowed: bool,
+    diagnosis: &str,
+    solution: &str,
+    timestamp: u64,
+) -> CustomMessage {
+    let name = sanitize_message_header_value(session_name);
+    let content = if allowed {
+        format!(
+            "[child-recovered: guardrail child:{name}]\n\n\
+             A protected Sol 5.6 diagnosis found the underlying work allowed. \
+             Apply this compliant recovery plan instead of retrying the rejected approach:\n\n\
+             {solution}\n\nDiagnosis: {diagnosis}"
+        )
+    } else {
+        format!(
+            "[child-stopped: guardrail child:{name}]\n\n\
+             A protected Sol 5.6 diagnosis did not establish that this work is allowed. \
+             Do not retry or rephrase it to evade the guardrail.\n\nDiagnosis: {diagnosis}"
+        )
+    };
+    CustomMessage {
+        custom_type: RLM_CHILD_FAILURE_CUSTOM_TYPE.to_string(),
+        content: UserContent::Text(content),
+        display: true,
+        details: Some(json!({
+            "kind": "guardrailDiagnosis",
+            "childId": child_id,
+            "sessionName": session_name,
+            "allowed": allowed,
+            "diagnosis": diagnosis,
+            "solution": allowed.then_some(solution),
+            "retryable": false,
+        })),
+        timestamp,
+        rest: serde_json::Map::default(),
+    }
+}
 
 /// The failure row: `[child-failed child:<name>]` with the error text.
 #[must_use]
@@ -233,6 +277,41 @@ mod tests {
         assert_eq!(details.get("error"), None);
         assert_eq!(details["retryable"], false);
     }
+    #[test]
+    fn diagnosis_exposes_only_a_compliant_solution_for_allowed_work() {
+        let allowed = create_rlm_child_guardrail_diagnosis_message(
+            "sub-9",
+            "lane",
+            true,
+            "The task is ordinary maintenance.",
+            "Perform the maintenance directly in the parent.",
+            6_000,
+        );
+        let UserContent::Text(content) = allowed.content else {
+            panic!("diagnosis notice must be text");
+        };
+        assert!(content.contains("Apply this compliant recovery plan"));
+        let details = allowed.details.unwrap();
+        assert_eq!(details["kind"], "guardrailDiagnosis");
+        assert_eq!(details["allowed"], true);
+        assert_eq!(
+            details["solution"],
+            "Perform the maintenance directly in the parent."
+        );
 
+        let denied = create_rlm_child_guardrail_diagnosis_message(
+            "sub-10",
+            "lane",
+            false,
+            "The task is not allowed.",
+            "",
+            7_000,
+        );
+        let UserContent::Text(content) = denied.content else {
+            panic!("diagnosis notice must be text");
+        };
+        assert!(content.contains("Do not retry"));
+        assert_eq!(denied.details.unwrap()["solution"], serde_json::Value::Null);
+    }
 }
 

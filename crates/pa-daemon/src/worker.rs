@@ -469,6 +469,19 @@ impl Worker {
                 // The in-run autonomous continuation seam: the hook holds
                 // itself weakly through the registered arc.
                 concrete.register_arc();
+                let pause_table = input_pauses.clone();
+                let pause_session = active_session_id.clone();
+                let pause_wake = Arc::clone(&work_notify);
+                let pause_idle = Arc::clone(&idle_notify);
+                concrete.set_guardrail_pause_hook(Arc::new(move || {
+                    let guard = pause_table.hold_internal(
+                        &pause_session,
+                        "guardrail-diagnosis",
+                        Arc::clone(&pause_wake),
+                    );
+                    pause_idle.notify_waiters();
+                    Box::new(guard)
+                }));
                 concrete
                     .set_rlm_usage_store(std::sync::Arc::new(CoreUsageStore(Arc::clone(&core))));
                 let sink_core = Arc::clone(&core);

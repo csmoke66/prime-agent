@@ -1,0 +1,1 @@
+- Recover false-positive child guardrails through one immutable Sol 5.6 diagnosis: pause the parent, deduplicate rejected tasks, fail closed, and resume allowed work with a compliant plan without retrying the rejected request.

@@ -18,6 +18,12 @@ use super::{
 pub(crate) const BARE_SKILL_INVOCATION_INSTRUCTION: &str = "The user invoked this skill with no task text - ask what they want before executing any protocol inside it.";
 
 impl AgentSessionEngine {
+    pub(crate) fn set_guardrail_pause_hook(&self, hook: crate::rlm_children::GuardrailPauseHook) {
+        if let Some(children) = &self.children {
+            children.set_guardrail_pause_hook(hook);
+        }
+    }
+
     /// Build the engine: the shared async runtime, the model selection
     /// (create config), the supervisor link, the children registry, and the
     /// MCP store.

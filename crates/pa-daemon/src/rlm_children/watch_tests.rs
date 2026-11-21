@@ -1276,7 +1276,9 @@ async fn a_guardrailed_child_is_killed_and_cannot_steer_the_parent() {
     assert_eq!(custom["details"]["solution"], Value::Null);
     assert_eq!(custom["details"]["retryable"], false);
     assert!(
-        !follow_up.to_string().contains("I cannot perform that request"),
+        !follow_up
+            .to_string()
+            .contains("I cannot perform that request"),
         "the child's refusal must not enter the parent transcript"
     );
 

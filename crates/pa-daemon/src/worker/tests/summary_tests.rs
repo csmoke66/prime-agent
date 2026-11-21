@@ -241,9 +241,15 @@ fn running_child_uses_its_recorded_model_only_when_live_metadata_is_missing() {
     store.rewrite().unwrap();
     let mut core = SessionCore::test_core(Some(store), "/tmp".into());
     core.busy = true;
-    assert_eq!(session_summary(&core, inputs()).model, Some(json!({"provider":"provider","id":"selected"})));
+    assert_eq!(
+        session_summary(&core, inputs()).model,
+        Some(json!({"provider":"provider","id":"selected"}))
+    );
     let live = json!({"provider":"provider","id":"new","reasoning":true});
-    let state = SummaryInputs { model: Some(live.clone()), ..inputs() };
+    let state = SummaryInputs {
+        model: Some(live.clone()),
+        ..inputs()
+    };
     assert_eq!(session_summary(&core, state).model, Some(live));
 }
 

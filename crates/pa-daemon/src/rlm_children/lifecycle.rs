@@ -1452,8 +1452,8 @@ pub(super) mod exit_capture_tests {
             last_user_task_from_file(&file.to_string_lossy()).as_deref(),
             Some("the task")
         );
-        let failure = final_turn_failure_from_file(&file.to_string_lossy())
-            .expect("guardrail failure");
+        let failure =
+            final_turn_failure_from_file(&file.to_string_lossy()).expect("guardrail failure");
         assert!(failure.guardrail);
         assert_eq!(
             failure.error,
@@ -1461,7 +1461,6 @@ pub(super) mod exit_capture_tests {
         );
         let _ = std::fs::remove_file(&file);
     }
-
 }
 
 #[cfg(test)]

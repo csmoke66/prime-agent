@@ -49,12 +49,18 @@ impl Worker {
                     let mut errors = serde_json::Map::new();
                     for name in &names {
                         match pa_core::workflows::load(cwd, name) {
-                            Ok(def) => { definitions.insert(name.clone(), serde_json::to_value(def)?); }
-                            Err(e) => { errors.insert(name.clone(), Value::String(format!("{e:#}"))); }
+                            Ok(def) => {
+                                definitions.insert(name.clone(), serde_json::to_value(def)?);
+                            }
+                            Err(e) => {
+                                errors.insert(name.clone(), Value::String(format!("{e:#}")));
+                            }
                         }
                     }
                     Ok(json!({"names": names, "definitions": definitions, "errors": errors}))
-                }).await {
+                })
+                .await
+                {
                     Ok(Ok(listing)) => response_success(None, command_type, Some(listing)),
                     Ok(Err(e)) => response_failure(None, command_type, &format!("{e:#}"), None),
                     Err(e) => response_failure(None, command_type, &e.to_string(), None),
@@ -191,7 +197,9 @@ impl Worker {
 
     fn start_workflow(&self, payload: &Value) -> DaemonResponse {
         const COMMAND: &str = "run_workflow";
-        if let Err(reply) = self.require_created(COMMAND) { return reply }
+        if let Err(reply) = self.require_created(COMMAND) {
+            return reply;
+        }
         let Some(name) = payload["name"].as_str().filter(|s| !s.trim().is_empty()) else {
             return response_failure(None, COMMAND, "Workflow name is required", None);
         };
@@ -205,11 +213,19 @@ impl Worker {
         let session = core.lock().unwrap().generation.clone();
         tokio::spawn(async move {
             let (text, details) = match host.run_workflow(&name, input).await {
-                Ok(output) => (format!("Workflow {name}\n{output:#}"), json!({"workflow":name, "severity":"info", "output":output})),
-                Err(e) => (format!("Workflow {name} failed: {e:#}"), json!({"workflow":name, "severity":"error", "error":format!("{e:#}")})),
+                Ok(output) => (
+                    format!("Workflow {name}\n{output:#}"),
+                    json!({"workflow":name, "severity":"info", "output":output}),
+                ),
+                Err(e) => (
+                    format!("Workflow {name} failed: {e:#}"),
+                    json!({"workflow":name, "severity":"error", "error":format!("{e:#}")}),
+                ),
             };
             let mut core = core.lock().unwrap();
-            if core.generation != session { return }
+            if core.generation != session {
+                return;
+            }
             let row = json!({"role":"custom","customType":pa_types::slash_commands::SESSION_SLASH_COMMAND_RESULT_CUSTOM_TYPE,
                 "content":text,"display":true,"timestamp":crate::util::now_ms(),"details":details});
             persist_custom_row(&mut core, &row);

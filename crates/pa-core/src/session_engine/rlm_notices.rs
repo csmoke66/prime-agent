@@ -314,4 +314,3 @@ mod tests {
         assert_eq!(denied.details.unwrap()["solution"], serde_json::Value::Null);
     }
 }
-

@@ -1,1 +1,0 @@
-- Child safety-guardrail failures now terminate that child and deliver one structured, sanitized parent status. The child’s refusal text remains only in its own audit transcript and is excluded from the parent inbox, roster result, and continuation context.

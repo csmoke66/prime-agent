@@ -13,7 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::models::resolver::is_valid_thinking_level;
-use crate::workflow_io::{Field, FieldType, Fields};
+use crate::workflow_io::Fields;
 
 #[cfg(unix)]
 #[path = "unix.rs"]
@@ -25,42 +25,6 @@ mod fs;
 use fs::Directory;
 
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
-/// Built into the binary so neither a project agent nor an unprivileged
-/// local process can replace the safety decision procedure.
-pub const GUARDRAIL_DIAGNOSIS_WORKFLOW: &str = "diagnose-guardrail";
-
-fn required(kind: FieldType, description: &str) -> Field {
-    Field {
-        kind,
-        required: true,
-        description: Some(description.to_string()),
-    }
-}
-
-fn builtin(name: &str) -> Option<Workflow> {
-    (name == GUARDRAIL_DIAGNOSIS_WORKFLOW).then(|| Workflow {
-        version: 1,
-        description: Some(
-            "Diagnose one provider guardrail without retrying the rejected request.".to_string(),
-        ),
-        model: "openai-codex/gpt-5.6-sol".to_string(),
-        effort: Some("high".to_string()),
-        subagents: Some(WorkflowSubagents {
-            allowed_models: Some(Vec::new()),
-            effort: None,
-        }),
-        prompt: "You are the fail-closed safety reviewer for an agent session. Assess the supplied task under OpenAI policy and the harness rules. Do not help evade a guardrail, conceal intent, or weaken safeguards. If the underlying work is allowed, set allowed=true and provide a concrete compliant solution the parent agent can directly follow to complete the task without repeating the rejected approach. If it is disallowed or uncertain, set allowed=false and leave solution empty. Explain the decisive reason briefly. Return only the declared JSON object.".to_string(),
-        input_fields: Fields::from([
-            ("task".to_string(), required(FieldType::String, "The exact child task that encountered the guardrail.")),
-            ("childModel".to_string(), required(FieldType::String, "The model selector used by the stopped child.")),
-        ]),
-        output_fields: Fields::from([
-            ("allowed".to_string(), required(FieldType::Boolean, "Whether the underlying work is allowed.")),
-            ("diagnosis".to_string(), required(FieldType::String, "A concise policy diagnosis.")),
-            ("solution".to_string(), required(FieldType::String, "A compliant plan when allowed; otherwise an empty string.")),
-        ]),
-    })
-}
 
 /// A complete workflow with its instructions already in memory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -236,9 +200,6 @@ fn load_from(
 /// Returns an error for invalid names, missing or invalid definitions or
 /// instructions, or an inaccessible or unsafe storage location.
 pub fn load(cwd: &Path, name: &str) -> Result<Workflow> {
-    if let Some(workflow) = builtin(name) {
-        return Ok(workflow);
-    }
     let filename = definition_name(name)?;
     let operator = Directory::operator_root().context("open operator workflow directory")?;
     load_from(cwd, name, OsStr::new(&filename), operator.as_ref())
@@ -251,10 +212,6 @@ fn create_in(
     workflow: &Workflow,
     operator: Option<&Directory>,
 ) -> Result<()> {
-    ensure!(
-        builtin(name).is_none(),
-        "workflow {name:?} is reserved by the application"
-    );
     workflow.validate()?;
     if let Some(dir) = operator {
         ensure!(
@@ -296,7 +253,6 @@ pub fn create(cwd: &Path, name: &str, workflow: &Workflow) -> Result<()> {
 
 fn list_from(cwd: &Path, operator: Option<&Directory>) -> Result<Vec<String>> {
     let mut names = BTreeSet::new();
-    names.insert(GUARDRAIL_DIAGNOSIS_WORKFLOW.to_string());
     let project = project_dir(cwd, false).context("open project workflow directory")?;
     for dir in [operator, project.as_ref()].into_iter().flatten() {
         dir.for_each_file(|filename| {

@@ -16,8 +16,7 @@ use pa_core::session_engine::rlm_host::{
     RlmSubagentHost,
 };
 use pa_core::session_engine::rlm_notices::{
-    create_rlm_child_failure_message, create_rlm_child_guardrail_diagnosis_message,
-    create_rlm_child_terminal_notice, RlmChildTerminalNotice,
+    create_rlm_child_failure_message, create_rlm_child_terminal_notice, RlmChildTerminalNotice,
 };
 use pa_core::session_engine::rlm_usage::{RlmChildUsageReport, RlmChildUsageSink};
 use pa_types::daemon::{DaemonCommand, DaemonSessionLifecycle, PromptInput};
@@ -338,7 +337,6 @@ pub struct SupervisorChildSessions {
 pub type DeleteNotifier = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 pub(crate) type ChildUpdateSink = std::sync::Arc<dyn Fn(Value) + Send + Sync>;
-pub(crate) type GuardrailPauseHook = std::sync::Arc<dyn Fn() -> Box<dyn Send> + Send + Sync>;
 
 /// The parent worker's turn state as the detached child prompt tasks read it.
 #[derive(Debug, Clone, Copy, Default)]
@@ -400,11 +398,6 @@ struct SupervisorChildSessionsInner {
     /// `/context` children immediately, not wait for the next refresh.
     delete_notifier: std::sync::Mutex<Option<DeleteNotifier>>,
     child_update_sink: std::sync::Mutex<Option<ChildUpdateSink>>,
-    /// Acquires an owned parent input pause while a safety diagnosis runs.
-    guardrail_pause_hook: std::sync::Mutex<Option<GuardrailPauseHook>>,
-    /// One diagnosis per exact rejected task, serialized per parent session.
-    guardrail_recovery_gate: Mutex<()>,
-    guardrail_recovery_seen: Mutex<std::collections::HashSet<String>>,
     /// The parent session's semantic-edge recorder (wired once the session
     /// engine is built; the settle watcher records a returned child's last
     /// committed request into it). `None` until the build or for sessions
@@ -457,9 +450,6 @@ impl SupervisorChildSessions {
                 usage_sink: std::sync::Mutex::new(None),
                 delete_notifier: std::sync::Mutex::new(None),
                 child_update_sink: std::sync::Mutex::new(None),
-                guardrail_pause_hook: std::sync::Mutex::new(None),
-                guardrail_recovery_gate: Mutex::new(()),
-                guardrail_recovery_seen: Mutex::new(std::collections::HashSet::new()),
                 semantic_edges: std::sync::Mutex::new(None),
             }),
         }
@@ -509,14 +499,6 @@ impl SupervisorChildSessions {
     /// # Panics
     ///
     /// Panics when the settle-hook mutex is poisoned.
-    pub(crate) fn set_guardrail_pause_hook(&self, hook: GuardrailPauseHook) {
-        *self
-            .inner
-            .guardrail_pause_hook
-            .lock()
-            .expect("guardrail pause hook lock") = Some(hook);
-    }
-
     pub fn set_settle_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
         *self.inner.settle_hook.lock().expect("settle hook lock") = Some(hook);
     }
@@ -1016,18 +998,6 @@ impl SupervisorChildSessionsInner {
                 record.progress_note = None;
                 record.tool_use_count = None;
             }
-        }
-        if summary
-            .get("providerGuardrail")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            record.run.apply(RunEvent::Failed(
-                lifecycle::GUARDRAIL_CHILD_FAILURE.to_string(),
-            ));
-            record.answer_preview = None;
-            record.answer_text = None;
-            record.answer_captured = true;
         }
         if let Some(note) = summary.get("progressNote").and_then(Value::as_str) {
             record.progress_note = Some(note.to_string());

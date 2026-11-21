@@ -76,10 +76,6 @@ At 20 unread agent-to-agent messages, the worker bypasses the reminder setting a
 
 In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
 
-### Guardrail isolation
-
-When a sub-agent hits a provider guardrail, Prime permanently stops that child and pauses new parent input. It runs the immutable `diagnose-guardrail` workflow once for that exact task using only `openai-codex/gpt-5.6-sol`; the account’s advertised Daybreak Blue capability is applied by the normal OpenAI request path. Codex cybersecurity blocks are classified as safety failures even when the provider supplies a generic error code, so the blocked request is not retried. If the diagnosis establishes that the underlying work is allowed, the parent resumes with the workflow’s compliant recovery plan. An uncertain, disallowed, unavailable, duplicate, or over-budget diagnosis fails closed. Diagnoses are serialized, duplicate tasks are suppressed, and each parent session is capped at three diagnostic calls.
-
 ## Install
 
 Install the latest stable version with the one-command installer:

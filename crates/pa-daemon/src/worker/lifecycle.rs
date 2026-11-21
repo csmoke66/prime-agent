@@ -671,10 +671,9 @@ impl Worker {
             idle.as_mut().enable();
             {
                 let core = self.core.lock().unwrap();
-                if core.provider_guardrail
-                    || (!core.busy
-                        && (core.steering.is_empty() && core.follow_up.is_empty()
-                            || self.input_pauses.paused()))
+                if !core.busy
+                    && (core.steering.is_empty() && core.follow_up.is_empty()
+                        || self.input_pauses.paused())
                 {
                     return;
                 }

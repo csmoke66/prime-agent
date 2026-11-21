@@ -19,7 +19,7 @@ use super::{
     Arc, ChildCloseReason, DaemonCommand, Map, ParentIdentity, Path, PromptInput,
     SupervisorChildSessions, SupervisorChildSessionsInner, Value,
 };
-use crate::model_allowlist;
+use crate::model_allowlist::{self, DaemonAllowlist};
 use crate::supervisor::client_route_timeout;
 
 #[derive(Default)]
@@ -105,21 +105,15 @@ impl SupervisorChildSessions {
 
     /// Run one named workflow in a fresh daemon worker and return its validated result object.
     pub(crate) async fn run_workflow(&self, name: &str, input: Value) -> Result<Value> {
-        run_workflow_inner(Arc::clone(&self.inner), name, input).await
+        let run = ActiveRun::start(Arc::clone(&self.inner))?;
+        let _cancel_on_drop = run.stop.clone().drop_guard();
+        let name = name.to_owned();
+        // Own creation through teardown independently of the caller's response future. Dropping
+        // the caller can cancel a turn, but must not abandon an in-flight supervisor create.
+        tokio::spawn(async move { run.execute(name, input).await })
+            .await
+            .context("workflow worker task join failed")?
     }
-}
-
-pub(super) async fn run_workflow_inner(
-    host: Arc<SupervisorChildSessionsInner>,
-    name: &str,
-    input: Value,
-) -> Result<Value> {
-    let run = ActiveRun::start(host)?;
-    let _cancel_on_drop = run.stop.clone().drop_guard();
-    let name = name.to_owned();
-    tokio::spawn(async move { run.execute(name, input).await })
-        .await
-        .context("workflow worker task join failed")?
 }
 
 struct Admission {
@@ -283,7 +277,6 @@ fn prepare(
             .as_deref()
             .context("workflow requires a project directory")?,
     );
-    let system_guardrail_workflow = name == workflows::GUARDRAIL_DIAGNOSIS_WORKFLOW;
     let workflow = workflows::load(cwd, name)?;
     let input = WorkflowInput::parse(&workflow, data)?;
     let input_json = serde_json::to_string(&input)?;
@@ -303,7 +296,6 @@ fn prepare(
     )?;
     let (descendant_models, descendant_effort) =
         subagents.map_or((None, None), |s| (s.allowed_models, s.effort));
-    let inherited = (!system_guardrail_workflow).then_some(inherited).flatten();
     let root_effort = workflow_effort(effort.as_deref(), inherited, "effort")?;
     let descendant_effort =
         workflow_effort(descendant_effort.as_deref(), inherited, "subagents.effort")?;
@@ -311,17 +303,12 @@ fn prepare(
     let models = registry.get_rlm_searchable_models();
     let mut seen = HashSet::new();
     let check_model = |selector: &str, effort: Option<ThinkingLevelSetting>| {
-        if !system_guardrail_workflow {
-            model_allowlist::assert_allowed(&allowlist, selector).inspect_err(|error| {
-                if let Some(refusal) =
-                    error.downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
-                {
-                    host.model_refusal_telemetry
-                        .note_refused("workflow", &refusal.selector, cwd);
-                }
-            })?;
-        }
-        check_configured_model(&models, selector, effort)
+        check_configured_model(&models, &allowlist, selector, effort).inspect_err(|error| {
+            if let Some(refusal) = error.downcast_ref::<pa_core::models::ModelAllowlistRefusal>() {
+                host.model_refusal_telemetry
+                    .note_refused("workflow", &refusal.selector, cwd);
+            }
+        })
     };
     check_model(&model, root_effort)?;
     if let Some(selectors) = &descendant_models {
@@ -377,11 +364,11 @@ fn workflow_effort(
 
 fn check_configured_model(
     models: &[&Model],
+    allowlist: &DaemonAllowlist,
     selector: &str,
     effort: Option<ThinkingLevelSetting>,
 ) -> Result<()> {
-    // Caller-policy admission is performed by `prepare`; this helper checks
-    // only that the selected authenticated model and effort really exist.
+    model_allowlist::assert_allowed(allowlist, selector)?;
     let model = selector
         .split_once('/')
         .and_then(|(provider, id)| {

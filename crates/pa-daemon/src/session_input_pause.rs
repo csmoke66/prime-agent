@@ -124,50 +124,6 @@ pub(crate) struct QueuedWorkPause<'a> {
     worker: &'a Worker,
     pause_id: String,
 }
-/// Owned form used by daemon-internal asynchronous flows. Dropping it
-/// always lifts the exact pause, including cancellation and shutdown paths.
-pub(crate) struct OwnedInputPause {
-    table: InputPauseTable,
-    active_session_id: String,
-    pause_id: String,
-    wake: std::sync::Arc<tokio::sync::Notify>,
-}
-
-impl Drop for OwnedInputPause {
-    fn drop(&mut self) {
-        if matches!(
-            self.table.release(
-                &self.pause_id,
-                INTERNAL_PAUSE_OWNER,
-                &self.active_session_id,
-            ),
-            ReleaseOutcome::Released
-        ) {
-            self.wake.notify_one();
-        }
-    }
-}
-
-impl InputPauseTable {
-    pub(crate) fn hold_internal(
-        &self,
-        active_session_id: &str,
-        purpose: &str,
-        wake: std::sync::Arc<tokio::sync::Notify>,
-    ) -> OwnedInputPause {
-        let pause_id = self.acquire(
-            active_session_id,
-            INTERNAL_PAUSE_OWNER,
-            &format!("internal-{purpose}-{}", uuid::Uuid::new_v4()),
-        );
-        OwnedInputPause {
-            table: self.clone(),
-            active_session_id: active_session_id.to_string(),
-            pause_id,
-            wake,
-        }
-    }
-}
 
 impl Worker {
     /// Hold the queued-work pause for one daemon-internal flow. The lease
@@ -416,16 +372,6 @@ mod tests {
             )
             .await;
         assert_ne!(other.data.unwrap()["pauseId"], pause_id);
-    }
-
-    #[test]
-    fn owned_internal_pause_is_lifted_on_drop() {
-        let table = InputPauseTable::new();
-        let wake = Arc::new(tokio::sync::Notify::new());
-        let guard = table.hold_internal("pause-session", "guardrail-diagnosis", wake);
-        assert!(table.paused());
-        drop(guard);
-        assert!(!table.paused());
     }
 
     #[tokio::test]

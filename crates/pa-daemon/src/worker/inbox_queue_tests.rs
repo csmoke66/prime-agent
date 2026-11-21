@@ -2040,41 +2040,6 @@ async fn a_minted_child_notice_routes_into_the_inbox() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[tokio::test]
-async fn an_allowed_guardrail_diagnosis_reaches_the_parent_directly() {
-    let (worker, inbox, dir) = faux_worker_with_inbox();
-    worker.dispatch("clear_queue", &json!({})).await;
-    let (text, wire) = child_notice_wire(
-        pa_core::session_engine::rlm_notices::create_rlm_child_guardrail_diagnosis_message(
-            "sub-9",
-            "lane",
-            true,
-            "Allowed maintenance.",
-            "Apply the focused configuration fix.",
-            1_000,
-        ),
-    );
-    let delivered = worker
-        .dispatch(
-            "follow_up",
-            &json!({
-                "message": text,
-                "customMessage": wire,
-                "rlmNoticeNonce": crate::child_status_notices::mint(),
-            }),
-        )
-        .await;
-    assert!(delivered.success, "{delivered:?}");
-    assert_eq!(inbox.count().0, 0, "the recovery plan must not wait unread");
-    let core = worker.core.lock().unwrap();
-    assert_eq!(core.follow_up.len(), 1);
-    let row = core.follow_up[0].custom_message.as_ref().unwrap();
-    assert_eq!(row["details"]["kind"], "guardrailDiagnosis");
-    assert_eq!(row["details"]["allowed"], true);
-    drop(core);
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
 /// `agentInbox.enabled: false` keeps the minted child-status row direct:
 /// the full row parks on the follow-up lane and nothing lands in a store.
 #[tokio::test]

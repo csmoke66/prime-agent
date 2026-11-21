@@ -570,7 +570,6 @@ pub(crate) fn session_summary(core: &SessionCore, inputs: SummaryInputs) -> Sess
         thinking_level: Some(inputs.thinking_level),
         is_streaming: streaming,
         is_compacting: compacting,
-        provider_guardrail: core.provider_guardrail,
         is_quota_parked: Some(inputs.quota_parked),
         is_bash_running: Some(inputs.bash_running),
         is_running_tools: streaming && !core.running_tool_calls.is_empty(),

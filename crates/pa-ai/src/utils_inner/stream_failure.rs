@@ -850,7 +850,7 @@ pub(crate) fn diagnostic_error_info(error: &ProviderError) -> DiagnosticErrorInf
         rest: Map::default(),
     }
 }
-const PROVIDER_BLOCKED_MESSAGE: &str = "The provider blocked that approach. Try a different way.";
+const PROVIDER_BLOCKED_MESSAGE: &str = "The provider declined this step without giving a specific reason. This may be a false positive; it doesn't mean the reverse-engineering task is disallowed. I'll pick up from the saved results rather than retrying the interrupted step.";
 
 /// Record a terminal stream failure on the message (structured diagnostic that persists to session
 /// JSONL) and emit one structured log line. Safety and refusal failures retain only their

@@ -7,6 +7,30 @@ use super::{
     json, json_round_trip, AgentSessionEngine, DaemonAllowlist, EngineEvent, TurnOnce, TurnPrompt,
     Value,
 };
+const PROVIDER_BLOCK_RECOVERY_PROMPT: &str =
+    "The provider blocked that approach. Try a different way without repeating the blocked approach.";
+
+fn claim_provider_block_recovery(
+    assistant: &pa_agent::types::AssistantMessage,
+    claimed: &std::sync::atomic::AtomicBool,
+) -> bool {
+    let blocked = assistant.stop_reason == pa_agent::types::StopReason::Stop
+        && assistant.error_message.is_none()
+        && assistant.diagnostics.as_ref().is_some_and(|diagnostics| {
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.kind == "provider_stream_failure"
+                    && matches!(
+                        diagnostic
+                            .details
+                            .as_ref()
+                            .and_then(|details| details.get("kind"))
+                            .and_then(Value::as_str),
+                        Some("refusal" | "safety")
+                    )
+            })
+        });
+    blocked && !claimed.swap(true, std::sync::atomic::Ordering::SeqCst)
+}
 
 impl AgentSessionEngine {
     pub(super) fn retry_policy(
@@ -94,6 +118,11 @@ impl AgentSessionEngine {
         // actually starts the parked rows (the gate re-opens then).
         let parked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let subscription_parked = std::sync::Arc::clone(&parked);
+        // One provider block may steer this agent run toward a different approach. A second block
+        // settles normally instead of recursively generating another request.
+        let provider_block_recovery_queued =
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let provider_block_recovery_agent = std::sync::Arc::downgrade(agent);
         let subscription = {
             let tx = tx.clone();
             let pending_model_changes = pending_model_changes.clone();
@@ -115,6 +144,9 @@ impl AgentSessionEngine {
                     let goal_runtime = goal_runtime.clone();
                     let goal_budget_crossed = goal_budget_crossed.clone();
                     let parked = std::sync::Arc::clone(&subscription_parked);
+                    let provider_block_recovery_queued =
+                        std::sync::Arc::clone(&provider_block_recovery_queued);
+                    let provider_block_recovery_agent = provider_block_recovery_agent.clone();
                     Box::pin(async move {
                         use pa_agent::types::AgentEvent;
                         if parked.load(std::sync::atomic::Ordering::SeqCst) {
@@ -131,6 +163,23 @@ impl AgentSessionEngine {
                                 ),
                         } = &event
                         {
+                            if claim_provider_block_recovery(
+                                assistant,
+                                &provider_block_recovery_queued,
+                            ) {
+                                if let Some(agent) = provider_block_recovery_agent.upgrade() {
+                                    agent.follow_up(pa_agent::types::AgentMessage::Standard(
+                                        pa_agent::types::Message::User(
+                                            pa_agent::types::UserMessage {
+                                                content: pa_agent::types::UserContent::Text(
+                                                    PROVIDER_BLOCK_RECOVERY_PROMPT.to_string(),
+                                                ),
+                                                timestamp: pa_agent::now_ms(),
+                                            },
+                                        ),
+                                    ));
+                                }
+                            }
                             if let Some(message) =
                                 json_round_trip::<_, pa_types::ai::AssistantMessage>(assistant)
                             {
@@ -750,4 +799,44 @@ fn tool_result_wire_value(result: &pa_agent::types::AgentToolResult) -> Value {
         .map(|block| serde_json::to_value(block).unwrap_or(Value::Null))
         .collect();
     json!({ "content": content, "details": result.details })
+}
+
+#[cfg(test)]
+mod provider_block_recovery_tests {
+    use super::*;
+
+    fn blocked_message() -> pa_agent::types::AssistantMessage {
+        pa_agent::types::AssistantMessage {
+            content: Vec::new(),
+            api: "openai-codex-responses".to_string(),
+            provider: "openai-codex".to_string(),
+            model: "gpt-6.2-sol".to_string(),
+            response_model: None,
+            response_id: None,
+            diagnostics: Some(vec![pa_agent::types::AssistantMessageDiagnostic {
+                kind: "provider_stream_failure".to_string(),
+                timestamp: 1,
+                error: None,
+                details: Some(json!({ "kind": "safety" })),
+            }]),
+            usage: pa_agent::types::Usage::zero(),
+            stop_reason: pa_agent::types::StopReason::Stop,
+            stop_reason_raw: None,
+            error_message: None,
+            timestamp: 1,
+        }
+    }
+
+    #[test]
+    fn a_provider_block_claims_exactly_one_alternative_approach() {
+        let claimed = std::sync::atomic::AtomicBool::new(false);
+        let message = blocked_message();
+        assert!(claim_provider_block_recovery(&message, &claimed));
+        assert!(!claim_provider_block_recovery(&message, &claimed));
+
+        let fresh = std::sync::atomic::AtomicBool::new(false);
+        let mut ordinary = message;
+        ordinary.diagnostics = None;
+        assert!(!claim_provider_block_recovery(&ordinary, &fresh));
+    }
 }

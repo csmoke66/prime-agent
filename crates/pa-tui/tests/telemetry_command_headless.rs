@@ -1,9 +1,5 @@
-//! Headless e2e for the `/telemetry` command: bare and `status` render the
-//! seam's report, `on`/`off` persist through the settings seam and render
-//! the report after the write (including the "stays off" answer when an
-//! environment variable forces telemetry off), and a bad argument gets the
-//! usage error. The report text and the settings round-trip are covered by
-//! the pa-core telemetry status tests over the real settings store.
+//! Usage telemetry settings: read status without writing, persist preferences,
+//! and distinguish the saved preference from an environment opt-out.
 #![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
@@ -225,6 +221,9 @@ impl pa_tui::client_settings::ClientSettings for StubSettings {
         let (state, reason) = self.state();
         format!("Telemetry is {state} ({reason}).\nInstallation id: stub-id")
     }
+    fn telemetry_enabled(&self) -> bool {
+        self.telemetry_enabled.lock().unwrap().unwrap_or(true)
+    }
     fn set_telemetry_enabled(&self, enabled: bool) -> Result<String> {
         *self.telemetry_enabled.lock().expect("telemetry lock") = Some(enabled);
         let headline = if self.forced_off_by.is_some() && enabled {
@@ -270,38 +269,32 @@ fn run_plan(settings: Arc<StubSettings>, steps: Vec<HeadlessStep>) -> Vec<String
     outcome.frames
 }
 
-fn submit(text: &str) -> Vec<HeadlessStep> {
-    vec![
-        HeadlessStep::Submit(text.to_string()),
-        HeadlessStep::WaitMs(200),
-    ]
+fn select_setting(search: &str) -> Vec<HeadlessStep> {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut steps = vec![
+        HeadlessStep::Submit("/settings".into()),
+        HeadlessStep::Paste(search.into()),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+    ];
+    if search == "usage" {
+        steps.push(HeadlessStep::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+    }
+    steps
 }
 
-/// Bare `/telemetry` and `/telemetry status` render the report; a bad
-/// argument gets the usage error.
 #[test]
 fn telemetry_status_renders_the_report() {
     let settings = Arc::new(StubSettings::default());
-    let mut steps = submit("/telemetry");
-    steps.extend(submit("/telemetry status"));
-    steps.extend(submit("/telemetry maybe"));
-    let all = run_plan(Arc::clone(&settings), steps).join("\n");
-    assert!(
-        all.matches("Telemetry is on (on by default).").count() >= 2,
-        "bare and status both report:\n{all}"
-    );
+    let all = run_plan(Arc::clone(&settings), select_setting("status")).join("\n");
+    assert!(all.contains("Telemetry is on (on by default)."), "{all}");
     assert!(all.contains("Installation id: stub-id"), "{all}");
-    assert!(
-        all.contains("Usage: /telemetry [status|on|off]"),
-        "the usage error rendered:\n{all}"
-    );
+    assert!(settings.telemetry_enabled.lock().unwrap().is_none());
 }
 
-/// `/telemetry off` then `/telemetry on` persist through the seam.
 #[test]
 fn telemetry_off_and_on_persist_the_switch() {
     let settings = Arc::new(StubSettings::default());
-    let steps = submit("/telemetry off");
+    let steps = select_setting("usage");
     let all = run_plan(Arc::clone(&settings), steps).join("\n");
     assert!(all.contains("Telemetry turned off."), "{all}");
     assert!(
@@ -310,7 +303,7 @@ fn telemetry_off_and_on_persist_the_switch() {
     );
     assert_eq!(*settings.telemetry_enabled.lock().unwrap(), Some(false));
 
-    let all = run_plan(Arc::clone(&settings), submit("/telemetry on")).join("\n");
+    let all = run_plan(Arc::clone(&settings), select_setting("usage")).join("\n");
     assert!(all.contains("Telemetry turned on."), "{all}");
     assert_eq!(*settings.telemetry_enabled.lock().unwrap(), Some(true));
 }
@@ -324,13 +317,13 @@ fn the_first_run_telemetry_notice_renders_as_a_row() {
         notice_due: true,
         ..StubSettings::default()
     });
-    let all = run_plan(Arc::clone(&settings), submit("/telemetry status")).join("\n");
+    let all = run_plan(Arc::clone(&settings), select_setting("status")).join("\n");
     assert!(
         all.contains("Prime Agent sends pseudonymous usage"),
         "the disclosure row rendered:\n{all}"
     );
     assert!(
-        all.contains("Disable this with /telemetry off"),
+        all.contains("Disable this in /settings"),
         "the interactive switch names itself:\n{all}"
     );
     assert!(
@@ -342,7 +335,7 @@ fn the_first_run_telemetry_notice_renders_as_a_row() {
 
     // The once-per-installation gate: a second attach with the same
     // installation draws no second row.
-    let again = run_plan(Arc::clone(&settings), submit("/telemetry status")).join("\n");
+    let again = run_plan(Arc::clone(&settings), select_setting("status")).join("\n");
     assert!(
         !again.contains("Prime Agent sends pseudonymous usage"),
         "no second disclosure row:\n{again}"
@@ -354,21 +347,21 @@ fn the_first_run_telemetry_notice_renders_as_a_row() {
 #[test]
 fn an_already_disclosed_installation_renders_no_notice_row() {
     let settings = Arc::new(StubSettings::default());
-    let all = run_plan(Arc::clone(&settings), submit("/telemetry status")).join("\n");
+    let all = run_plan(Arc::clone(&settings), select_setting("status")).join("\n");
     assert!(
         !all.contains("Prime Agent sends pseudonymous usage"),
         "no disclosure row on an already-shown install:\n{all}"
     );
 }
 
-/// `/telemetry on` under an environment opt-out says it stays off.
 #[test]
 fn telemetry_on_says_an_environment_opt_out_still_wins() {
     let settings = Arc::new(StubSettings {
         forced_off_by: Some("DO_NOT_TRACK"),
+        telemetry_enabled: std::sync::Mutex::new(Some(false)),
         ..StubSettings::default()
     });
-    let all = run_plan(Arc::clone(&settings), submit("/telemetry on")).join("\n");
+    let all = run_plan(Arc::clone(&settings), select_setting("usage")).join("\n");
     assert!(
         all.contains("Saved telemetry on in settings, but it stays off."),
         "{all}"

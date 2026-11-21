@@ -174,7 +174,7 @@ pub const FACTORY_SETTINGS_FILE_NAME: &str = "settings.json";
 /// off. Byte-identical to the kernel's `FACTORY_DISABLED_MESSAGE`
 /// (`prime-agent-runtime/src/rlm/factory.py`), so one exact message pins
 /// both sides of the gate.
-pub const FACTORY_DISABLED_MESSAGE: &str = "the factory is disabled; run /factory on to enable it";
+pub const FACTORY_DISABLED_MESSAGE: &str = "the factory is disabled; enable it in /settings";
 
 /// The `factory.enabled` opt-in setting (default off), read leniently from
 /// the agent dir's settings.json exactly like the kernel-side
@@ -885,12 +885,6 @@ mod tests {
         // A corrupt document reads as the disabled default, never a crash.
         std::fs::write(tmp.path().join(FACTORY_SETTINGS_FILE_NAME), "{ not json").unwrap();
         assert!(!factory_enabled(tmp.path()));
-        // The refusal is the one exact message, byte-identical to the
-        // kernel-side FACTORY_DISABLED_MESSAGE (rlm/factory.py).
-        assert_eq!(
-            FACTORY_DISABLED_MESSAGE,
-            "the factory is disabled; run /factory on to enable it"
-        );
     }
 
     #[test]

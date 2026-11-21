@@ -702,6 +702,9 @@ fn parse_view_command(text: &str) -> Option<(String, String)> {
 /// model as plain prompt text.
 fn reply_command_rejection(text: &str) -> Option<String> {
     let (typed, _args) = parse_slash_command(text)?;
+    if pa_types::slash_commands::moved_to_settings(&typed) {
+        return Some("Open the session and use /settings to change this option.".into());
+    }
     let registry = SlashCommandRegistry::builtin_cached();
     let name = registry
         .resolve_name(&typed)

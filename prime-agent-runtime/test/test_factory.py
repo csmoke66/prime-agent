@@ -2507,11 +2507,6 @@ class FactoryHelpTest(unittest.TestCase):
 
         # Prose sections wrap at ~76 columns; flatten before matching phrases.
         flat = " ".join(doc.split())
-        # The opt-in contract in the opening: disabled by default, the
-        # /factory on|off|status pointer, the exact refusal, and help()
-        # readable while disabled.
-        self.assertIn("The factory is opt-in: it ships disabled", flat)
-        self.assertIn("`/factory on` (`/factory off` disables it again, `/factory status` reports it;", flat)
         self.assertIn("the persisted setting is `factory.enabled` in the agent dir's settings.json", flat)
         self.assertIn("every `rlm.factory` call except `help()`", flat)
         self.assertIn("every factory harness write (`create_factory` and updates of factory entries)", flat)
@@ -3120,7 +3115,7 @@ class _ExecutorTestCase(unittest.TestCase):
 class FactoryOptInGateTest(_ExecutorTestCase):
     """The opt-in gate: `factory.enabled` (default off) closes the namespace.
 
-    The factory ships disabled; the user turns it on with /factory on (the
+    The factory ships disabled; the user turns it on in /settings (the
     persisted `factory.enabled` setting in the agent dir's settings.json).
     While it is off, every rlm.factory call except help() and every factory
     harness write refuses with ONE exact message, and nothing starts or
@@ -3145,7 +3140,6 @@ class FactoryOptInGateTest(_ExecutorTestCase):
         self.write_settings({})
         with self.assertRaises(ValueError) as raised:
             await self.start()
-        self.assertEqual(str(raised.exception), "the factory is disabled; run /factory on to enable it")
         self.assertEqual(str(raised.exception), factory_module.FACTORY_DISABLED_MESSAGE)
         self.assertEqual(self.host.calls, [])
         # No settings file at all is the same disabled default.

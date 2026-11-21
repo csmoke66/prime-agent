@@ -141,14 +141,6 @@ fn the_factory_page_suppresses_the_stale_editor_cursor() {
 #[test]
 fn a_paste_never_reaches_the_editor_behind_an_overlay() {
     let editor_text = |view: &AgentView| view.editor.get_lines().join("\n");
-    // The /effort picker takes it into its search.
-    let mut v = view();
-    v.choice_picker = Some(crate::choice_picker::ChoicePicker::effort(
-        &["high".to_string()],
-        None,
-    ));
-    assert!(v.route_paste("effort"));
-    assert_eq!(editor_text(&v), "");
     // The /login provider selector takes it into its search.
     let mut v = view();
     v.provider_auth = Some(crate::provider_auth::ProviderAuthSelector::new(

@@ -1,8 +1,8 @@
 //! The slash-command ladder (`handle_slash`), the builtin client-command dispatch tail, the
 //! command-catalog refresh/fold, and the shared connection-state read.
 use super::{
-    create_session, effort_picker, info_commands, terminal_columns, AgentView, AuthSelectorKind,
-    ChatEntry, CommandCatalogUpdate, DaemonCommand, DockFold, Duration, InfoContent, Map,
+    create_session, info_commands, terminal_columns, AgentView, AuthSelectorKind,
+    CommandCatalogUpdate, DaemonCommand, DockFold, Duration, InfoContent, Map,
     PendingConfirm, RebuildKind, Result, SessionUi, SlashCommandExecution, SlashCommandRegistry,
     StatusKind, SubmitBehavior, Value, UI_REQUEST_TIMEOUT_MS,
 };
@@ -38,7 +38,7 @@ impl SessionUi {
         match name.as_str() {
             "help" => {
                 self.note(
-                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/subagent-settings  session-specific child models and effort\n/exit           detach and exit",
+                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/settings       configure models, sub-agents, and preferences\n/exit           detach and exit",
                     view,
                 );
                 return Ok(());
@@ -57,6 +57,10 @@ impl SessionUi {
             }
             "exit" => {
                 self.exit_requested = true;
+                return Ok(());
+            }
+            name if pa_types::slash_commands::moved_to_settings(name) => {
+                self.note("This option moved to /settings.", view);
                 return Ok(());
             }
             _ => {}
@@ -184,93 +188,6 @@ impl SessionUi {
                     }
                 }
             }
-            // `/model` opens the model picker (menu-only: the TS inline-arg form is deliberately
-            // removed — a partial + Tab opens the picker filtered instead).
-            "model" => {
-                if !resolved.args.trim().is_empty() {
-                    view.editor
-                        .set_text(&format!("/{} {}", resolved.original_name, resolved.args));
-                    self.error_row("Usage: /model (Tab filters the picker)", view);
-                    return Ok(());
-                }
-                self.open_model_picker(view, "").await?;
-                self.track_menu_opened("model", "command");
-                self.track_feature_outcome("model", "initiated", None);
-            }
-            "subagent-settings" | "inbox-reminders" => {
-                let (Some(settings), Some(file)) =
-                    (self.client_settings.clone(), self.session_file.clone())
-                else {
-                    self.error_row("This setting requires an attached, saved session.", view);
-                    return Ok(());
-                };
-                let args = resolved.args.clone();
-                let inbox = resolved.name == "inbox-reminders";
-                match tokio::task::spawn_blocking(move || {
-                    if inbox {
-                        settings.inbox_reminders(&file, &args)
-                    } else {
-                        settings.subagent_settings(&file, &args)
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(report)) => self.note(&report, view),
-                    Ok(Err(error)) => self.error_row(&format!("{error:#}"), view),
-                    Err(error) => {
-                        self.error_row(&format!("Could not access session settings: {error}"), view)
-                    }
-                }
-            }
-            "effort" => {
-                let Some(state) = self.connection_state(view).await else {
-                    return Ok(());
-                };
-                let levels: Vec<String> = state
-                    .get("availableThinkingLevels")
-                    .and_then(Value::as_array)
-                    .map(|levels| {
-                        levels
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_string)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                // An "off"-only list is no thinking surface.
-                let levels: Vec<String> = if levels.len() == 1 && levels[0] == "off" {
-                    Vec::new()
-                } else {
-                    levels
-                };
-                let current = state
-                    .get("thinkingLevel")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                match effort_picker::effort_command(&levels, current.as_deref(), &resolved.args) {
-                    effort_picker::EffortCommandOutcome::Open(picker) => {
-                        view.choice_picker = Some(picker);
-                        self.track_feature_outcome("effort", "initiated", None);
-                    }
-                    effort_picker::EffortCommandOutcome::Unsupported => {
-                        self.note("Current model does not support thinking", view);
-                    }
-                    effort_picker::EffortCommandOutcome::Unknown { requested, levels } => {
-                        // The ⚠ Error row, not the muted note.
-                        view.push_entry(ChatEntry::Status {
-                            text: format!(
-                                "\u{26a0} Error: Unknown thinking level '{requested}'. Available: {}",
-                                levels.join(", ")
-                            ),
-                            kind: StatusKind::Error,
-                        });
-                        self.dirty = true;
-                    }
-                    effort_picker::EffortCommandOutcome::Apply { level } => {
-                        self.apply_thinking_level(&level, view).await;
-                    }
-                }
-            }
             "tree" => {
                 if resolved.args.is_empty() {
                     self.track_feature_outcome("tree", "initiated", None);
@@ -338,201 +255,6 @@ impl SessionUi {
             }
             "traces" => {
                 self.handle_traces_command(resolved, view).await?;
-            }
-            // `/nightly [on|off|status]` (TS `interactive-mode.ts`
-            // 5455-5484): status resolves the effective channel; on (or
-            // bare) and off/stable save the `updateChannel` setting that
-            // `/update` and `prime-agent update` follow.
-            "nightly" => {
-                let arg = resolved.args.trim().to_lowercase();
-                if arg == "status" {
-                    // The channel resolves through the client-settings seam; a surface
-                    // without it never claims a channel.
-                    let Some(settings) = &self.client_settings else {
-                        self.note("/nightly is not available in this client yet", view);
-                        return Ok(());
-                    };
-                    let preferred = settings.update_channel();
-                    let channel = settings.effective_update_channel(&view.chrome.version);
-                    let source = if preferred.is_some() {
-                        "set in settings"
-                    } else {
-                        "inferred from the running version"
-                    };
-                    self.note(
-                        &format!(
-                            "Updates follow the {channel} channel ({source}). v{} installed.",
-                            view.chrome.version
-                        ),
-                        view,
-                    );
-                    return Ok(());
-                }
-                if arg == "off" || arg == "stable" {
-                    // The pin persists through the client-settings seam; a surface without
-                    // it never claims the pin.
-                    let Some(settings) = &self.client_settings else {
-                        self.note("/nightly is not available in this client yet", view);
-                        return Ok(());
-                    };
-                    if let Err(error) = settings.set_update_channel("stable") {
-                        self.error_row(&format!("{error:#}"), view);
-                        return Ok(());
-                    }
-                    self.note(
-                        "Updates now follow the stable channel. Run /update to install the latest build.",
-                        view,
-                    );
-                    return Ok(());
-                }
-                if !arg.is_empty() && arg != "on" {
-                    self.error_row("Usage: /nightly [on|off|status]", view);
-                    return Ok(());
-                }
-                let Some(settings) = &self.client_settings else {
-                    self.note("/nightly is not available in this client yet", view);
-                    return Ok(());
-                };
-                if let Err(error) = settings.set_update_channel("nightly") {
-                    self.error_row(&format!("{error:#}"), view);
-                    return Ok(());
-                }
-                self.note(
-                    "Updates now follow the nightly channel. Run /update to install the latest nightly build.",
-                    view,
-                );
-            }
-            // `/factory [on|off|status]`: the factory's opt-in gate (the
-            // operator's directive: the factory is disabled until the
-            // user turns it on). The toggle persists `factory.enabled` —
-            // the shared settings key the daemon's `factory_activity`
-            // advertisement and the kernel's factory gate read — so the
-            // factory surfaces on the next client start (the running
-            // connection keeps the advertisement its hello was built
-            // with).
-            "factory" => {
-                let arg = resolved.args.trim().to_lowercase();
-                match arg.as_str() {
-                    "on" => {
-                        let Some(settings) = &self.client_settings else {
-                            self.note("/factory is not available in this client yet", view);
-                            return Ok(());
-                        };
-                        if let Err(error) = settings.set_factory_enabled(true) {
-                            self.error_row(&format!("{error:#}"), view);
-                            return Ok(());
-                        }
-                        self.note(
-                            "The factory is enabled. Restart the client to surface the factory group (the factory page and the agent-side factory API follow the same gate).",
-                            view,
-                        );
-                    }
-                    "off" => {
-                        // The lifecycle guard (the review round's finding):
-                        // the kernel's control loop is not gated by the
-                        // setting, so `off` while runs are live would keep
-                        // admitting and collecting children while every
-                        // factory surface — the namespace, the activity
-                        // lane, and the page after the next client start —
-                        // refuses: a running factory loses its stop and
-                        // visibility path until the gate is enabled again.
-                        // The write refuses while the session's kernel
-                        // reports live runs, naming the count the dock
-                        // shows; the runs stop first (the page's stop
-                        // action or `rlm.factory.stop`). An unreadable
-                        // count fails closed on the lane-advertised client
-                        // (the only state where the guard matters): the
-                        // count's own failure classes — a timed-out or
-                        // malformed lane reply — cannot prove zero live
-                        // runs, and an unknown liveness must not open the
-                        // gate; the client retries once the lane answers.
-                        // The kernel-not-running refusal never reaches the
-                        // unreadable arm: the lane never builds a kernel
-                        // and the kernel owns its run registry in memory,
-                        // so that class reads as a definitive zero
-                        // (`live_factory_runs`), not an unknown liveness —
-                        // the off proceeds for a session with no kernel.
-                        // A client whose hello never advertised the lane
-                        // keeps the fail-open read: an older daemon has no
-                        // executor to protect, and a client started before
-                        // `/factory on` already sees the frozen hello the
-                        // settled surfaces rule describes.
-                        let lane_advertised = self.factory_activity_supported();
-                        match self.live_factory_runs().await {
-                            Some(live) if live > 0 => {
-                                let runs = if live == 1 { "run is" } else { "runs are" };
-                                let them = if live == 1 { "it" } else { "them" };
-                                self.error_row(
-                                    &format!(
-                                        "Cannot disable the factory while {live} {runs} still live — stop {them} first (the factory page's stop action or rlm.factory.stop), then /factory off."
-                                    ),
-                                    view,
-                                );
-                                return Ok(());
-                            }
-                            None if lane_advertised => {
-                                self.error_row(
-                                    "Cannot disable the factory: the live-run count could not be read from the factory lane — try /factory off again once it answers.",
-                                    view,
-                                );
-                                return Ok(());
-                            }
-                            Some(_) | None => {}
-                        }
-                        let Some(settings) = &self.client_settings else {
-                            self.note("/factory is not available in this client yet", view);
-                            return Ok(());
-                        };
-                        if let Err(error) = settings.set_factory_enabled(false) {
-                            self.error_row(&format!("{error:#}"), view);
-                            return Ok(());
-                        }
-                        self.note(
-                            "The factory is disabled. The factory group and page disappear on the next client start.",
-                            view,
-                        );
-                    }
-                    "" | "status" => {
-                        let Some(settings) = &self.client_settings else {
-                            self.note("/factory is not available in this client yet", view);
-                            return Ok(());
-                        };
-                        if settings.factory_enabled() {
-                            self.note(
-                                "The factory is enabled. Run /factory off to disable it.",
-                                view,
-                            );
-                        } else {
-                            self.note(
-                                "The factory is disabled (off by default). Run /factory on to enable it (takes effect on the next client start).",
-                                view,
-                            );
-                        }
-                    }
-                    _ => self.error_row("Usage: /factory [on|off|status]", view),
-                }
-            }
-            // `/telemetry [status|on|off]`: the report (on/off and why, the
-            // endpoint, the installation id), or the persisted switch the
-            // running telemetry clients re-read at their next send.
-            "telemetry" => {
-                let Some(settings) = &self.client_settings else {
-                    self.note("/telemetry is not available in this client yet", view);
-                    return Ok(());
-                };
-                let report = match resolved.args.trim().to_lowercase().as_str() {
-                    "" | "status" => Ok(settings.telemetry_status()),
-                    "on" => settings.set_telemetry_enabled(true),
-                    "off" => settings.set_telemetry_enabled(false),
-                    _ => {
-                        self.error_row("Usage: /telemetry [status|on|off]", view);
-                        return Ok(());
-                    }
-                };
-                match report {
-                    Ok(report) => self.note(&report, view),
-                    Err(error) => self.error_row(&format!("{error:#}"), view),
-                }
             }
             // `/update` (the TS->Rust migration path): the confirm, then
             // the download+install runs OUT-OF-BAND (a background task —
@@ -805,33 +527,6 @@ impl SessionUi {
                     return Ok(());
                 }
                 self.set_session_name(name, view).await;
-            }
-            "fast" => {
-                if !resolved.args.is_empty() {
-                    self.error_row("Usage: /fast", view);
-                    return Ok(());
-                }
-                self.handle_fast_command(view).await;
-            }
-            "tier" => {
-                self.handle_tier_command(view, &resolved.args).await;
-            }
-            "rlm-max-depth" => {
-                self.handle_rlm_max_depth_command(view, &resolved.args)
-                    .await;
-            }
-            "speed" => {
-                let arg = resolved.args.trim().to_lowercase();
-                if !arg.is_empty() && arg != "on" && arg != "off" {
-                    self.error_row("Usage: /speed [on|off]", view);
-                    return Ok(());
-                }
-                let enable = match arg.as_str() {
-                    "on" => true,
-                    "off" => false,
-                    _ => !self.speed_display_enabled,
-                };
-                self.set_speed_display(enable, view);
             }
             "reload" => {
                 if !resolved.args.is_empty() {

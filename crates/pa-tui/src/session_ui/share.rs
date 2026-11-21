@@ -123,27 +123,7 @@ impl SessionUi {
                 self.open_info_panel(view, None, InfoContent::Rows(rows));
                 self.track_menu_opened("traces", "command");
             }
-            "off" | "disable" => {
-                if let Err(error) = traces.0.set_enabled(false).await {
-                    self.error_row(
-                        &format!("Trace sharing disabled write failed: {error:#}"),
-                        view,
-                    );
-                    return Ok(());
-                }
-                self.note("Trace sharing disabled.", view);
-            }
-            "on" | "enable" => {
-                // A missing credential runs the login flow first (the run loop parks it);
-                // a cancelled or failed login stops here.
-                let credential = traces.0.credential().await;
-                if credential.is_none() {
-                    self.pending_traces_login = Some(TracesLoginIntent::Enable);
-                    return Ok(());
-                }
-                self.enable_traces(&traces, session_file.as_deref(), view)
-                    .await?;
-            }
+            "on" | "enable" | "off" | "disable" => self.note("Change trace sharing in /settings.", view),
             "preview" => {
                 // The block, or the fallback status rows.
                 match traces.0.preview(session_file.as_deref()).await {
@@ -223,11 +203,26 @@ impl SessionUi {
             }
             _ => {
                 self.note_as(
-                    "Usage: /traces [status|on|off|preview|upload|upload-current|upload-all|login]",
+                    "Usage: /traces [status|preview|upload|upload-current|upload-all|login]",
                     StatusKind::Warning,
                     view,
                 );
             }
+        }
+        Ok(())
+    }
+
+    pub(super) async fn set_trace_sharing(&mut self, enabled: bool, view: &mut AgentView) -> Result<()> {
+        let Some(traces) = self.traces.clone() else { anyhow::bail!("Trace sharing is unavailable") };
+        if !enabled {
+            traces.0.set_enabled(false).await?;
+            self.note("Trace sharing disabled.", view);
+        } else if traces.0.credential().await.is_none() {
+            self.pending_traces_login = Some(TracesLoginIntent::Enable);
+        } else {
+            let state = self.connection_state(view).await;
+            let file = state.as_ref().and_then(|v| v.get("sessionFile")).and_then(Value::as_str);
+            self.enable_traces(&traces, file, view).await?;
         }
         Ok(())
     }

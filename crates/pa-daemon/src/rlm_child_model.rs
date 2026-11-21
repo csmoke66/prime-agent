@@ -84,7 +84,10 @@ pub fn resolve_child_model(
     let model =
         resolve_child_model_reference(candidates, reference, parent_model, target, allowlist)?;
     if let Err(error) = model_allowlist::assert_allowed(allowlist, &model) {
-        if matches!(allowlist, DaemonAllowlist::Allowed(_)) {
+        if matches!(
+            allowlist,
+            DaemonAllowlist::Allowed(_) | DaemonAllowlist::Selected(_)
+        ) {
             let choices = allowed_model_hint(candidates(), allowlist);
             let message = format!("{error} {choices}");
             return Err(error.context(message));
@@ -140,7 +143,7 @@ fn resolve_child_model_reference<'a>(
     let Some(reference) = reference else {
         return parent_model
             .map(str::to_string)
-            .ok_or_else(|| anyhow!("No model selected. Use /model to pick one."));
+            .ok_or_else(|| anyhow!("No model selected. Choose one in /settings → Models."));
     };
     let reference = reference.trim();
     let normalized = reference.to_lowercase();
@@ -193,7 +196,10 @@ fn resolve_child_model_reference<'a>(
         }
     }
     require_readable_policy(allowlist)?;
-    if matches!(allowlist, DaemonAllowlist::Allowed(_)) {
+    if matches!(
+        allowlist,
+        DaemonAllowlist::Allowed(_) | DaemonAllowlist::Selected(_)
+    ) {
         bail!(
             "Requested {target} model \"{reference}\" cannot be selected. {}",
             allowed_model_hint(candidates, allowlist)
@@ -346,7 +352,8 @@ mod tests {
                         "apiKey": "test-key",
                         "api": "openai-completions",
                         "models": [
-                            { "id": "glm-5.3", "name": "Other GLM", "contextWindow": 1000, "maxTokens": 100 }
+                            { "id": "glm-5.3", "name": "Other GLM", "contextWindow": 1000, "maxTokens": 100 },
+                            { "id": "test-provider/glm-5.3", "name": "Nested GLM", "contextWindow": 1000, "maxTokens": 100 }
                         ]
                     }
                 }
@@ -443,6 +450,19 @@ mod tests {
             .unwrap();
         let response = search("glm-5.3").await.unwrap();
         assert_eq!(response["models"][0]["selector"], "other-provider/glm-5.3");
+
+        // A checked catalog row is treated as a qualified selector, not a glob or bare id.
+        SessionSubagentPolicy::set_model_selectors(
+            &session_file,
+            Some(vec!["test-provider/glm-5.3".into()]),
+        )
+        .unwrap();
+        let policy = model_allowlist::child_policy(&agent_dir, &agent_dir, Some(&session_file), 0)
+            .unwrap()
+            .0;
+        assert!(!policy.allows("other-provider/test-provider/glm-5.3"));
+        let response = search("test-provider/glm-5.3").await.unwrap();
+        assert_eq!(response["models"][0]["selector"], "test-provider/glm-5.3");
 
         SessionSubagentPolicy::set_models(&session_file, Some(vec![])).unwrap();
         let response = search("test-provider/glm-5.3").await.unwrap();
@@ -551,7 +571,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "No model selected. Use /model to pick one."
+            "No model selected. Choose one in /settings → Models."
         );
     }
 

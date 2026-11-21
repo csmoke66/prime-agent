@@ -15,7 +15,7 @@ impl std::fmt::Display for ModelAllowlistRefusal {
         write!(
             f,
             "Model \"{}\" is blocked by the daemon model allowlist for sub-agents. \
-             Pick an allowed model or change this session's list with /subagent-settings.",
+             Pick an allowed model or change this session's list in /settings → Agents.",
             self.selector
         )
     }

@@ -27,20 +27,13 @@ Support for more web search options:
 
 ### Allowed models
 
-`/model` lets you choose the main session's model from the full catalog. Sub-agents use a separate allowlist: they can query which models are allowed, and a rejected spawn lists the allowed choices.
+Open `/settings` → **Models** to choose the main session’s model. Under **Agents**, open **Child allowed models**, type to search, and press **Space** to check or uncheck a model. **Enter** saves the whole selection; **Esc** discards the edits. Set sub-agent effort separately on the same tab. Children can query the effective list; a rejected spawn also lists the allowed choices.
 
-In an attached session, `/subagent-settings` shows the effective child model list and effort. For example:
-
-```text
-/subagent-settings models openai-codex/gpt-6.2-astra openai-codex/gpt-6.2-sol
-/subagent-settings effort high
-```
-
-Use `models all` for unrestricted child selection or `models inherit` to use `settings.json` again. `effort inherit` restores the normal spawn or parent effort. These overrides survive reattaching, apply to subsequent spawns in that session family, and leave other sessions alone.
+Use inheritance to follow your global policy, or allow all models to remove the session restriction. Session overrides survive reattaching and apply to subsequent spawns in the same session family, not to other sessions.
 
 ### Inbox reminders
 
-Use `/inbox-reminders` to see the setting for the attached session. `preview` (the default) shows the first five unread messages, up to 200 characters each. `/inbox-reminders full` includes every unread message body in each reminder, which can use considerably more context. `/inbox-reminders count` restores the count-only notice. None of these marks a message as read or changes when the parent wakes.
+Configure inbox reminders in `/settings` for the attached session. **Preview** (the default) shows the first five unread messages, up to 200 characters each. **Full** includes every unread message body, which can use considerably more context. **Count** shows only the unread count. None of these marks a message as read or changes when the parent wakes.
 
 At 20 unread agent-to-agent messages, the worker bypasses the reminder setting and sends **every unread message body** directly to the recipient. An idle parent wakes; a busy parent gets a steering message. Once the batch is saved to the delivery queue, inbox space is available again.
 

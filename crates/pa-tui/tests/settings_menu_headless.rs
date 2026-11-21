@@ -17,7 +17,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use pa_tui::client_settings::{ChildModelChoice, ChildModelChoices, ChildPolicy, InheritedChildModels};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep, InteractiveOptions};
+use pa_types::ai::ModelThinkingLevel;
 use serde_json::json;
 
 use support::{
@@ -25,6 +27,7 @@ use support::{
     session_stats_response, write_json, MockSupervisor, Request,
 };
 
+const SESSION_FILE: &str = "/fixture/settings-session.jsonl";
 /// The rule row's glyph: the settings page's bars (the search field's borders, the detail block's
 /// separator).
 const RULE: &str = "\u{2500}";
@@ -34,7 +37,9 @@ impl MockSupervisor {
     /// Models tab's submenu rows.
     fn serve(self) {
         let (stream, _) = self.listener.accept().expect("accept");
-        serve_connection(stream, &[], |writer, Request { id, kind, .. }| {
+        let mut depth = 3;
+        let mut depth_source = "default";
+        serve_connection(stream, &[], |writer, Request { id, kind, command }| {
             match kind {
                 "create" => {
                     write_json(writer, &create_response(id));
@@ -66,6 +71,7 @@ impl MockSupervisor {
                             "command": "get_connection_state",
                             "success": true,
                             "data": {
+                                "sessionFile": SESSION_FILE,
                                 "activeSessionId": "s1",
                                 "sessionId": "sess-1",
                                 "sessionName": "settings session",
@@ -78,6 +84,26 @@ impl MockSupervisor {
                             },
                         }),
                     );
+                }
+                "get_rlm_max_depth_status" => {
+                    write_json(writer, &json!({
+                        "type": "response", "id": id, "command": kind, "success": true,
+                        "data": { "maxDepth": depth, "source": depth_source },
+                    }));
+                }
+                "set_rlm_max_depth" => {
+                    depth = command["maxDepth"].as_u64().expect("submitted depth");
+                    depth_source = "chat";
+                    let global = command["global"].as_bool().expect("submitted scope");
+                    let mut data = json!({ "maxDepth": depth, "source": depth_source,
+                        "globalSaved": global && depth != 9 });
+                    if global && depth == 9 {
+                        data["globalError"] = json!("settings store unavailable");
+                    }
+                    write_json(writer, &json!({
+                        "type": "response", "id": id, "command": kind, "success": true,
+                        "data": data,
+                    }));
                 }
                 "detach" => {
                     write_json(writer, &detach_response(id));
@@ -122,6 +148,51 @@ impl RecordingSettings {
 }
 
 impl pa_tui::client_settings::ClientSettings for RecordingSettings {
+    fn inbox_reminder_mode(&self, session_file: &str) -> Result<String> {
+        assert_eq!(session_file, SESSION_FILE);
+        Ok("count".into())
+    }
+
+    fn set_inbox_reminder_mode(&self, session_file: &str, mode: &str) -> Result<()> {
+        assert_eq!(session_file, SESSION_FILE);
+        self.record(&format!("inbox-reminders={mode}"))
+    }
+
+    fn child_policy(&self, session_file: &str) -> Result<ChildPolicy> {
+        assert_eq!(session_file, SESSION_FILE);
+        Ok(ChildPolicy {
+            model_rules: None,
+            inherited: InheritedChildModels::Patterns(1),
+            effort: None,
+        })
+    }
+
+    fn child_model_choices(&self, session_file: &str) -> Result<ChildModelChoices> {
+        Ok(ChildModelChoices {
+            policy: self.child_policy(session_file)?,
+            models: ["alpha", "beta"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| ChildModelChoice {
+                    selector: format!("fixture/{name}"),
+                    name: name.into(),
+                    inherited: index == 0,
+                    allowed: index == 0,
+                })
+                .collect(),
+        })
+    }
+
+    fn set_child_models(&self, session_file: &str, models: Option<Vec<String>>) -> Result<()> {
+        assert_eq!(session_file, SESSION_FILE);
+        self.record(&format!("child-models={models:?}"))
+    }
+
+    fn set_child_effort(&self, session_file: &str, effort: Option<ModelThinkingLevel>) -> Result<()> {
+        assert_eq!(session_file, SESSION_FILE);
+        self.record(&format!("child-effort={effort:?}"))
+    }
+
     fn compaction_threshold_percent(&self) -> f64 {
         95.0
     }
@@ -328,6 +399,58 @@ fn open_settings() -> Vec<HeadlessStep> {
     ]
 }
 
+#[test]
+fn inbox_reminder_row_writes_session_modes_in_order() {
+    let mut steps = open_settings();
+    steps.extend([
+        HeadlessStep::Key(key(KeyCode::Char('5'))),
+        HeadlessStep::Paste("inbox".into()),
+        HeadlessStep::Key(key(KeyCode::Right)),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::Key(key(KeyCode::Right)),
+    ]);
+    let (_, settings) = run_plan(steps);
+    assert_eq!(settings.log(), [
+        "inbox-reminders=preview",
+        "inbox-reminders=full",
+        "inbox-reminders=count",
+    ]);
+}
+
+#[test]
+fn depth_editor_applies_session_and_global_changes() {
+    let mut steps = open_settings();
+    steps.extend([
+        HeadlessStep::Key(key(KeyCode::Char('5'))),
+        HeadlessStep::Paste("rlm".into()),
+        HeadlessStep::WaitRender { needle: "3 (default)".into(), timeout_ms: 5_000 },
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::WaitRender {
+            needle: "Enter a non-negative integer.".into(),
+            timeout_ms: 5_000,
+        },
+        HeadlessStep::Key(key(KeyCode::Char('0'))),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::WaitRender { needle: "0 (chat)".into(), timeout_ms: 5_000 },
+        HeadlessStep::Key(key(KeyCode::Down)),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::Key(key(KeyCode::Char('7'))),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::WaitRender { needle: "7 (chat)".into(), timeout_ms: 5_000 },
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::Key(key(KeyCode::Char('9'))),
+        HeadlessStep::Key(key(KeyCode::Enter)),
+        HeadlessStep::WaitRender { needle: "9 (chat)".into(), timeout_ms: 5_000 },
+        HeadlessStep::Key(key(KeyCode::Esc)),
+        HeadlessStep::WaitRender { needle: "settings store unavailable".into(), timeout_ms: 5_000 },
+    ]);
+    let (frames, _) = run_plan(steps);
+    let all = frames.join("\n");
+    assert!(all.contains("RLM max depth set: 7 and saved as global default"), "{all}");
+    assert!(all.contains("RLM max depth set for this chat, but the global default was not saved"), "{all}");
+}
+
 /// The spacing pass: a blank row above and below the tab strip, four spaces between the tabs,
 /// the separator rule below the description, the hint carrying the description's padding.
 #[test]
@@ -409,7 +532,7 @@ fn the_arrows_cycle_values_and_the_writes_persist() {
     steps.push(HeadlessStep::WaitMs(100));
     steps.push(HeadlessStep::Key(key(KeyCode::Left)));
     steps.push(HeadlessStep::WaitMs(100));
-    // Down x3 more lands on Web search provider (the Agents tab's last row).
+    // Down x3 more lands on Web search provider.
     for _ in 0..3 {
         steps.push(HeadlessStep::Key(key(KeyCode::Down)));
     }
@@ -602,4 +725,45 @@ fn threshold_percentage_cycles_through_the_persistence_seam() {
     assert!(rows
         .iter()
         .any(|row| row.contains("Auto-compact threshold (%)") && row.contains("100")));
+}
+
+#[test]
+fn child_settings_filter_check_cancel_and_save_against_the_attached_session() {
+    let mut steps = open_settings();
+    let press = |code| HeadlessStep::Key(key(code));
+    let wait = |needle: &str| HeadlessStep::WaitRender {
+        needle: needle.into(),
+        timeout_ms: 5000,
+    };
+    steps.push(press(KeyCode::Char('5')));
+    steps.extend("allowed".chars().map(|c| press(KeyCode::Char(c))));
+    steps.push(press(KeyCode::Enter));
+    steps.push(wait("✓ fixture/alpha"));
+    for finish in [KeyCode::Esc, KeyCode::Enter] {
+        steps.extend("beta".chars().map(|c| press(KeyCode::Char(c))));
+        steps.push(wait("›   fixture/beta"));
+        steps.push(press(KeyCode::Char(' ')));
+        steps.push(wait("✓ fixture/beta"));
+        steps.push(press(finish));
+        if finish == KeyCode::Esc {
+            steps.push(press(KeyCode::Enter));
+            steps.push(wait("✓ fixture/alpha"));
+        }
+    }
+    steps.push(wait("2 model rules (session)"));
+    steps.extend((0.."allowed".len()).map(|_| press(KeyCode::Backspace)));
+    steps.extend("effort".chars().map(|c| press(KeyCode::Char(c))));
+    steps.push(press(KeyCode::Enter));
+    steps.push(wait("Effort override for new subagents"));
+    steps.extend((0..5).map(|_| press(KeyCode::Down)));
+    steps.push(press(KeyCode::Enter));
+    steps.push(wait("› Child effort"));
+    let (_, settings) = run_plan(steps);
+    assert_eq!(
+        settings.log(),
+        [
+            "child-models=Some([\"fixture/alpha\", \"fixture/beta\"])",
+            "child-effort=Some(High)"
+        ]
+    );
 }

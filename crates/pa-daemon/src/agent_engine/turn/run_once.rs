@@ -43,14 +43,9 @@ impl AgentSessionEngine {
         let candidates = pa_core::models::failover_candidates(model, &available);
         match self.model_selection_policy() {
             DaemonAllowlist::Unrestricted => candidates,
-            DaemonAllowlist::Allowed(patterns) => candidates
+            policy @ (DaemonAllowlist::Allowed(_) | DaemonAllowlist::Selected(_)) => candidates
                 .into_iter()
-                .filter(|candidate| {
-                    pa_core::models::model_allowed(
-                        &format!("{}/{}", candidate.provider, candidate.id),
-                        &patterns,
-                    )
-                })
+                .filter(|candidate| policy.allows_model(candidate))
                 .collect(),
             // Fail closed on an unreadable policy.
             DaemonAllowlist::Unreadable(_) => Vec::new(),

@@ -10,8 +10,9 @@
 )]
 
 //! End-to-end verifier for the clipboard/auth/update command group: a scripted
-//! daemon session driven headlessly — `/copy`, `/import`, `/traces`, `/login`,
-//! `/logout`, and `/update` through their composition-root hooks.
+//! daemon session driven headlessly — `/copy`, `/import`, `/settings` and
+//! `/traces` for trace sharing, `/login`, `/logout`, and `/update` through their
+//! composition-root hooks.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -349,6 +350,12 @@ impl TracesCommands for ScriptedTraces {
                 TraceLoginOutcome::Cancelled
             }
         });
+        if matches!(&outcome, TraceLoginOutcome::Status(_)) {
+            self.credential
+                .lock()
+                .unwrap()
+                .replace("Prime Agent Traces credential".to_string());
+        }
         Box::pin(async move { outcome })
     }
 }
@@ -1228,7 +1235,7 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
     );
 }
 
-// /traces
+// /settings > General > Trace sharing, and /traces
 
 #[tokio::test]
 async fn tui_traces_renders_status_and_toggles_the_setting() {
@@ -1265,8 +1272,10 @@ async fn tui_traces_renders_status_and_toggles_the_setting() {
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
             pa_tui::interactive::HeadlessStep::Submit("/traces".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces on".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces off".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces sideways".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces preview".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces upload".to_string()),
@@ -1310,7 +1319,7 @@ async fn tui_traces_renders_status_and_toggles_the_setting() {
     );
     assert!(
         rendered.contains(
-            "Usage: /traces [status|on|off|preview|upload|upload-current|upload-all|login]"
+            "Usage: /traces [status|preview|upload|upload-current|upload-all|login]"
         ),
         "the usage warning renders:\n{rendered}"
     );
@@ -1442,10 +1451,12 @@ async fn tui_traces_without_a_credential_runs_the_login_flow() {
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/traces on".to_string()),
-            // The login flow runs against the inline panel: the settle wait lets
-            // its outcome row land in the captured frames.
-            pa_tui::interactive::HeadlessStep::WaitMs(400),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
+            pa_tui::interactive::HeadlessStep::WaitRender {
+                needle: "Failed to login to Prime Agent Traces".to_string(),
+                timeout_ms: 30_000,
+            },
         ],
         width: 120,
         height: 36,
@@ -1479,7 +1490,8 @@ async fn tui_traces_without_a_credential_runs_the_login_flow() {
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/traces on".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
             pa_tui::interactive::HeadlessStep::WaitMs(400),
             pa_tui::interactive::HeadlessStep::Submit("/traces upload-current".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces upload-all".to_string()),
@@ -1536,11 +1548,6 @@ async fn tui_traces_login_enables_and_uploads() {
             "Saved API key for Prime Agent Traces. Credentials saved to /agent/auth.json."
                 .to_string(),
         ));
-    traces
-        .credential
-        .lock()
-        .unwrap()
-        .replace("Prime Agent Traces credential".to_string());
     let traces_view = Arc::clone(&traces);
     let options = command_options(
         &supervisor.socket,
@@ -1554,8 +1561,12 @@ async fn tui_traces_login_enables_and_uploads() {
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/traces on".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(400),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
+            pa_tui::interactive::HeadlessStep::WaitRender {
+                needle: "Trace sharing enabled. Trace uploaded".to_string(),
+                timeout_ms: 30_000,
+            },
         ],
         width: 120,
         height: 36,
@@ -1570,6 +1581,10 @@ async fn tui_traces_login_enables_and_uploads() {
     assert!(
         rendered.contains("Trace sharing enabled. Trace uploaded (64 bytes)."),
         "the enable continues after the login:\n{rendered}"
+    );
+    assert!(
+        traces_view.logins.lock().unwrap().is_empty(),
+        "enabling without a credential ran the scripted login"
     );
     assert_eq!(
         *traces_view.set_calls.lock().unwrap(),

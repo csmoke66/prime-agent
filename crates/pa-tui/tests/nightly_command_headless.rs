@@ -1,13 +1,11 @@
-//! Headless e2e for the `/nightly` command: the status arm resolves the
-//! effective channel from the running version when none is preferred, the
-//! usage error keeps the TS wording, and the off arm pins the channel
-//! through a stub settings seam (persisted form covered by the pa-cli test).
+//! The update-channel setting persists to the source used by `/update`.
 #![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;
 
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep, InteractiveOptions};
 
 use support::{
@@ -198,15 +196,19 @@ impl pa_tui::client_settings::ClientSettings for StubSettings {
     }
 }
 
-fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
-    let outcome = run_headless(
+fn toggle_channel(settings: std::sync::Arc<StubSettings>) {
+    run_headless(
         HeadlessPlan {
-            steps,
+            steps: vec![
+                HeadlessStep::Submit("/settings".into()),
+                HeadlessStep::Paste("channel".into()),
+                HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            ],
             width: 100,
             height: 30,
         },
         |socket| InteractiveOptions {
-            client_settings: Some(std::sync::Arc::new(StubSettings::default())),
+            client_settings: Some(settings),
             ..options(socket)
         },
         |socket| {
@@ -214,66 +216,13 @@ fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
             move || supervisor.serve()
         },
     );
-    outcome.frames
-}
-
-/// `/nightly status` reports the inferred channel (the harness has no settings seam, so no
-/// preferred channel is set) and the running version; a bad argument gets the TS usage error.
-#[test]
-fn nightly_status_and_usage_error_render_the_ts_wording() {
-    let steps = vec![
-        HeadlessStep::Submit("/nightly status".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/nightly maybe".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
-    assert!(!frames.is_empty(), "frames were captured");
-    let all = frames.join("\n");
-    assert!(
-        all.contains("Updates follow the stable channel (inferred from the running version). v0.0.0 installed."),
-        "the status note rendered:\n{all}"
-    );
-    assert!(
-        all.contains("Usage: /nightly [on|off|status]"),
-        "the usage error rendered:\n{all}"
-    );
-}
-
-/// `/nightly on` (or bare) saves the nightly channel that `/update` and
-/// `prime-agent update` follow.
-#[test]
-fn nightly_on_saves_the_nightly_channel() {
-    let steps = vec![
-        HeadlessStep::Submit("/nightly on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/nightly status".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
-    let all = frames.join("\n");
-    assert!(
-        all.contains("Updates now follow the nightly channel."),
-        "the switch note rendered:\n{all}"
-    );
-    assert!(
-        all.contains("Updates follow the nightly channel (set in settings)."),
-        "the saved channel reads back:\n{all}"
-    );
 }
 
 #[test]
-fn nightly_off_renders_the_stable_pin_note() {
-    let steps = vec![
-        HeadlessStep::Submit("/nightly off".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
-    let all = frames.join("\n");
-    assert!(
-        all.contains(
-            "Updates now follow the stable channel. Run /update to install the latest build."
-        ),
-        "the stable-pin note rendered:\n{all}"
-    );
+fn channel_cycles_from_inferred_stable_to_nightly_and_back() {
+    let settings = std::sync::Arc::new(StubSettings::default());
+    for expected in ["nightly", "stable"] {
+        toggle_channel(settings.clone());
+        assert_eq!(settings.update_channel.lock().unwrap().as_deref(), Some(expected));
+    }
 }

@@ -1,0 +1,1 @@
+- Interactive preferences now live in `/settings` instead of individual chat commands. Open the Agents tab to select allowed sub-agent models with check marks and set their effort for the current session family. Action commands and keyboard shortcuts remain available.

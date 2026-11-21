@@ -18,6 +18,8 @@ pub enum DaemonAllowlist {
     Unrestricted,
     /// The configured patterns.
     Allowed(Vec<String>),
+    /// Explicit qualified model selections for one session family.
+    Selected(Vec<String>),
     /// The global settings document could not be loaded (lock contention,
     /// read, or parse failure): the configured policy is unknown, so every
     /// resolution fails loudly instead of bypassing it.
@@ -25,12 +27,25 @@ pub enum DaemonAllowlist {
 }
 
 impl DaemonAllowlist {
+    /// Interpret the stored model override for one session family.
+    #[must_use]
+    pub fn session_override(models: Vec<String>, exact_selectors: bool) -> Self {
+        if models.is_empty() {
+            Self::Unrestricted
+        } else if exact_selectors {
+            Self::Selected(models)
+        } else {
+            Self::Allowed(models)
+        }
+    }
+
     /// Whether a selector may be listed. An unreadable policy allows nothing.
     #[must_use]
     pub fn allows(&self, selector: &str) -> bool {
         match self {
             Self::Unrestricted => true,
             Self::Allowed(patterns) => pa_core::models::model_allowed(selector, patterns),
+            Self::Selected(models) => models.iter().any(|model| model == selector),
             Self::Unreadable(_) => false,
         }
     }
@@ -41,6 +56,11 @@ impl DaemonAllowlist {
         match self {
             Self::Unrestricted => true,
             Self::Allowed(_) => self.allows(&format!("{}/{}", model.provider, model.id)),
+            Self::Selected(models) => models
+                .iter()
+                .any(|selector| {
+                    selector.split_once('/') == Some((model.provider.as_str(), model.id.as_str()))
+                }),
             Self::Unreadable(_) => false,
         }
     }
@@ -101,11 +121,10 @@ pub(crate) fn child_policy(
         None if depth == 0 => SessionSubagentPolicy::default(),
         None => anyhow::bail!("sub-agent policy cannot be read without the child's session log"),
     };
-    let allowlist = match policy.allowed_models {
-        Some(models) if models.is_empty() => DaemonAllowlist::Unrestricted,
-        Some(models) => DaemonAllowlist::Allowed(models),
-        None => load(cwd, agent_dir),
-    };
+    let allowlist = policy.allowed_models.map_or_else(
+        || load(cwd, agent_dir),
+        |models| DaemonAllowlist::session_override(models, policy.exact_model_selectors),
+    );
     Ok((allowlist, policy.effort))
 }
 

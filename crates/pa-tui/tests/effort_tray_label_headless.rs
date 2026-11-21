@@ -1,7 +1,7 @@
 //! Headless e2e for the tray model label's effort suffix (TS
 //! `getModelContextLabel`): the tray renders `model:effort` while the
 //! session's model supports reasoning, keeps the bare model id when not,
-//! and the label follows a `/effort` switch live.
+//! and the label follows a session effort switch from `/settings` live.
 #![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
@@ -9,6 +9,7 @@ mod support;
 
 use std::os::unix::net::UnixListener;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep};
 use serde_json::{json, Value};
 
@@ -166,7 +167,7 @@ impl MockSupervisor {
     }
 
     /// The live session state (the `get_state`/`get_connection_state` data block): the model with
-    /// its reasoning flag and the level `/effort` writes.
+    /// its reasoning flag and the level the settings row writes.
     fn state_data(&self, id: &str, command: &str) -> Value {
         json!({
             "type": "response",
@@ -201,19 +202,38 @@ fn run_plan(session: MockSession, steps: Vec<HeadlessStep>) -> Vec<String> {
     outcome.frames
 }
 
-/// `/effort` moves the tray's `model:effort` label live: the attach state seeds
-/// `glm-5.3:medium`, and the switch's level lands as `glm-5.3:high`.
-#[test]
-fn effort_command_moves_the_tray_model_label() {
-    let steps = vec![
-        HeadlessStep::Submit("/effort high".to_string()),
+fn select_high_effort() -> Vec<HeadlessStep> {
+    let key = |code| HeadlessStep::Key(KeyEvent::new(code, KeyModifiers::NONE));
+    vec![
         HeadlessStep::WaitRender {
-            needle: "glm-5.3:high".to_string(),
-            timeout_ms: 10_000,
+            needle: "glm-5.3:medium".into(),
+            timeout_ms: 5_000,
         },
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(reasoning_session(), steps);
+        HeadlessStep::Submit("/settings".into()),
+        HeadlessStep::WaitRender {
+            needle: "Search settings".into(),
+            timeout_ms: 5_000,
+        },
+        key(KeyCode::Char('2')),
+        key(KeyCode::Enter),
+        HeadlessStep::WaitRender {
+            needle: "\u{203a} medium".into(),
+            timeout_ms: 5_000,
+        },
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        key(KeyCode::Esc),
+        HeadlessStep::WaitRender {
+            needle: "glm-5.3:high".into(),
+            timeout_ms: 5_000,
+        },
+    ]
+}
+
+/// Changing session effort updates the tray's `model:effort` label live.
+#[test]
+fn session_effort_setting_moves_the_tray_model_label() {
+    let frames = run_plan(reasoning_session(), select_high_effort());
     assert!(
         frames.iter().any(|frame| frame.contains("glm-5.3:medium")),
         "the attach state seeds the level suffix:\n{}",
@@ -234,21 +254,12 @@ fn effort_command_moves_the_tray_model_label() {
     );
 }
 
-/// A successful `/effort` switch whose state re-read fails still moves the label: the requested
-/// level renders (TS `applyThinkingLevel` patches the connection state), never the stale suffix.
+/// A successful switch whose state re-read fails still renders the requested effort.
 #[test]
 fn effort_switch_with_failed_state_read_never_keeps_the_stale_suffix() {
     let mut session = reasoning_session();
     session.fail_state_after_switch = true;
-    let steps = vec![
-        HeadlessStep::Submit("/effort high".to_string()),
-        HeadlessStep::WaitRender {
-            needle: "Thinking level: high".to_string(),
-            timeout_ms: 10_000,
-        },
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(session, steps);
+    let frames = run_plan(session, select_high_effort());
     let switched = frames
         .iter()
         .rev()

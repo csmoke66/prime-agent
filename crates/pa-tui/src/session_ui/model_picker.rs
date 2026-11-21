@@ -1,4 +1,4 @@
-//! The `/model` catalog's TTL-gated refresh and landed-catalog fold,
+//! The model catalog's TTL-gated refresh and landed-catalog fold,
 //! the picker's open/key handling, and the model/thinking-level application
 //! paths.
 use super::{
@@ -9,8 +9,7 @@ use super::{
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-/// How long a fetched model catalog stays fresh; a `/model` open past it
-/// refreshes again in the background.
+/// How long a fetched model catalog stays fresh before a picker open refreshes it.
 const MODEL_CATALOG_REFRESH_TTL: std::time::Duration = std::time::Duration::from_mins(1);
 
 /// A landed `get_model_catalog` refresh: the full catalog and the providers
@@ -22,8 +21,7 @@ pub(crate) struct ModelCatalogUpdate {
 }
 
 impl SessionUi {
-    /// The catalog entry for the current model (the `/fast` eligibility check needs the provider
-    /// and api): the provider-aware match of [`find_current_model_entry`].
+    /// The provider-aware catalog entry used to determine service-tier availability.
     pub(super) fn current_model_entry(&self, view: &AgentView) -> Option<&pa_types::ai::Model> {
         let model_id = view.chrome.model_id.as_deref()?;
         find_current_model_entry(
@@ -33,7 +31,7 @@ impl SessionUi {
         )
     }
 
-    /// Open the `/model` picker over the cached catalog, its search prefilled with `search`. A
+    /// Open the model picker over the cached catalog, its search prefilled with `search`. A
     /// refresh fires in the background when the snapshot is stale and lands into the open picker.
     pub(super) async fn open_model_picker(
         &mut self,
@@ -161,7 +159,6 @@ impl SessionUi {
                 }
             }
         }
-        self.update_model_eligibility_filters(view);
         Ok(())
     }
 
@@ -255,7 +252,6 @@ impl SessionUi {
                 self.model_daybreak_blue.clone(),
             );
         }
-        self.update_model_eligibility_filters(view);
         self.dirty = true;
     }
 
@@ -441,18 +437,26 @@ impl SessionUi {
                         },
                     )
                     .await;
-                match state {
+                let applied = match state {
                     Ok(data) => {
                         view.chrome.thinking_suffix = crate::chrome::tray_thinking_suffix(&data);
+                        data.get("thinkingLevel")
+                            .and_then(Value::as_str)
+                            .unwrap_or(level)
+                            .to_owned()
                     }
                     // The switch succeeded; the state read did not: render the requested
                     // level, never the previous model's stale suffix.
                     Err(_) => {
                         view.chrome.thinking_suffix = pa_types::ai::thinking_level_from_str(level)
                             .map(|parsed| parsed.wire_name().to_string());
+                        level.to_owned()
                     }
+                };
+                if let Some(menu) = view.settings_menu.as_mut() {
+                    menu.set_row_value("thinking", &applied);
                 }
-                self.note(&format!("Thinking level: {level}"), view);
+                self.note(&format!("Thinking level: {applied}"), view);
             }
             Err(error) => {
                 view.push_entry(ChatEntry::Status {

@@ -23,7 +23,7 @@ impl ReminderMode {
             "count" => Ok(Self::Count),
             "preview" => Ok(Self::Preview),
             "full" => Ok(Self::Full),
-            _ => bail!("Usage: /inbox-reminders [count | preview | full]"),
+            _ => bail!("Inbox reminder mode must be count, preview, or full"),
         }
     }
     pub fn name(self) -> &'static str {

@@ -33,7 +33,7 @@ packaged kernels (where the repo layout is not adjacent) see the same
 guide.
 
 The namespace is opt-in: while the ``factory.enabled`` setting is off (the
-default; the user turns it on with ``/factory on``), every ``rlm.factory``
+default; the user turns it on in ``/settings``), every ``rlm.factory``
 call except ``help()`` and every factory harness write refuses with one
 clean message (``FACTORY_DISABLED_MESSAGE``), never a crash.
 """
@@ -4143,7 +4143,7 @@ class FactoryExecutor:
 
 #: The single refusal every gated factory call raises while the setting is
 #: off. One exact message, so agents and tests can pin the refusal.
-FACTORY_DISABLED_MESSAGE = "the factory is disabled; run /factory on to enable it"
+FACTORY_DISABLED_MESSAGE = "the factory is disabled; enable it in /settings"
 
 _SETTINGS_FILE_NAME = "settings.json"
 
@@ -4151,8 +4151,8 @@ _SETTINGS_FILE_NAME = "settings.json"
 def factory_enabled() -> bool:
     """Read the ``factory.enabled`` opt-in setting (default off).
 
-    The factory is opt-in: it ships disabled, and the user turns it on with
-    ``/factory on`` (the persisted setting is ``factory.enabled`` in the
+    The factory is opt-in: it ships disabled, and the user enables it in
+    ``/settings`` (the persisted setting is ``factory.enabled`` in the
     agent dir's ``settings.json`` -- the same nested-camelCase document the
     daemon and TUI settings surface write, e.g. ``{"factory": {"enabled":
     true}}`` beside ``compaction``/``agentTraces``). The read mirrors the
@@ -4431,7 +4431,7 @@ def _wire_run_row_is_live(row: Any) -> bool:
     """Whether a wire run row is LIVE in the dock/page sense — the same
     rule the TUI's ``is_live`` reads and the unscoped list builds (a live
     state, or children still in flight): the wire cap's eviction must
-    never silently drop a row the dock counts and the ``/factory off``
+    never silently drop a row the dock counts and the factory disable
     guard trusts (every live run reports — the live-exactness contract)."""
     if not isinstance(row, dict):
         return False
@@ -4471,7 +4471,7 @@ def _cap_factory_frame(frame: dict[str, Any]) -> None:
     the oldest end first; an all-runs reply sheds the same way — each
     row's event tail floors before any whole row drops, and the drop
     takes the oldest DROPPABLE row (a live row never silently drops: the
-    dock's count, the page's panels, and the ``/factory off`` guard read
+    dock's count, the page's panels, and the factory disable guard read
     this list, and every live run reports). A frame that still cannot fit
     fails loudly (a graph must never truncate silently)."""
     while len(json.dumps(frame)) > FACTORY_FRAME_CAP:
@@ -5303,14 +5303,13 @@ after the model turn ends. Use it when a workflow needs shape: fan-out,
 bounded loops (review/fix until a verdict approves), joins, or one child
 per list item.
 
-The factory is opt-in: it ships disabled, and the user turns it on with
-`/factory on` (`/factory off` disables it again, `/factory status` reports
-it; the persisted setting is `factory.enabled` in the agent dir's
+The factory is opt-in: it ships disabled. Use `/settings` to view or
+change the factory switch (the persisted setting is `factory.enabled` in the agent dir's
 settings.json). While it is disabled, every `rlm.factory` call except
 `help()` — run, status, stop, and resume — plus every factory harness
 write (`create_factory` and updates of factory entries) refuses with one
 clean error:
-"the factory is disabled; run /factory on to enable it". `help()` answers
+"the factory is disabled; enable it in /settings". `help()` answers
 while disabled, so this guide stays readable before opting in.
 
 ## Store the spec

@@ -20,6 +20,9 @@ pub struct SessionSubagentPolicy {
     /// None inherits global allowedModels; an explicit empty list is unrestricted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_models: Option<Vec<String>>,
+    /// Catalog selections match only their qualified selectors, not patterns or bare IDs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact_model_selectors: bool,
     /// None leaves normal spawn/parent effort resolution unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<ThinkingLevelSetting>,
@@ -58,7 +61,7 @@ impl SessionSubagentPolicy {
             Ok(bytes) => {
                 let policy: Self = serde_json::from_slice(&bytes)
                     .with_context(|| format!("invalid sub-agent policy at {}", path.display()))?;
-                Self::validate_models(policy.allowed_models.as_deref())?;
+                Self::validate_models(policy.allowed_models.as_deref(), policy.exact_model_selectors)?;
                 Ok(policy)
             }
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(Self::default()),
@@ -90,21 +93,42 @@ impl SessionSubagentPolicy {
         Ok(policy)
     }
 
-    fn validate_models(models: Option<&[String]>) -> Result<()> {
-        for pattern in models.unwrap_or_default() {
-            anyhow::ensure!(!pattern.trim().is_empty(), "empty sub-agent model pattern");
-            if pattern.contains(['*', '?', '[']) {
-                globset::Glob::new(pattern)
-                    .with_context(|| format!("invalid sub-agent model pattern '{pattern}'"))?;
+    fn validate_models(models: Option<&[String]>, exact: bool) -> Result<()> {
+        for model in models.unwrap_or_default() {
+            if exact {
+                anyhow::ensure!(
+                    model
+                        .split_once('/')
+                        .is_some_and(|(provider, id)| !provider.is_empty() && !id.is_empty()),
+                    "invalid qualified sub-agent model selector '{model}'"
+                );
+            } else {
+                anyhow::ensure!(!model.trim().is_empty(), "empty sub-agent model pattern");
+                if model.contains(['*', '?', '[']) {
+                    globset::Glob::new(model)
+                        .with_context(|| format!("invalid sub-agent model pattern '{model}'"))?;
+                }
             }
         }
         Ok(())
     }
 
-    /// Change only the model override; an effort set by another client is preserved.
+    /// Change only the model override, using legacy allowlist pattern matching.
     pub fn set_models(session_log: &Path, models: Option<Vec<String>>) -> Result<Self> {
-        Self::validate_models(models.as_deref())?;
-        Self::update(session_log, |policy| policy.allowed_models = models)
+        Self::validate_models(models.as_deref(), /*exact*/ false)?;
+        Self::update(session_log, |policy| {
+            policy.allowed_models = models;
+            policy.exact_model_selectors = false;
+        })
+    }
+
+    /// Change only the model override, using exact qualified catalog selectors.
+    pub fn set_model_selectors(session_log: &Path, models: Option<Vec<String>>) -> Result<Self> {
+        Self::validate_models(models.as_deref(), /*exact*/ true)?;
+        Self::update(session_log, |policy| {
+            policy.exact_model_selectors = models.as_ref().is_some_and(|models| !models.is_empty());
+            policy.allowed_models = models;
+        })
     }
 
     /// Change only the effort override; an allowlist set by another client is preserved.
@@ -152,7 +176,9 @@ mod tests {
         let a = root.path().join("sessions/a.jsonl");
         let b = root.path().join("sessions/b.jsonl");
         std::thread::scope(|scope| {
-            scope.spawn(|| SessionSubagentPolicy::set_models(&a, Some(vec![])).unwrap());
+            scope.spawn(|| {
+                SessionSubagentPolicy::set_model_selectors(&a, Some(vec!["p/model".into()])).unwrap()
+            });
             scope.spawn(|| {
                 SessionSubagentPolicy::set_effort(&a, Some(ThinkingLevelSetting::High)).unwrap()
             });
@@ -160,7 +186,8 @@ mod tests {
         assert_eq!(
             SessionSubagentPolicy::load(&a).unwrap(),
             SessionSubagentPolicy {
-                allowed_models: Some(vec![]),
+                allowed_models: Some(vec!["p/model".into()]),
+                exact_model_selectors: true,
                 effort: Some(ThinkingLevelSetting::High),
             }
         );
@@ -168,11 +195,12 @@ mod tests {
             SessionSubagentPolicy::load(&b).unwrap(),
             SessionSubagentPolicy::default()
         );
-        SessionSubagentPolicy::set_models(&a, None).unwrap();
+        SessionSubagentPolicy::set_model_selectors(&a, None).unwrap();
         assert_eq!(
             SessionSubagentPolicy::load(&a).unwrap(),
             SessionSubagentPolicy {
                 allowed_models: None,
+                exact_model_selectors: false,
                 effort: Some(ThinkingLevelSetting::High),
             }
         );

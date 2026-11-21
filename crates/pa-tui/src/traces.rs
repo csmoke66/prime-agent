@@ -88,7 +88,7 @@ pub fn status_block(
         ],
         Vec::new(),
         vec![dim(
-            "Commands: /traces on, /traces off, /traces preview, /traces upload-current, /traces upload-all, /traces login",
+            "Automatic sharing: /settings · Actions: /traces preview, /traces upload-current, /traces upload-all, /traces login",
         )],
     ]
 }
@@ -443,7 +443,7 @@ mod tests {
                 "Endpoint: https://api.primeintellect.ai".to_string(),
                 "Session file: /s/a.jsonl".to_string(),
                 String::new(),
-                "Commands: /traces on, /traces off, /traces preview, /traces upload-current, /traces upload-all, /traces login"
+                "Automatic sharing: /settings · Actions: /traces preview, /traces upload-current, /traces upload-all, /traces login"
                     .to_string(),
             ]
         );

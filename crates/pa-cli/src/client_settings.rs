@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use pa_core::refinement::{self, HarnessScope};
 use pa_core::session_engine::harness_digest::local_harness_dir_for_log;
-use pa_tui::client_settings::ClientSettings;
+use pa_core::session::subagent_policy::SessionSubagentPolicy;
+use pa_core::settings::ThinkingLevelSetting;
+use pa_tui::client_settings::{ChildModelChoices, ChildPolicy, ClientSettings};
+use pa_types::ai::ModelThinkingLevel;
 use serde_json::Value;
 
 mod subagent;
@@ -25,6 +28,21 @@ impl CliClientSettings {
 
     fn manager(&self) -> pa_core::settings::SettingsManager {
         pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
+    }
+
+    fn track_child_settings_change(&self, setting: &'static str) {
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let settings = self.clone();
+            runtime.spawn_blocking(move || {
+                let client = pa_core::session_engine::telemetry::build_client(
+                    &settings.manager(),
+                    &settings.agent_dir,
+                );
+                let mut properties = pa_telemetry::Properties::new();
+                properties.set("setting", serde_json::json!(setting));
+                client.track("child settings changed", properties);
+            });
+        }
     }
 }
 
@@ -58,6 +76,30 @@ macro_rules! str_setting {
 }
 
 impl ClientSettings for CliClientSettings {
+    fn child_policy(&self, session_file: &str) -> Result<ChildPolicy> {
+        Ok(subagent::RootChildPolicy::load(Path::new(session_file), &self.cwd, &self.agent_dir)?
+            .summary())
+    }
+
+    fn child_model_choices(&self, session_file: &str) -> Result<ChildModelChoices> {
+        Ok(subagent::RootChildPolicy::load(Path::new(session_file), &self.cwd, &self.agent_dir)?
+            .model_choices(&self.agent_dir))
+    }
+
+    fn set_child_models(&self, session_file: &str, models: Option<Vec<String>>) -> Result<()> {
+        let owner = subagent::owner_log(Path::new(session_file))?;
+        SessionSubagentPolicy::set_model_selectors(&owner, models)?;
+        self.track_child_settings_change("models");
+        Ok(())
+    }
+
+    fn set_child_effort(&self, session_file: &str, effort: Option<ModelThinkingLevel>) -> Result<()> {
+        let owner = subagent::owner_log(Path::new(session_file))?;
+        SessionSubagentPolicy::set_effort(&owner, effort.map(ThinkingLevelSetting::from_model_level))?;
+        self.track_child_settings_change("effort");
+        Ok(())
+    }
+
     fn harness_refinements(&self) -> bool {
         self.manager().get_harness_refinements()
     }
@@ -78,29 +120,14 @@ impl ClientSettings for CliClientSettings {
         Ok(())
     }
 
-    fn inbox_reminders(&self, session_file: &str, arguments: &str) -> Result<String> {
+    fn inbox_reminder_mode(&self, session_file: &str) -> Result<String> {
         use pa_core::session_engine::inbox::reminders::ReminderMode;
-        let file = Path::new(session_file);
-        let mode = if arguments.is_empty() {
-            ReminderMode::load(file)?
-        } else {
-            let mode = ReminderMode::parse(arguments.trim())?;
-            mode.save(file)?;
-            mode
-        };
-        Ok(format!(
-            "This session's inbox reminders: {}\n/inbox-reminders count | preview | full",
-            mode.name()
-        ))
+        Ok(ReminderMode::load(Path::new(session_file))?.name().to_owned())
     }
 
-    fn subagent_settings(&self, session_file: &str, arguments: &str) -> Result<String> {
-        subagent::configure(
-            Path::new(session_file),
-            &self.cwd,
-            &self.agent_dir,
-            arguments,
-        )
+    fn set_inbox_reminder_mode(&self, session_file: &str, mode: &str) -> Result<()> {
+        use pa_core::session_engine::inbox::reminders::ReminderMode;
+        ReminderMode::parse(mode)?.save(Path::new(session_file))
     }
 
     fn harness_entries(&self, session_file: Option<&str>) -> Result<Vec<Value>> {
@@ -372,6 +399,10 @@ impl ClientSettings for CliClientSettings {
 
     fn telemetry_status(&self) -> String {
         pa_core::session_engine::telemetry::telemetry_status_text(&self.manager(), &self.agent_dir)
+    }
+
+    fn telemetry_enabled(&self) -> bool {
+        self.manager().get_telemetry_enabled()
     }
 
     fn set_telemetry_enabled(&self, enabled: bool) -> Result<String> {

@@ -1,9 +1,8 @@
 //! The terminal input grammar: key dispatch, mouse reports, paste,
 //! selection/auto-scroll, and the input-state seams.
 use super::{
-    key_event_to_id, AgentView, ChatEntry, ChoicePickerAction, ChoicePurpose, DaemonCommand,
-    DockFocusSource, Duration, Instant, KeyEvent, Map, QueueBrowseDirection, QueueLane, Result,
-    SessionUi, StatusKind, SubmitBehavior,
+    key_event_to_id, AgentView, ChatEntry, DaemonCommand, DockFocusSource, Duration, Instant,
+    KeyEvent, Map, QueueBrowseDirection, QueueLane, Result, SessionUi, StatusKind, SubmitBehavior,
 };
 
 /// How long the Ctrl+C exit hint arms the second-press exit.
@@ -85,7 +84,6 @@ impl SessionUi {
             return;
         }
         let overlay_focused = view.model_picker.is_some()
-            || view.choice_picker.is_some()
             || view.heartbeats_picker.is_some()
             || view.harness_browser.is_some()
             || view.goal_panel.is_some()
@@ -294,36 +292,6 @@ impl SessionUi {
         let _ = view.editor.handle_paste(text);
     }
 
-    /// One key press while the `/effort` picker is open: Esc/Ctrl+C close it
-    /// without applying; Enter applies the picked row.
-    async fn handle_choice_picker_key(
-        &mut self,
-        key: KeyEvent,
-        view: &mut AgentView,
-    ) -> Result<()> {
-        let Some(id) = key_event_to_id(&key) else {
-            return Ok(());
-        };
-        let action = view
-            .choice_picker
-            .as_mut()
-            .map(|picker| picker.handle_key(&id, view.editor.keybindings()));
-        match action {
-            Some(ChoicePickerAction::None) | None => {}
-            Some(ChoicePickerAction::Cancel) => {
-                view.choice_picker = None;
-                self.dirty = true;
-            }
-            Some(ChoicePickerAction::Apply { purpose, key }) => {
-                view.choice_picker = None;
-                self.dirty = true;
-                match purpose {
-                    ChoicePurpose::Effort => self.apply_thinking_level(&key, view).await,
-                }
-            }
-        }
-        Ok(())
-    }
 
     pub(crate) async fn handle_key(
         &mut self,
@@ -346,10 +314,6 @@ impl SessionUi {
         // editor, viewport keys, and Ctrl+C.
         if view.model_picker.is_some() {
             return self.handle_model_picker_key(key, view).await;
-        }
-        // The `/effort` picker owns the frame the same way.
-        if view.choice_picker.is_some() {
-            return self.handle_choice_picker_key(key, view).await;
         }
         if view.mcp_view.is_some() {
             return self.handle_mcp_view_key(key, view);
@@ -818,48 +782,28 @@ impl SessionUi {
         if view.editor.keybindings().matches(&id, "tui.input.tab")
             && !view.editor.is_showing_autocomplete()
         {
-            if let Some((command, partial)) = view.editor.picker_argument_context() {
+            if let Some((_, partial)) = view.editor.picker_argument_context().filter(|(cmd, _)| cmd == "mcp") {
                 // A completion request parked by this same press must not materialize
                 // a dropdown over the menu on the next tick.
                 view.editor.cancel_autocomplete();
                 // The menu takes the frame from a queue browse: the next Enter must submit a
                 // prompt, not route into apply_queue_selection; ending the browse restores the
                 // stashed draft, so a failed menu open loses nothing.
-                if matches!(command.as_str(), "model" | "mcp") {
-                    if self.queue_selection.has_draft() {
-                        let draft = self.queue_selection.reset();
-                        view.editor.set_text(&draft);
-                        self.picker_restored_draft = true;
-                    } else {
-                        self.queue_selection.reset();
-                    }
-                    self.sync_queue_selection(view);
+                if self.queue_selection.has_draft() {
+                    let draft = self.queue_selection.reset();
+                    view.editor.set_text(&draft);
+                    self.picker_restored_draft = true;
+                } else {
+                    self.queue_selection.reset();
                 }
-                match command.as_str() {
-                    "model" => {
-                        self.open_model_picker(view, partial.trim()).await?;
-                        // Belt-and-braces (the picker always mounts here); keeps the
-                        // failed-open contract symmetric with the mcp arm.
-                        if view.model_picker.is_none() {
-                            self.picker_restored_draft = false;
-                        }
-                        self.track_menu_opened("model", "tab");
-                        self.dirty = true;
-                        return Ok(());
-                    }
-                    "mcp" => {
-                        self.open_mcp_view("/mcp", view, partial.trim()).await?;
-                        // A failed roster load leaves no view mounted; the flag must not leak into
-                        // the NEXT picker.
-                        if view.mcp_view.is_none() {
-                            self.picker_restored_draft = false;
-                        }
-                        self.track_menu_opened("mcp", "tab");
-                        self.dirty = true;
-                        return Ok(());
-                    }
-                    _ => {}
+                self.sync_queue_selection(view);
+                self.open_mcp_view("/mcp", view, partial.trim()).await?;
+                if view.mcp_view.is_none() {
+                    self.picker_restored_draft = false;
                 }
+                self.track_menu_opened("mcp", "tab");
+                self.dirty = true;
+                return Ok(());
             }
         }
         // TS `CustomEditor.handleInput`'s move-below-prompt hook
@@ -985,11 +929,10 @@ pub(crate) fn opening_echo_key_claimed(
     {
         return true;
     }
-    // The editor-context arms: Tab into a picker-command argument (the
-    // `/model`/`/mcp` partial), and Down's move-below-prompt dock handoff.
+    // The editor-context arms: Tab into the MCP picker and Down into the dock.
     if kb.matches(id, "tui.input.tab")
         && !editor.is_showing_autocomplete()
-        && editor.picker_argument_context().is_some()
+        && editor.picker_argument_context().is_some_and(|(cmd, _)| cmd == "mcp")
     {
         return true;
     }

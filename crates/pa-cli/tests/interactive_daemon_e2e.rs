@@ -301,6 +301,15 @@ async fn run_headless_bounded(
     }
 }
 
+fn open_model_picker_step() -> pa_tui::interactive::HeadlessStep {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    pa_tui::interactive::HeadlessStep::Key(KeyEvent::new(
+        KeyCode::Char('l'),
+        KeyModifiers::CONTROL,
+    ))
+}
+
 /// Kill supervisors leaked by earlier runs (a dead binary runs no `Drop`, so
 /// its daemons are reparented to init): a daemon matches when its socket dir
 /// is a `tempfile`-created `.tmpXXXXXX` dir and its parent is dead.
@@ -1547,7 +1556,7 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
         steps: vec![
             pa_tui::interactive::HeadlessStep::Submit("/goal status".to_string()),
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            pa_tui::interactive::HeadlessStep::Submit("/modle".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/setings".to_string()),
             // Probe pass over the autocomplete menu (typed keystroke by
             // keystroke, completed with Enter). The attach-time
             // slash-command catalog refresh is still in flight here: its
@@ -1593,9 +1602,8 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            // `/model` LAST: the inline menu-panel opens and owns the keys
-            // from here on (TS `showConfigurationMenu`).
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            // Open settings last: the inline menu owns the keys from here on.
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
         ],
         width: 120,
@@ -1623,15 +1631,15 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
         "the session-command result row rendered:\n{rendered}"
     );
     assert!(
-        rendered.contains("Unknown command: /modle. Did you mean /model?"),
+        rendered.contains("Unknown command: /setings. Did you mean /settings?"),
         "the unknown-command suggestion matched the TS string:\n{rendered}"
     );
     assert!(
-        rendered.contains("Search models"),
-        "the /model command opened the inline menu-panel:\n{rendered}"
+        rendered.contains("Search settings"),
+        "the /settings command opened the inline menu-panel:\n{rendered}"
     );
     assert!(
-        rendered.contains("Enter select \u{b7} Esc close"),
+        rendered.contains("Space change \u{b7} Esc close"),
         "the menu-panel hint rendered:\n{rendered}"
     );
     assert!(
@@ -1672,9 +1680,8 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
     drop(supervisor);
 }
 
-/// `/model` + `/effort` through the daemon: a models.json custom model lists
-/// and Enter applies it (durable `model_change` row); `/effort` without
-/// reasoning reports the TS unsupported note (an `off`-only list is no thinking).
+/// Ctrl+L lists and applies the models.json custom model (durable `model_change`
+/// row). Settings offers only Off for a model without reasoning.
 #[tokio::test]
 async fn tui_model_picker_applies_and_effort_reports() {
     let dir = tempfile::TempDir::new().expect("temp dir");
@@ -1758,16 +1765,27 @@ async fn tui_model_picker_applies_and_effort_reports() {
     };
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            open_model_picker_step(),
             pa_tui::interactive::HeadlessStep::Type("mock".to_string()),
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/effort".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("2\n".to_string()),
+            pa_tui::interactive::HeadlessStep::WaitRender {
+                needle: "\u{203a} off".to_string(),
+                timeout_ms: 30_000,
+            },
+            // Leave the Thinking level submenu, then close settings.
+            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Esc,
+                crossterm::event::KeyModifiers::NONE,
+            )),
+            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Esc,
+                crossterm::event::KeyModifiers::NONE,
+            )),
             // ctrl+l opens the picker over the user's own text: the pick must keep it.
             pa_tui::interactive::HeadlessStep::Type("keep me".to_string()),
-            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('l'),
-                crossterm::event::KeyModifiers::CONTROL,
-            )),
+            open_model_picker_step(),
             pa_tui::interactive::HeadlessStep::WaitRender {
                 needle: "Search models".to_string(),
                 timeout_ms: 30_000,
@@ -1786,15 +1804,29 @@ async fn tui_model_picker_applies_and_effort_reports() {
     let rendered = outcome.frames.join("\n");
     assert!(
         rendered.contains("Mock 1"),
-        "the /model picker listed the models.json model by name:\n{rendered}"
+        "the model picker listed the models.json model by name:\n{rendered}"
     );
     assert!(
         rendered.contains("Model: mock-1"),
         "picking the model showed the TS confirm row:\n{rendered}"
     );
+    let options: Vec<_> = outcome
+        .frames
+        .iter()
+        .find_map(|frame| {
+            frame
+                .split_once("Select reasoning depth for thinking-capable models")
+                .map(|(_, submenu)| submenu)
+        })
+        .expect("the thinking level submenu rendered")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take_while(|line| !line.contains("Esc back"))
+        .collect();
     assert!(
-        rendered.contains("Current model does not support thinking"),
-        "the /effort command reported the TS unsupported-model note:\n{rendered}"
+        matches!(options.as_slice(), [row] if row.starts_with("\u{203a} off ")),
+        "a model without reasoning offers only Off, got {options:?}"
     );
 
     // The durable rows persisted: the creation-prefix `model_change` plus the
@@ -1828,7 +1860,7 @@ async fn tui_model_picker_applies_and_effort_reports() {
 }
 
 /// The `thinkingLevelMap` (not the `reasoning` flag) is the capability signal:
-/// `/effort` applies its declared level.
+/// Settings applies its declared level.
 #[tokio::test]
 async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_flag() {
     let dir = tempfile::TempDir::new().expect("temp dir");
@@ -1855,6 +1887,11 @@ async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_fla
         .to_string(),
     )
     .expect("write models.json");
+    std::fs::write(
+        agent_dir.join("settings.json"),
+        r#"{"defaultThinkingLevel":"high"}"#,
+    )
+    .expect("start one level below xhigh");
     let supervisor = spawn_supervisor(dir.path());
     let auth = pa_core::auth::AuthStorage::in_memory_without_env(
         &pa_core::auth::AuthStorageData::default(),
@@ -1903,10 +1940,27 @@ async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_fla
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            // Models > Primary model opens the session model picker.
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("2primary\n".to_string()),
             pa_tui::interactive::HeadlessStep::Type("chat".to_string()),
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/effort xhigh".to_string()),
+            // Models > Thinking level preselects high; Down selects xhigh.
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
+            pa_tui::interactive::HeadlessStep::Type("2\n".to_string()),
+            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Down,
+                crossterm::event::KeyModifiers::NONE,
+            )),
+            pa_tui::interactive::HeadlessStep::WaitRender {
+                needle: "\u{203a} xhigh".to_string(),
+                timeout_ms: 30_000,
+            },
+            pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
+            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Esc,
+                crossterm::event::KeyModifiers::NONE,
+            )),
         ],
         width: 120,
         height: 36,
@@ -1921,11 +1975,7 @@ async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_fla
     );
     assert!(
         rendered.contains("Thinking level: xhigh"),
-        "the /effort command applied the map's addressable level:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Current model does not support thinking"),
-        "a map-addressable model must not report the unsupported-model note:\n{rendered}"
+        "settings applied the map's addressable level:\n{rendered}"
     );
 
     let mut level_changes = 0;
@@ -2849,7 +2899,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            open_model_picker_step(),
             pa_tui::interactive::HeadlessStep::Type("glm".to_string()),
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("hello".to_string()),
@@ -2888,7 +2938,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
     drop(supervisor);
 }
 
-/// The dogfood acceptance: a `/model` pick must move the footer label immediately
+/// A model pick must move the footer label immediately
 /// and leave the next turn on the switched model.
 #[tokio::test]
 async fn tui_model_pick_refreshes_the_label_and_the_next_turn_resolves() {
@@ -2976,7 +3026,7 @@ async fn tui_model_pick_refreshes_the_label_and_the_next_turn_resolves() {
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
             pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            open_model_picker_step(),
             pa_tui::interactive::HeadlessStep::Type("mock-2".to_string()),
             pa_tui::interactive::HeadlessStep::Type("\n".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("turn after the switch".to_string()),
@@ -3423,7 +3473,7 @@ async fn tui_side_question_pane_flow() {
                 timeout_ms: 30_000,
             },
             pa_tui::interactive::HeadlessStep::SettleIdle,
-            pa_tui::interactive::HeadlessStep::Submit("/model".to_string()),
+            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
             pa_tui::interactive::HeadlessStep::WaitRender {
                 needle: "Slash commands are not available in side conversations.".to_string(),
                 timeout_ms: 30_000,

@@ -44,38 +44,10 @@ pub enum SelectorAction {
 /// The maximum rows the list shows at once.
 const MAX_VISIBLE: usize = 15;
 
-/// The selector's frame chrome: which surface is being picked (the list,
-/// filter, and selection behavior are shared).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectorKind {
-    /// The resource-configuration modal (`prime-agent config`): checkbox
-    /// semantics, Space toggles.
-    ResourceConfig,
-    /// The `/effort` picker: single-select semantics, Enter applies.
-    Effort,
-}
-
-impl SelectorKind {
-    /// The frame title and its `(key, action)` hint vocabulary.
-    fn header(self) -> (&'static str, &'static [(&'static str, &'static str)]) {
-        match self {
-            SelectorKind::ResourceConfig => (
-                "Resource Configuration",
-                &[("space", "toggle"), ("escape", "close")],
-            ),
-            SelectorKind::Effort => (
-                "Thinking Level",
-                &[("enter", "select"), ("escape", "close")],
-            ),
-        }
-    }
-}
-
 /// The selector state: rows, the active filter, and the cursor position
 /// within the filtered view.
 #[derive(Debug, Clone)]
 pub struct ConfigSelector {
-    kind: SelectorKind,
     rows: Vec<SelectorRow>,
     filtered: Vec<usize>,
     search: SearchInput,
@@ -86,16 +58,8 @@ impl ConfigSelector {
     /// Build the resource-configuration selector from flat rows.
     #[must_use]
     pub fn new(rows: Vec<SelectorRow>) -> Self {
-        Self::with_kind(rows, SelectorKind::ResourceConfig)
-    }
-
-    /// Build the selector for a specific surface (`/effort` uses
-    /// [`SelectorKind::Effort`]).
-    #[must_use]
-    pub fn with_kind(rows: Vec<SelectorRow>, kind: SelectorKind) -> Self {
         let filtered = (0..rows.len()).collect();
         let mut selector = ConfigSelector {
-            kind,
             rows,
             filtered,
             search: SearchInput::new(),
@@ -105,25 +69,10 @@ impl ConfigSelector {
         selector
     }
 
-    /// The selector's frame kind.
-    #[must_use]
-    pub fn kind(&self) -> SelectorKind {
-        self.kind
-    }
-
     /// The current filter query.
     #[must_use]
     pub fn query(&self) -> &str {
         self.search.value()
-    }
-
-    /// Replace the filter query in one step (the `/model <search>` prefill;
-    /// typing the same characters one key at a time cannot express a
-    /// space, which the key loop treats as toggle). The caret lands at
-    /// the prefill's end, so the next keystroke extends it.
-    pub fn set_query(&mut self, query: &str) {
-        self.search.prefill(query);
-        self.apply_filter();
     }
 
     /// A bracketed paste into the filter (TS the search `Input`'s paste).
@@ -163,18 +112,8 @@ impl ConfigSelector {
         }
     }
 
-    /// Move the selection to one filtered position when it holds an item
-    /// row; group and subgroup rows keep the selection where it was.
-    pub fn select_position(&mut self, position: usize) {
-        if self.is_item(position) {
-            self.selected = position;
-        }
-    }
-
-    /// The filtered positions the list window renders (the click
-    /// surface's item-row span).
-    #[must_use]
-    pub fn visible_window(&self) -> (usize, usize) {
+    /// The filtered positions the list window renders.
+    fn visible_window(&self) -> (usize, usize) {
         if self.filtered.is_empty() {
             return (0, 0);
         }
@@ -371,7 +310,7 @@ impl ConfigSelector {
             lines.push(crate::menu_panel::no_match_row(
                 theme,
                 width,
-                self.no_match_text(),
+                "No resources found",
             ));
             return lines;
         }
@@ -465,31 +404,18 @@ impl ConfigSelector {
 
     /// The frame title: the surface's name, accent like every menu title.
     fn header_line(&self, theme: &Theme) -> Line {
-        let (title, _) = self.kind.header();
-        vec![theme.fg_span(ThemeColor::Accent, title.to_string())]
+        vec![theme.fg_span(ThemeColor::Accent, "Resource Configuration")]
     }
 
     /// The search field's placeholder (the frame's filter hint).
     fn search_placeholder(&self) -> &'static str {
-        match self.kind {
-            SelectorKind::ResourceConfig => "Type to filter resources",
-            SelectorKind::Effort => "Type to filter levels",
-        }
-    }
-
-    /// The no-match row's message when the filter empties the list.
-    fn no_match_text(&self) -> &'static str {
-        match self.kind {
-            SelectorKind::ResourceConfig => "No resources found",
-            SelectorKind::Effort => "No matching levels",
-        }
+        "Type to filter resources"
     }
 
     /// The key hint: an unbound action is omitted, never advertised
     /// with a default key.
     fn hint_text(&self, kb: &KeybindingsManager) -> String {
-        let (_, hints) = self.kind.header();
-        hints
+        [("space", "toggle"), ("escape", "close")]
             .iter()
             .filter_map(|(key, action)| raw_key_hint(kb, key, action))
             .collect::<Vec<String>>()

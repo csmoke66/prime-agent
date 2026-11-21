@@ -1244,6 +1244,16 @@ const HARNESS_REFINEMENTS_CHANGED: EventRule = EventRule {
     properties: &[("enabled", required(boolean()))],
 };
 
+/// Adoption of the root-family subagent settings; no selectors or session data.
+const CHILD_SETTINGS_CHANGED: EventRule = EventRule {
+    name: "child settings changed",
+    since: 2,
+    properties: &[(
+        "setting",
+        required(enum_rule(&["models", "effort"], "models")),
+    )],
+};
+
 /// Adoption of the web search provider setting: the chosen provider's id only.
 const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
     name: "web search provider changed",
@@ -1259,6 +1269,7 @@ const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
 pub fn catalog() -> Vec<&'static EventRule> {
     let mut all: Vec<&'static EventRule> = vec![
         &HARNESS_REFINEMENTS_CHANGED,
+        &CHILD_SETTINGS_CHANGED,
         &WEB_SEARCH_PROVIDER_CHANGED,
         &AGENT_STARTED,
         &AGENT_RUN_COMPLETED,

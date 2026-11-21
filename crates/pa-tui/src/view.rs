@@ -85,10 +85,6 @@ pub struct AgentView {
     pub provider_auth: Option<crate::provider_auth::ProviderAuthSelector>,
     pub auth_panel: Option<crate::auth_panel::AuthPanel>,
     pub fork_selector: Option<crate::user_message_selector::UserMessageSelector>,
-    /// The `/effort` inline picker (TS
-    /// `ThinkingSelectorComponent` seam): while set, it owns the whole frame
-    /// like the model picker.
-    pub(crate) choice_picker: Option<crate::choice_picker::ChoicePicker>,
     pub mcp_view: Option<crate::mcp_view::McpView>,
     pub(crate) harness_browser: Option<crate::harness_browser::HarnessBrowser>,
     /// The factory page: while set, it owns the editor dock like the
@@ -237,10 +233,6 @@ impl AgentView {
             picker.paste(text);
             return true;
         }
-        if let Some(picker) = self.choice_picker.as_mut() {
-            picker.paste(text);
-            return true;
-        }
         if let Some(mcp) = self.mcp_view.as_mut() {
             mcp.paste(text);
             return true;
@@ -307,7 +299,6 @@ impl AgentView {
             provider_auth: None,
             auth_panel: None,
             fork_selector: None,
-            choice_picker: None,
             mcp_view: None,
             harness_browser: None,
             factory_view: None,

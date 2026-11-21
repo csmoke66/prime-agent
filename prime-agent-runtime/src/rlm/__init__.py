@@ -816,7 +816,7 @@ class _RLMFactoryNamespace:
     graph model renders as ASCII or genuine Mermaid from one shape.
 
     The factory is opt-in: while the ``factory.enabled`` setting is off (the
-    default; the user turns it on with ``/factory on``), every call above
+    default; the user turns it on in ``/settings``), every call above
     refuses with one clean message and only ``help()`` answers, so the
     guide stays readable before opting in.
 

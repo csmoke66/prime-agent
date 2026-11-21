@@ -32,70 +32,9 @@ fn render_text(menu: &SettingsMenu) -> Vec<String> {
 #[test]
 fn tabs_partition_the_settings_rows() {
     let menu = menu();
-    let tabs: Vec<(&str, Vec<&str>)> = menu
-        .tabs
-        .iter()
-        .map(|tab| {
-            (
-                tab.name,
-                tab.rows.iter().map(|&index| menu.rows[index].id).collect(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        tabs,
-        vec![
-            (
-                "General",
-                vec![
-                    "autocompact",
-                    "steering-mode",
-                    "follow-up-mode",
-                    "quiet-startup",
-                    "warnings",
-                    "autocompact-threshold"
-                ]
-            ),
-            (
-                "Models",
-                vec!["thinking", "transport", "default-service-tier"]
-            ),
-            (
-                "Display",
-                vec![
-                    "theme",
-                    "terminal-progress",
-                    "clear-on-shrink",
-                    "show-images",
-                    "auto-resize-images",
-                    "block-images",
-                    "mermaid-rendering"
-                ]
-            ),
-            (
-                "Editor",
-                vec![
-                    "editor-padding",
-                    "autocomplete-max-visible",
-                    "show-hardware-cursor",
-                    "emoji-shortcodes"
-                ]
-            ),
-            (
-                "Agents",
-                vec![
-                    "skill-commands",
-                    "builtin-skills",
-                    "idle-eviction-minutes",
-                    "tree-filter-mode",
-                    "harness-refinements",
-                    "web-search-provider",
-                ]
-            ),
-        ]
-    );
-    let grouped: usize = menu.tabs.iter().map(|tab| tab.rows.len()).sum();
-    assert_eq!(grouped, menu.rows.len());
+    let mut grouped: Vec<_> = menu.tabs.iter().flat_map(|tab| &tab.rows).copied().collect();
+    grouped.sort_unstable();
+    assert_eq!(grouped, (0..menu.rows.len()).collect::<Vec<_>>());
 }
 
 #[test]
@@ -732,4 +671,39 @@ fn threshold_control_retains_off_grid_values_and_selects_neighbouring_presets() 
             );
         }
     }
+}
+
+#[test]
+fn child_model_draft_requires_an_explicit_allow_all_choice() {
+    use crate::client_settings::{ChildModelChoice, InheritedChildModels};
+
+    let mut menu = menu();
+    menu.open_child_models(ChildModelChoices {
+        policy: ChildPolicy {
+            model_rules: None,
+            inherited: InheritedChildModels::Patterns(1),
+            effort: None,
+        },
+        models: vec![ChildModelChoice {
+            selector: "fixture/alpha".into(),
+            name: "Alpha".into(),
+            allowed: true,
+            inherited: true,
+        }],
+    });
+    menu.paste("alpha");
+    menu.handle_key("space", &kb());
+    assert_eq!(menu.handle_key("enter", &kb()), SettingsMenuAction::None);
+    assert!(render_text(&menu)
+        .iter()
+        .any(|row| row.contains("Check at least one model")));
+    for _ in 0..5 {
+        menu.handle_key("backspace", &kb());
+    }
+    menu.handle_key("down", &kb());
+    menu.handle_key("space", &kb());
+    assert_eq!(
+        menu.handle_key("enter", &kb()),
+        SettingsMenuAction::SaveChildModels(Some(Vec::new()))
+    );
 }

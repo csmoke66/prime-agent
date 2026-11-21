@@ -68,13 +68,6 @@ impl SessionUi {
                     self.dirty = true;
                 }
             }
-            ClickAction::SelectChoiceRow(position) => {
-                if let Some(picker) = view.choice_picker.as_mut() {
-                    self.track_click("picker");
-                    picker.select_position(position);
-                    self.dirty = true;
-                }
-            }
             ClickAction::OpenDockGroup(group) => {
                 self.track_click("dock");
                 self.open_dock_group_from_click(group, view);

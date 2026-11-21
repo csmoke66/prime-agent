@@ -1,107 +1,171 @@
+use std::borrow::Cow;
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
+use pa_core::auth::AuthStorage;
+use pa_core::models::ModelRegistry;
 use pa_core::session::manager::read_session_header;
 use pa_core::session::subagent_policy::SessionSubagentPolicy;
-use pa_core::settings::ThinkingLevelSetting;
 use pa_daemon::model_allowlist::{self, DaemonAllowlist};
+use pa_tui::client_settings::{
+    ChildModelChoice, ChildModelChoices, ChildPolicy, InheritedChildModels,
+};
 
-const USAGE: &str = "/subagent-settings models <provider/model … | all | inherit>\n/subagent-settings effort <off | minimal | low | medium | high | xhigh | max | inherit>";
-
-pub(super) fn configure(file: &Path, cwd: &Path, agent_dir: &Path, args: &str) -> Result<String> {
+pub(super) fn owner_log(file: &Path) -> Result<Cow<'_, Path>> {
     let header = read_session_header(file).context("Cannot read the attached session header")?;
     let depth = u32::try_from(header.rlm_depth.unwrap_or(0))?;
-    let owner = SessionSubagentPolicy::owner_log(file, depth)?;
-    let mut words = args.split_whitespace();
-    let policy = match words.next() {
-        None => SessionSubagentPolicy::load(&owner)?,
-        Some("models") => {
-            let first = words.next().context(USAGE)?;
-            let models = match first {
-                "inherit" if words.next().is_none() => None,
-                "all" if words.next().is_none() => Some(Vec::new()),
-                "all" | "inherit" => bail!("Use all or inherit alone."),
-                model => {
-                    let mut patterns = vec![model.to_owned()];
-                    for pattern in words {
-                        if matches!(pattern, "all" | "inherit") {
-                            bail!("Use all or inherit alone.");
-                        }
-                        patterns.push(pattern.to_string());
-                    }
-                    Some(patterns)
+    SessionSubagentPolicy::owner_log(file, depth)
+}
+
+pub(super) struct RootChildPolicy {
+    policy: SessionSubagentPolicy,
+    global: DaemonAllowlist,
+}
+
+impl RootChildPolicy {
+    pub(super) fn load(file: &Path, cwd: &Path, agent_dir: &Path) -> Result<Self> {
+        Ok(Self {
+            policy: SessionSubagentPolicy::load(&owner_log(file)?)?,
+            global: model_allowlist::load(cwd, agent_dir),
+        })
+    }
+
+    pub(super) fn summary(&self) -> ChildPolicy {
+        ChildPolicy {
+            model_rules: self.policy.allowed_models.as_ref().map(Vec::len),
+            inherited: match &self.global {
+                DaemonAllowlist::Unrestricted => InheritedChildModels::All,
+                DaemonAllowlist::Allowed(rules) | DaemonAllowlist::Selected(rules) => {
+                    InheritedChildModels::Patterns(rules.len())
                 }
-            };
-            SessionSubagentPolicy::set_models(&owner, models)?
+                DaemonAllowlist::Unreadable(_) => InheritedChildModels::Unreadable,
+            },
+            effort: self.policy.effort.map(|level| level.model_level()),
         }
-        Some("effort") => {
-            let effort = match (words.next(), words.next()) {
-                (Some("inherit"), None) => None,
-                (Some(level), None) => Some(
-                    serde_json::from_value::<ThinkingLevelSetting>(serde_json::Value::String(
-                        level.into(),
-                    ))
-                    .with_context(|| format!("Unknown effort '{level}'.\n{USAGE}"))?,
-                ),
-                _ => bail!("{USAGE}"),
-            };
-            SessionSubagentPolicy::set_effort(&owner, effort)?
-        }
-        _ => bail!("{USAGE}"),
-    };
-    let models = match policy.allowed_models {
-        Some(models) if models.is_empty() => "all (session override)".into(),
-        Some(models) => format!("{} (session override)", models.join(", ")),
-        None => match model_allowlist::load(cwd, agent_dir) {
-            DaemonAllowlist::Allowed(models) => format!("{} (inherited)", models.join(", ")),
-            DaemonAllowlist::Unrestricted => "all (inherited)".into(),
-            DaemonAllowlist::Unreadable(reason) => format!("unavailable (inherited): {reason}"),
-        },
-    };
-    let effort = policy
-        .effort
-        .map_or("inherit (spawn request or parent)", |level| {
-            level.model_level().wire_name()
+    }
+
+    pub(super) fn model_choices(self, agent_dir: &Path) -> ChildModelChoices {
+        let policy = self.summary();
+        let override_policy = self.policy.allowed_models.map(|models| {
+            DaemonAllowlist::session_override(models, self.policy.exact_model_selectors)
         });
-    Ok(format!(
-        "Sub-agents in this session family\nModels: {models}\nEffort: {effort}\n{USAGE}"
-    ))
+        // The same authenticated snapshot as `rlm.find_models`, with no current policy filter:
+        // an override may replace the inherited list rather than only narrowing it.
+        let registry =
+            ModelRegistry::create(AuthStorage::create(agent_dir), agent_dir.join("models.json"));
+        let mut models: Vec<_> = registry
+            .get_rlm_searchable_models()
+            .into_iter()
+            .map(|model| {
+                let selector = format!("{}/{}", model.provider, model.id);
+                let inherited = self.global.allows(&selector);
+                let allowed = override_policy
+                    .as_ref()
+                    .map_or(inherited, |policy| policy.allows(&selector));
+                ChildModelChoice {
+                    selector,
+                    name: model.name.clone(),
+                    allowed,
+                    inherited,
+                }
+            })
+            .collect();
+        models.sort_unstable_by(|a, b| a.selector.cmp(&b.selector));
+        models.dedup_by(|a, b| a.selector == b.selector);
+        ChildModelChoices { policy, models }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::CliClientSettings;
+    use pa_tui::client_settings::ClientSettings;
+    use pa_types::ai::ModelThinkingLevel;
+    use serde_json::json;
 
     #[test]
-    fn session_child_policy_replaces_inherits_and_never_edits_the_global_default() {
+    fn child_settings_resolve_catalog_patterns_and_persist_only_on_the_family_root() {
         let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        let log = root.join("sessions/a.jsonl");
-        std::fs::create_dir(log.parent().unwrap()).unwrap();
+        let dir = tmp.path();
+        let logs = dir.join("sessions");
+        std::fs::create_dir(&logs).unwrap();
+        let a = logs.join("a.jsonl");
+        let b = logs.join("b.jsonl");
+        let child = logs.join("child.jsonl");
+        for (file, depth) in [(&a, 0), (&b, 0), (&child, 1)] {
+            std::fs::write(
+                file,
+                json!({
+                    "type": "session", "id": file.file_stem().unwrap().to_str().unwrap(),
+                    "cwd": "/", "timestamp": "now", "rlmDepth": depth, "parentSession": a,
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        let global = r#"{"allowedModels":["selected/*"]}"#;
+        std::fs::write(dir.join("settings.json"), global).unwrap();
         std::fs::write(
-            &log,
-            r#"{"type":"session","id":"a","timestamp":"now","cwd":"/"}"#,
+            dir.join("models.json"),
+            json!({
+                "providers": {
+                    "selected": {
+                        "baseUrl": "http://localhost:9",
+                        "apiKey": "test-key",
+                        "api": "openai-completions",
+                        "models": [
+                            { "id": "one", "name": "One", "contextWindow": 1000, "maxTokens": 100 }
+                        ]
+                    },
+                    "other": {
+                        "baseUrl": "http://localhost:9",
+                        "apiKey": "test-key",
+                        "api": "openai-completions",
+                        "models": [
+                            { "id": "selected/one", "name": "Other One", "contextWindow": 1000, "maxTokens": 100 }
+                        ]
+                    }
+                }
+            })
+            .to_string(),
         )
         .unwrap();
-        let global = r#"{"allowedModels":["original/*"]}"#;
-        std::fs::write(root.join("settings.json"), global).unwrap();
-        let run = |args| configure(&log, root, root, args);
-        assert!(run("models other/*")
-            .unwrap()
-            .contains("other/* (session override)"));
-        assert!(run("models all other/*").is_err());
-        assert!(run("effort high")
-            .unwrap()
-            .contains("other/* (session override)"));
-        assert!(run("models all")
-            .unwrap()
-            .contains("all (session override)"));
-        let inherited = run("models inherit").unwrap();
-        assert!(inherited.contains("original/* (inherited)"));
-        assert!(inherited.contains("Effort: high"));
-        assert!(run("effort inherit").unwrap().contains("Effort: inherit"));
+        let settings = CliClientSettings::new(dir.to_owned(), dir.to_owned());
+        let a = a.to_str().unwrap();
+        let b = b.to_str().unwrap();
+        let child = child.to_str().unwrap();
+        let checks = |file| {
+            settings
+                .child_model_choices(file)
+                .unwrap()
+                .models
+                .into_iter()
+                .filter(|model| matches!(model.selector.as_str(), "other/selected/one" | "selected/one"))
+                .map(|model| (model.selector, model.allowed))
+                .collect::<Vec<_>>()
+        };
+        let inherited = vec![("other/selected/one".into(), true), ("selected/one".into(), true)];
+        assert_eq!(checks(child), inherited);
+        settings
+            .set_child_models(child, Some(vec!["selected/one".into()]))
+            .unwrap();
+        settings
+            .set_child_effort(a, Some(ModelThinkingLevel::High))
+            .unwrap();
         assert_eq!(
-            std::fs::read_to_string(root.join("settings.json")).unwrap(),
+            checks(a),
+            [("other/selected/one".into(), false), ("selected/one".into(), true)]
+        );
+        assert_eq!(settings.child_policy(child).unwrap().effort, Some(ModelThinkingLevel::High));
+        assert_eq!(checks(b), inherited);
+        assert_eq!(settings.child_policy(b).unwrap().effort, None);
+        settings.set_child_models(a, Some(Vec::new())).unwrap();
+        assert_eq!(settings.child_policy(child).unwrap().model_rules, Some(0));
+        settings.set_child_models(a, None).unwrap();
+        settings.set_child_effort(child, None).unwrap();
+        assert_eq!(settings.child_policy(child).unwrap(), settings.child_policy(b).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("settings.json")).unwrap(),
             global
         );
     }

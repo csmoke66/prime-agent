@@ -1,7 +1,4 @@
-//! Headless e2e for the `/tier` service-tier command (TS #2144): the bare
-//! command reports current and available tiers; an unsupported tier errors
-//! with the list; a supported tier applies through `set_service_tier` and
-//! the tray badge shows the non-default tier.
+//! Headless coverage for the session tier and Fast mode rows in `/settings`.
 #![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
@@ -9,6 +6,7 @@ mod support;
 
 use std::os::unix::net::UnixListener;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep, InteractiveOptions};
 use serde_json::{json, Value};
 
@@ -47,11 +45,11 @@ impl MockSupervisor {
         }
     }
 
-    /// Serve one connection: attach an OpenRouter-model session; `set_service_tier` applies,
-    /// `get_state` reports the tier.
+    /// The worker applies a tier and reports the applied value through connection state.
     fn serve(self) {
         let (stream, _) = self.listener.accept().expect("accept");
-        serve_connection(stream, &[], |writer, Request { id, kind, .. }| {
+        let mut tier = "default".to_string();
+        serve_connection(stream, &[], |writer, Request { id, kind, command }| {
             match kind {
                 "create" => {
                     write_json(writer, &create_response(id));
@@ -60,8 +58,7 @@ impl MockSupervisor {
                     write_json(writer, &attach_data(id));
                 }
                 "set_service_tier" => {
-                    // The daemon arm answers success with no data; the follow-up get_state read
-                    // reports the applied tier.
+                    tier = command["serviceTier"].as_str().expect("tier").to_owned();
                     write_json(
                         writer,
                         &json!({
@@ -102,7 +99,7 @@ impl MockSupervisor {
                             "data": {
                                 "activeSessionId": "s1",
                                 "sessionId": "sess-1",
-                                "serviceTier": "flex",
+                                "serviceTier": tier,
                                 "steeringMode": "one-at-a-time",
                                 "model": { "id": "openai/gpt-5.5", "provider": "openrouter" },
                                 "isStreaming": false,
@@ -156,44 +153,51 @@ fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
 }
 
 #[test]
-fn tier_command_shows_applies_and_rejects() {
-    // The leading settle (the sibling harnesses' pattern): the attach must land its model +
-    // provider before the first submit reads them.
-    let steps = vec![
-        HeadlessStep::WaitMs(400),
-        HeadlessStep::Submit("/tier".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/tier scale".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/tier flex".to_string()),
-        HeadlessStep::WaitMs(300),
-    ];
-    let frames = run_plan(steps);
-    assert!(!frames.is_empty(), "frames were captured");
+fn tier_picker_only_offers_supported_tiers_and_applies_the_choice() {
+    let frames = run_plan(vec![
+        HeadlessStep::Submit("/settings".into()),
+        wait_for("Search settings"),
+        key(KeyCode::Char('2')),
+        HeadlessStep::Paste("session".into()),
+        key(KeyCode::Enter),
+        wait_for("Session Service Tier"),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        key(KeyCode::Esc),
+        wait_for("openai/gpt-5.5 \u{00b7} flex"),
+    ]);
+    let picker = frames.iter().find(|frame| frame.contains("Session Service Tier")).unwrap();
+    assert!(picker.contains("\u{203a} default"), "{picker}");
+    assert!(picker.contains("flex") && picker.contains("priority"), "{picker}");
+    assert!(!picker.contains("auto") && !picker.contains("scale"), "{picker}");
     let all = frames.join("\n");
-    assert!(
-        all.contains("Service tier: default (available: default, flex, priority)"),
-        "the show note rendered:\n{all}"
-    );
-    // `scale` is not a user-facing choice: the TS error names the tier and lists the available ones
-    // (the rendered row wraps the list at the frame width, so the assertion stays on the
-    // single-line head).
-    assert!(
-        all.contains("Service tier 'scale' is not available for the current model"),
-        "the unsupported error rendered:\n{all}"
-    );
-    assert!(
-        all.contains("Available: default, flex,"),
-        "the error lists the available tiers:\n{all}"
-    );
-    assert!(
-        all.contains("Service tier: flex"),
-        "the applied-tier note rendered:\n{all}"
-    );
-    assert!(
-        frames
-            .iter()
-            .any(|frame| frame.contains("openai/gpt-5.5 \u{00b7} flex")),
-        "the tray badge rendered the applied tier:\n{all}"
-    );
+    assert!(all.contains("Service tier: flex"), "{all}");
+}
+
+#[test]
+fn fast_mode_toggles_priority_and_back_to_default() {
+    let frames = run_plan(vec![
+        HeadlessStep::Submit("/settings".into()),
+        wait_for("Search settings"),
+        key(KeyCode::Char('2')),
+        HeadlessStep::Paste("fast".into()),
+        key(KeyCode::Enter),
+        HeadlessStep::WaitMs(200),
+        key(KeyCode::Enter),
+        key(KeyCode::Esc),
+        wait_for("Fast mode: off"),
+    ]);
+    assert!(frames.iter().any(|frame| {
+        frame.lines().any(|line| line.contains("Fast mode") && line.trim_end().ends_with("on"))
+    }));
+    let last = frames.last().unwrap();
+    assert!(last.contains("Fast mode: off") && !last.contains("\u{00b7} priority"), "{last}");
+}
+
+fn key(code: KeyCode) -> HeadlessStep {
+    HeadlessStep::Key(KeyEvent::new(code, KeyModifiers::NONE))
+}
+
+fn wait_for(needle: &str) -> HeadlessStep {
+    HeadlessStep::WaitRender { needle: needle.into(), timeout_ms: 5_000 }
 }

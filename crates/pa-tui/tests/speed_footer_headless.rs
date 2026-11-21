@@ -1,13 +1,11 @@
-//! Headless e2e for the `/speed` footer readout (TS `FooterComponent`):
-//! `/speed` toggles the dim footer row over the session's completed
-//! responses — the readout appears after the first completed response
-//! with positive usage and span; off clears both the stats and the row.
+//! The Output speed setting shows response throughput in the footer; disabling clears it.
 #![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;
 
 use std::os::unix::net::UnixStream;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep};
 use serde_json::{json, Value};
@@ -129,35 +127,31 @@ fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
     outcome.frames
 }
 
-/// `/speed` toggles the footer readout over completed responses: the status note carries the TS
-/// wording, and the first completed response renders the dim `tok/s` row (the dock's last row).
 #[test]
-fn speed_command_toggles_the_footer_readout() {
-    let steps = vec![
-        HeadlessStep::Submit("/speed".to_string()),
-        HeadlessStep::WaitMs(100),
+fn settings_toggle_the_footer_readout() {
+    let speed_setting = || [
+        HeadlessStep::Submit("/settings".into()),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE)),
+        HeadlessStep::Paste("speed".into()),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+    ];
+    let mut steps = Vec::from(speed_setting());
+    steps.extend([
         HeadlessStep::Submit("hello".to_string()),
         HeadlessStep::WaitIdle { timeout_ms: 10_000 },
         HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/speed off".to_string()),
+    ]);
+    steps.extend(speed_setting());
+    steps.extend([
         HeadlessStep::WaitMs(300),
         HeadlessStep::Submit("hello again".to_string()),
         HeadlessStep::WaitIdle { timeout_ms: 10_000 },
         HeadlessStep::WaitMs(300),
-    ];
+    ]);
     let frames = run_plan(steps);
     assert!(!frames.is_empty(), "frames were captured");
     let all = frames.join("\n");
-    assert!(
-        all.contains(
-            "Speed display on — footer shows output tok/s per model response and a session average"
-        ),
-        "the enable note rendered:\n{all}"
-    );
-    assert!(
-        all.contains("Speed display off"),
-        "the disable note rendered:\n{all}"
-    );
     // The readout row: a dock line that starts with the rate (the dim footer renders exactly the
     // speed text) — distinct from the status notes, which carry "tok/s" mid-sentence.
     let readout_row = |frame: &str| {
@@ -176,20 +170,7 @@ fn speed_command_toggles_the_footer_readout() {
         .expect("the second turn's completed message rendered");
     assert!(
         !readout_row(tail),
-        "the readout is gone after /speed off:\n{tail}"
+        "the readout is gone after disabling output speed:\n{tail}"
     );
 }
 
-#[test]
-fn speed_command_rejects_bad_args() {
-    let steps = vec![
-        HeadlessStep::Submit("/speed maybe".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
-    let all = frames.join("\n");
-    assert!(
-        all.contains("Usage: /speed [on|off]"),
-        "the usage error rendered:\n{all}"
-    );
-}

@@ -583,7 +583,7 @@ fn a_click_selects_a_model_picker_row() {
     let frames = run_plan(
         vec![
             HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            HeadlessStep::Submit("/model".to_string()),
+            HeadlessStep::Key(crossterm::event::KeyEvent::new(crossterm::event::KeyCode::Char('l'), crossterm::event::KeyModifiers::CONTROL)),
             HeadlessStep::WaitRender {
                 needle: "Mock Two".to_string(),
                 timeout_ms: 5_000,
@@ -597,7 +597,7 @@ fn a_click_selects_a_model_picker_row() {
     let frames = run_plan(
         vec![
             HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-            HeadlessStep::Submit("/model".to_string()),
+            HeadlessStep::Key(crossterm::event::KeyEvent::new(crossterm::event::KeyCode::Char('l'), crossterm::event::KeyModifiers::CONTROL)),
             HeadlessStep::WaitRender {
                 needle: "Mock Two".to_string(),
                 timeout_ms: 5_000,

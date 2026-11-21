@@ -1,11 +1,16 @@
-//! The `/settings` menu and its row-apply/persist switches, the `/import`
-//! confirm flow, and the fast/rlm-max-depth/reload command surface. The
-//! fullscreen toggle is retired (the operator's 2026-09-28 ruling removed
-//! the setting and the command).
+//! The `/settings` menu, `/import` confirmation, and `/reload` flow.
 use super::{
     key_event_to_id, AgentView, DaemonCommand, Duration, KeyEvent, Map, PathBuf, Result, SessionUi,
-    StatusKind, Value, UI_REQUEST_TIMEOUT_MS,
+    Value, UI_REQUEST_TIMEOUT_MS,
 };
+
+fn rlm_depth_label(status: &Value) -> Option<String> {
+    let depth = status.get("maxDepth")?.as_u64()?;
+    Some(match status.get("source").and_then(Value::as_str) {
+        Some(source) => format!("{depth} ({source})"),
+        None => depth.to_string(),
+    })
+}
 
 /// The `/reload` task's report: the daemon reloaded the session's live
 /// inputs, or the failure message.
@@ -191,6 +196,53 @@ impl SessionUi {
             return;
         };
         let settings = self.client_settings.clone();
+        let inbox_session_file = state
+            .get("sessionFile")
+            .and_then(Value::as_str)
+            .filter(|file| !file.is_empty())
+            .or(self.session_file.as_deref())
+            .map(str::to_owned);
+        let inbox_reminders = match (&settings, inbox_session_file.as_deref()) {
+            (Some(settings), Some(file)) => match settings.inbox_reminder_mode(file) {
+                Ok(mode) => Some(mode),
+                Err(error) => {
+                    self.error_row(&format!("Cannot read inbox reminder mode: {error:#}"), view);
+                    None
+                }
+            },
+            _ => None,
+        };
+        let model = state.get("model");
+        let model_id = model
+            .and_then(|model| model.get("id"))
+            .and_then(Value::as_str)
+            .or(view.chrome.model_id.as_deref());
+        let provider = model
+            .and_then(|model| model.get("provider"))
+            .and_then(Value::as_str)
+            .or(view.chrome.model_provider.as_deref());
+        let primary_model = match (provider, model_id) {
+            (Some(provider), Some(model)) => format!("{provider}/{model}"),
+            (_, Some(model)) => model.to_owned(),
+            _ => "Choose model".into(),
+        };
+        let rlm_depth = match self
+            .bounded_request(
+                Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
+                DaemonCommand::GetRlmMaxDepthStatus {
+                    id: None,
+                    active_session_id: self.active_session_id.clone(),
+                    rest: Map::default(),
+                },
+            )
+            .await
+        {
+            Ok(status) => rlm_depth_label(&status),
+            Err(error) => {
+                self.error_row(&format!("Cannot read RLM max depth: {error:#}"), view);
+                None
+            }
+        };
         let mut values = crate::settings_menu::SettingsCurrentValues {
             autocompact: state
                 .get("autoCompactionEnabled")
@@ -221,10 +273,29 @@ impl SessionUi {
                         .collect()
                 })
                 .unwrap_or_default(),
+            primary_model,
+            session_service_tier: state
+                .get("serviceTier")
+                .and_then(Value::as_str)
+                .unwrap_or("default")
+                .to_owned(),
+            available_service_tiers: self.available_service_tiers(view),
+            fast_mode_available: self
+                .current_model_entry(view)
+                .is_some_and(pa_types::ai::supports_fast_mode),
+            inbox_reminders,
+            rlm_depth: rlm_depth.unwrap_or_else(|| "Unavailable".into()),
             ..Default::default()
         };
+        values.speed_display = self.speed_display_enabled;
+        if let Some(traces) = &self.traces {
+            values.trace_sharing = Some(traces.0.enabled().await);
+        }
         // A missing settings seam keeps the TS defaults.
         if let Some(settings) = &settings {
+            values.factory_enabled = Some(settings.factory_enabled());
+            values.telemetry_enabled = Some(settings.telemetry_enabled());
+            values.update_channel = Some(settings.effective_update_channel(&view.chrome.version));
             values.compaction_threshold_percent = settings.compaction_threshold_percent();
             values.show_images = settings.show_images();
             values.auto_resize_images = settings.image_auto_resize();
@@ -269,7 +340,20 @@ impl SessionUi {
             .map(ToString::to_string)
             .collect();
         let rows = crate::settings_menu::settings_menu_rows(&values);
-        view.settings_menu = Some(crate::settings_menu::SettingsMenu::new(rows));
+        let mut menu = crate::settings_menu::SettingsMenu::new(rows);
+        if values.inbox_reminders.is_some() {
+            menu.inbox_session_file = inbox_session_file;
+        }
+        if let (Some(settings), Some(file)) = (
+            &settings,
+            state.get("sessionFile").and_then(Value::as_str).filter(|file| !file.is_empty()),
+        ) {
+            match settings.child_policy(file) {
+                Ok(policy) => menu.bind_child_policy(file.to_owned(), &policy),
+                Err(error) => self.error_row(&format!("Cannot read child settings: {error:#}"), view),
+            }
+        }
+        view.settings_menu = Some(menu);
         self.track_menu_opened("settings", "command");
         self.dirty = true;
     }
@@ -307,6 +391,73 @@ impl SessionUi {
             crate::settings_menu::SettingsMenuAction::Change { id, value } => {
                 self.apply_settings_change(id, &value, view).await;
             }
+            crate::settings_menu::SettingsMenuAction::ShowTelemetryStatus => {
+                if let Some(settings) = &self.client_settings {
+                    let report = settings.telemetry_status();
+                    view.settings_menu = None;
+                    self.note(&report, view);
+                }
+            }
+            crate::settings_menu::SettingsMenuAction::OpenPrimaryModel => {
+                view.settings_menu = None;
+                self.open_model_picker(view, "").await?;
+                self.track_menu_opened("model-picker", "settings");
+            }
+            crate::settings_menu::SettingsMenuAction::SaveRlmDepth { depth, global } => {
+                self.set_rlm_max_depth(depth, global, view).await;
+            }
+            crate::settings_menu::SettingsMenuAction::OpenChildModels => {
+                let (Some(settings), Some(menu)) =
+                    (&self.client_settings, view.settings_menu.as_mut())
+                else {
+                    return Ok(());
+                };
+                let Some(file) = menu.child_session_file.as_deref() else {
+                    return Ok(());
+                };
+                match settings.child_model_choices(file) {
+                    Ok(choices) => {
+                        menu.open_child_models(choices);
+                        self.track_menu_opened("child-models", "settings");
+                    }
+                    Err(error) => {
+                        self.error_row(&format!("Cannot load child models: {error:#}"), view);
+                    }
+                }
+            }
+            crate::settings_menu::SettingsMenuAction::SaveChildModels(models) => {
+                let (Some(settings), Some(menu)) =
+                    (&self.client_settings, view.settings_menu.as_mut())
+                else {
+                    return Ok(());
+                };
+                let Some(file) = menu.child_session_file.as_deref() else {
+                    return Ok(());
+                };
+                let model_rules = models.as_ref().map(Vec::len);
+                match settings.set_child_models(file, models) {
+                    Ok(()) => menu.child_models_saved(model_rules),
+                    Err(error) => {
+                        self.error_row(&format!("Cannot save child models: {error:#}"), view);
+                    }
+                }
+            }
+            crate::settings_menu::SettingsMenuAction::SaveChildEffort(effort) => {
+                let (Some(settings), Some(menu)) =
+                    (&self.client_settings, view.settings_menu.as_mut())
+                else {
+                    return Ok(());
+                };
+                let Some(file) = menu.child_session_file.as_deref() else {
+                    return Ok(());
+                };
+                match settings.set_child_effort(file, effort) {
+                    Ok(()) => menu.child_effort_saved(effort),
+                    Err(error) => {
+                        self.error_row(&format!("Cannot save child effort: {error:#}"), view);
+                    }
+                }
+            }
         }
         self.dirty = true;
         Ok(())
@@ -316,6 +467,50 @@ impl SessionUi {
     /// the settings seam for persisted preferences.
     async fn apply_settings_change(&mut self, id: &str, value: &str, view: &mut AgentView) {
         match id {
+            "speed-display" => self.set_speed_display(value == "true", view),
+            "autonomous" => {
+                view.settings_menu = None;
+                if let Err(err) = self.send_prompt(&format!("/autonomous {value}"), super::prompt::SubmitBehavior::Steer, view) {
+                    self.error_row(&err.to_string(), view);
+                }
+            }
+            "trace-sharing" => {
+                view.settings_menu = None;
+                if let Err(err) = self.set_trace_sharing(value == "true", view).await {
+                    self.error_row(&format!("{err:#}"), view);
+                }
+            }
+            "factory" | "telemetry" | "update-channel" => {
+                let Some(settings) = self.client_settings.clone() else { return };
+                let enabled = value == "true";
+                let previous = match id {
+                    "factory" => settings.factory_enabled().to_string(),
+                    "telemetry" => settings.telemetry_enabled().to_string(),
+                    _ => settings.effective_update_channel(&view.chrome.version),
+                };
+                let result = match id {
+                    "factory" => {
+                        let guard = if enabled { Ok(()) } else { match self.live_factory_runs().await {
+                            Some(n) if n > 0 => Err(anyhow::anyhow!("Cannot disable the factory while {n} {} still live — stop the runs first.", if n == 1 { "run is" } else { "runs are" })),
+                            None if self.factory_activity_supported() => Err(anyhow::anyhow!("Cannot verify live factory runs; factory remains enabled.")),
+                            _ => Ok(()),
+                        }};
+                        guard.and_then(|()| settings.set_factory_enabled(enabled)).map(|()| {
+                            if enabled { "The factory is enabled. Restart the client to surface the factory group." }
+                            else { "The factory is disabled." }.to_owned()
+                        })
+                    }
+                    "telemetry" => settings.set_telemetry_enabled(enabled),
+                    _ => settings.set_update_channel(value).map(|()| format!("Updates now follow the {value} channel. Run /update to install.")),
+                };
+                match result {
+                    Ok(message) => self.note(&message, view),
+                    Err(error) => {
+                        if let Some(menu) = &mut view.settings_menu { menu.set_row_value(id, &previous); }
+                        self.error_row(&format!("{error:#}"), view);
+                    }
+                }
+            }
             "autocompact-threshold" => {
                 if let Some(settings) = &self.client_settings {
                     let result = value
@@ -512,57 +707,43 @@ impl SessionUi {
                 .await;
             }
             "default-service-tier" => {
-                // Persist the default tier (new sessions start on it), then apply it to
-                // the running session through the same daemon tier switch `/tier` uses.
+                // Preserve the existing behavior: save the default first, then switch the session.
                 if let Some(settings) = &self.client_settings {
                     if let Err(error) = settings.set_default_service_tier(value) {
                         self.error_row(&format!("{error:#}"), view);
                         return;
                     }
                 }
-                let tier = match serde_json::from_value::<pa_types::ai::ServiceTier>(Value::String(
-                    value.to_string(),
-                )) {
-                    Ok(tier) => tier,
-                    Err(error) => {
-                        self.error_row(&format!("{error:#}"), view);
-                        return;
-                    }
-                };
-                let switched = self
-                    .bounded_request(
-                        Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
-                        DaemonCommand::SetServiceTier {
-                            id: None,
-                            active_session_id: self.active_session_id.clone(),
-                            service_tier: Some(tier),
-                            rest: Map::default(),
-                        },
-                    )
-                    .await;
-                if let Err(error) = switched {
-                    self.error_row(&format!("{error:#}"), view);
-                    return;
+                if let Some(applied) = self.set_session_service_tier(value, view).await {
+                    self.note(&format!("Default service tier: {value} (session: {applied})"), view);
                 }
-                // The status row reports what the session actually applied; a state read
-                // that fails or omits the tier shows no success row.
-                let Some(state) = self.connection_state(view).await else {
-                    return;
-                };
-                let Some(applied) = state
-                    .get("serviceTier")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
+            }
+            "session-service-tier" => {
+                if let Some(applied) = self.set_session_service_tier(value, view).await {
+                    self.note(&format!("Service tier: {applied}"), view);
+                }
+            }
+            "fast-mode" => {
+                if let Some(applied) = self.set_session_service_tier(value, view).await {
+                    let status = if applied == "priority" { "on" } else { "off" };
+                    self.note(&format!("Fast mode: {status}"), view);
+                }
+            }
+            "inbox-reminders" => {
+                let (Some(settings), Some(menu)) =
+                    (&self.client_settings, view.settings_menu.as_mut())
                 else {
                     return;
                 };
-                self.service_tier = Some(applied.clone());
-                view.chrome.service_tier = Some(applied.clone());
-                self.update_model_eligibility_filters(view);
-                self.note(
-                    &format!("Default service tier: {value} (session: {applied})"),
-                    view,
-                );
+                let Some(file) = menu.inbox_session_file.as_deref() else {
+                    return;
+                };
+                match settings.set_inbox_reminder_mode(file, value) {
+                    Ok(()) => menu.set_row_value(id, value),
+                    Err(error) => {
+                        self.error_row(&format!("Cannot save inbox reminder mode: {error:#}"), view);
+                    }
+                }
             }
 
             "mermaid-rendering" => {
@@ -638,30 +819,19 @@ impl SessionUi {
         }
     }
 
-    // Fast mode, depth, and reload (/fast, /rlm-max-depth, /reload)
-
-    /// Toggle the priority service tier. TS serializes toggles through a queue; here the dispatch
-    /// awaits to completion, so toggles cannot interleave.
-    pub(super) async fn handle_fast_command(&mut self, view: &mut AgentView) {
-        const UNAVAILABLE: &str = "Fast mode requires GPT-5.4, GPT-5.5, or GPT-5.6 with ChatGPT or OpenAI API key authentication";
-        let eligible = self
-            .current_model_entry(view)
-            .is_some_and(pa_types::ai::supports_fast_mode);
-        if !eligible {
-            self.note(UNAVAILABLE, view);
-            return;
-        }
-        // Read the current tier (priority = on) and flip it; the refresh after the
-        // switch confirms the daemon's tier.
-        let enabled = self.service_tier.as_deref() == Some("priority");
-        let target = if enabled { "default" } else { "priority" };
+    /// Apply a tier and confirm the daemon's effective value before updating the tray/menu.
+    async fn set_session_service_tier(
+        &mut self,
+        value: &str,
+        view: &mut AgentView,
+    ) -> Option<String> {
         let tier = match serde_json::from_value::<pa_types::ai::ServiceTier>(
-            serde_json::Value::String(target.to_string()),
+            Value::String(value.to_owned()),
         ) {
             Ok(tier) => tier,
             Err(error) => {
                 self.error_row(&format!("{error:#}"), view);
-                return;
+                return None;
             }
         };
         let switched = self
@@ -677,75 +847,26 @@ impl SessionUi {
             .await;
         if let Err(error) = switched {
             self.error_row(&format!("{error:#}"), view);
-            return;
+            return None;
         }
-        let state = self.connection_state(view).await;
-        if let Some(state) = state {
-            if let Some(tier) = state.get("serviceTier").and_then(Value::as_str) {
-                self.service_tier = Some(tier.to_string());
+        let state = self.connection_state(view).await?;
+        let applied = state.get("serviceTier")?.as_str()?;
+        self.service_tier = Some(applied.to_owned());
+        view.chrome.service_tier.clone_from(&self.service_tier);
+        let fast_available = self
+            .current_model_entry(view)
+            .is_some_and(pa_types::ai::supports_fast_mode);
+        if let Some(menu) = view.settings_menu.as_mut() {
+            menu.set_row_value("session-service-tier", applied);
+            if fast_available {
+                menu.set_row_value("fast-mode", if applied == "priority" { "on" } else { "off" });
             }
         }
-        // The tray badge and the `/tier` completions follow the applied tier.
-        view.chrome.service_tier.clone_from(&self.service_tier);
-        self.update_model_eligibility_filters(view);
-        let on = self.service_tier.as_deref() == Some("priority");
-        self.note(
-            &format!("Fast mode: {}", if on { "on" } else { "off" }),
-            view,
-        );
+        Some(applied.to_owned())
     }
 
-    /// A missing argument reports the depth and its source; `<int> [--global]`
-    /// sets the per-chat depth immediately and optionally the global default.
-    pub(super) async fn handle_rlm_max_depth_command(&mut self, view: &mut AgentView, args: &str) {
-        let tokens: Vec<&str> = if args.is_empty() {
-            Vec::new()
-        } else {
-            args.split_whitespace().collect()
-        };
-        if tokens.is_empty() {
-            match self
-                .bounded_request(
-                    Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
-                    DaemonCommand::GetRlmMaxDepthStatus {
-                        id: None,
-                        active_session_id: self.active_session_id.clone(),
-                        rest: Map::default(),
-                    },
-                )
-                .await
-            {
-                Ok(data) => {
-                    let depth = data.get("maxDepth").and_then(Value::as_u64).unwrap_or(0);
-                    let source = data
-                        .get("source")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    self.plain_row(&format!("RLM max depth: {depth} ({source})"), view);
-                }
-                Err(error) => self.error_row(&format!("{error:#}"), view),
-            }
-            return;
-        }
-        let global = tokens.get(1) == Some(&"--global");
-        let valid = tokens.len() <= if global { 2 } else { 1 }
-            && tokens[0].chars().all(|c| c.is_ascii_digit());
-        if !valid {
-            self.note_as(
-                "Usage: /rlm-max-depth [<non-negative integer> [--global]]",
-                StatusKind::Warning,
-                view,
-            );
-            return;
-        }
-        let Ok(max_depth) = tokens[0].parse::<u64>() else {
-            self.note_as(
-                "RLM max depth must be a non-negative integer.",
-                StatusKind::Warning,
-                view,
-            );
-            return;
-        };
+    /// Apply the session depth even if persisting the optional global default fails.
+    async fn set_rlm_max_depth(&mut self, max_depth: u64, global: bool, view: &mut AgentView) {
         match self
             .bounded_request(
                 Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
@@ -760,6 +881,9 @@ impl SessionUi {
             .await
         {
             Ok(data) => {
+                if let (Some(menu), Some(label)) = (view.settings_menu.as_mut(), rlm_depth_label(&data)) {
+                    menu.set_row_value("rlm-max-depth", &label);
+                }
                 let saved = data
                     .get("globalSaved")
                     .and_then(Value::as_bool)

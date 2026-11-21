@@ -30,17 +30,12 @@ PR; on builds without it, the module docstring in
 The factory ships disabled. `rlm.factory.help()` answers while it is off
 (the authoring guide stays readable before opting in), but every other
 `rlm.factory` call and every factory harness write refuses with one
-message: `the factory is disabled; run /factory on to enable it`. The
-user turns it on with `/factory on` in the client (`/factory off`
-disables it again — refused while the session still has live runs, and
-on a lane-advertising client while the live-run count cannot be read, so
-an active factory never loses its stop path, `/factory status` reports
-it), which persists the
-`factory.enabled` setting in the agent dir's settings.json — the same
-setting the daemon's `factory_activity` lane advertisement reads, so the
-TUI's factory dock group and page surface only on a client started while
-the factory is enabled. If a call refuses with that message, tell the
-user to run `/factory on` and restart the client.
+message: `the factory is disabled; enable it in /settings`. The user can
+view or change the factory switch in `/settings`. Disabling it is refused
+while the session still has live runs, or while a client with the factory
+lane cannot verify the count. The switch persists `factory.enabled` in
+the agent directory's settings.json. Restart the client after enabling
+it to see the factory dock group and page.
 
 ## Discovering machines
 

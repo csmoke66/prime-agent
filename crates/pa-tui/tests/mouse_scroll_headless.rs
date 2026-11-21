@@ -180,7 +180,10 @@ fn wheel_turns_scroll_the_transcript() {
 #[test]
 fn wheel_is_ignored_while_a_picker_owns_the_frame() {
     let steps = vec![
-        HeadlessStep::Submit("/model".to_string()),
+        HeadlessStep::Key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('l'),
+            crossterm::event::KeyModifiers::CONTROL,
+        )),
         HeadlessStep::Mouse(WHEEL_UP.to_string()),
         HeadlessStep::Mouse(WHEEL_UP.to_string()),
         HeadlessStep::Mouse(WHEEL_UP.to_string()),

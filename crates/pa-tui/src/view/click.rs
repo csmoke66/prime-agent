@@ -21,9 +21,6 @@ pub(crate) enum ClickAction {
     },
     /// Move the `/model` picker's selection to the clicked filtered row.
     SelectModelRow(usize),
-    /// Move the `/effort` picker's selection to the
-    /// clicked filtered row.
-    SelectChoiceRow(usize),
     /// Open the activity dock group the click landed on (operator
     /// directive 2026-09-29). The target spans one group's segment.
     OpenDockGroup(crate::chrome::ActivityGroup),
@@ -77,23 +74,11 @@ pub(crate) struct PickerClickSurface {
     pub(crate) chrome_rows: usize,
     /// The item rows' filtered positions.
     pub(crate) items: (usize, usize),
-    pub(crate) kind: PickerKind,
-}
-
-/// The picker panes that expose clickable item rows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PickerKind {
-    Model,
-    Choice,
 }
 
 /// The `/model` picker's chrome rows: the bordered search field
 /// renders exactly three rows.
 pub(crate) const MODEL_PICKER_CHROME_ROWS: usize = 3;
-
-/// The `/effort` picker's chrome rows: the config
-/// selector's header block plus the bordered search field.
-pub(crate) const CHOICE_PICKER_CHROME_ROWS: usize = 6;
 
 /// The last composed frame's clickable geometry; the inline compose
 /// clears it.
@@ -191,10 +176,7 @@ impl AgentView {
             let item = dock_row
                 .checked_sub(picker.dock_row + picker.chrome_rows)
                 .filter(|item| *item < visible)?;
-            return Some(match picker.kind {
-                PickerKind::Model => ClickAction::SelectModelRow(picker.items.0 + item),
-                PickerKind::Choice => ClickAction::SelectChoiceRow(picker.items.0 + item),
-            });
+            return Some(ClickAction::SelectModelRow(picker.items.0 + item));
         }
         // The dock's chrome rows resolve before the editor: their rows
         // are never editor content rows.
@@ -765,7 +747,6 @@ mod tests {
             dock_row: 2,
             chrome_rows: 3,
             items: (4, 7),
-            kind: PickerKind::Model,
         });
         // The picker owns the dock: no editor surface is recorded.
         view.window_rows = view.click.dock_screen_origin - view.click.window_screen_start;

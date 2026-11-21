@@ -23,6 +23,17 @@ pub fn parse_session_command(
     registry: &SlashCommandRegistry,
     text: &str,
 ) -> Option<SessionSlashCommand> {
+    // Autonomous settings still use the engine operation in headless sessions;
+    // unlike interactive actions, it is not part of chat completion or dispatch.
+    if let Some(args) = text.strip_prefix("/autonomous").filter(|tail| {
+        tail.is_empty() || tail.starts_with(char::is_whitespace)
+    }) {
+        return Some(SessionSlashCommand {
+            name: "autonomous",
+            args: args.trim().to_owned(),
+            text: text.to_owned(),
+        });
+    }
     let resolved = registry.parse(text)?;
     if !is_session_slash_command_name(resolved.name) {
         return None;

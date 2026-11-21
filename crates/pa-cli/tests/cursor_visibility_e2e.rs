@@ -106,8 +106,8 @@ fn cursor_stays_hidden_and_positioned_across_mount_picker_and_suspend() {
         "the editor positions the hidden cursor at the caret",
     );
 
-    // The picker: clear the editor first (submitting `hi/model` would go to the daemon),
-    // then `/model` opens the picker and Escape closes it.
+    // Clear the draft to pin the empty caret position, then open the picker with
+    // Ctrl+L and close it with Escape.
     let mark_clear = harness.mark();
     harness.write(b"\x7f\x7f");
     harness.wait_from(
@@ -116,7 +116,7 @@ fn cursor_stays_hidden_and_positioned_across_mount_picker_and_suspend() {
         "the editor emptied back to the bare caret",
     );
     let mark_picker = harness.mark();
-    harness.write(b"/model\r");
+    harness.write(b"\x0c");
     harness.wait_from(mark_picker, "Search models", "the model picker mounts");
     harness.write(&[0x1b]);
     // The frame-end hide + hidden caret write is the editor-owns-the-frame marker;

@@ -3,9 +3,66 @@
 //! trait; the composition root (pa-cli) implements it over the local stores.
 
 use anyhow::Result;
+use pa_types::ai::ModelThinkingLevel;
 use serde_json::Value;
 
+/// What an attached session inherits from the global `allowedModels` setting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InheritedChildModels {
+    All,
+    Patterns(usize),
+    Unreadable,
+}
+
+/// The policy of the attached session's root, before loading the model catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChildPolicy {
+    /// None inherits, zero explicitly allows all, other counts restrict.
+    pub model_rules: Option<usize>,
+    pub inherited: InheritedChildModels,
+    pub effort: Option<ModelThinkingLevel>,
+}
+
+/// One authenticated child-model choice and its membership in both policies.
+#[derive(Debug)]
+pub struct ChildModelChoice {
+    pub selector: String,
+    pub name: String,
+    pub allowed: bool,
+    pub inherited: bool,
+}
+
+#[derive(Debug)]
+pub struct ChildModelChoices {
+    pub policy: ChildPolicy,
+    pub models: Vec<ChildModelChoice>,
+}
+
 pub trait ClientSettings: Send + Sync {
+    /// Read the child policy shared by this attached session's root family.
+    fn child_policy(&self, _session_file: &str) -> Result<ChildPolicy> {
+        anyhow::bail!("Session subagent settings are unavailable")
+    }
+
+    /// Load the authenticated child-model catalog and effective checkmarks.
+    fn child_model_choices(&self, _session_file: &str) -> Result<ChildModelChoices> {
+        anyhow::bail!("Session subagent settings are unavailable")
+    }
+
+    /// Save checked selectors; None inherits the global policy, Some(empty) allows all.
+    fn set_child_models(&self, _session_file: &str, _models: Option<Vec<String>>) -> Result<()> {
+        anyhow::bail!("Session subagent settings are unavailable")
+    }
+
+    /// Save a root-family child effort override; None uses normal spawn/parent resolution.
+    fn set_child_effort(
+        &self,
+        _session_file: &str,
+        _effort: Option<ModelThinkingLevel>,
+    ) -> Result<()> {
+        anyhow::bail!("Session subagent settings are unavailable")
+    }
+
     /// Master harness refinement switch, enabled by default.
     fn harness_refinements(&self) -> bool {
         true
@@ -18,13 +75,19 @@ pub trait ClientSettings: Send + Sync {
         anyhow::bail!("Harness refinement settings are unavailable")
     }
 
-    /// Read or update the attached session's child policy without mutating global settings.
-    fn subagent_settings(&self, _session_file: &str, _arguments: &str) -> Result<String> {
-        anyhow::bail!("Session sub-agent settings are unavailable")
+    /// Read the non-consuming inbox reminder mode for the attached session.
+    ///
+    /// # Errors
+    /// Returns an error if session settings are unavailable or cannot be read.
+    fn inbox_reminder_mode(&self, _session_file: &str) -> Result<String> {
+        anyhow::bail!("Session inbox reminder settings are unavailable")
     }
 
-    /// Configure non-consuming reminder previews for the attached session.
-    fn inbox_reminders(&self, _session_file: &str, _arguments: &str) -> Result<String> {
+    /// Write the non-consuming inbox reminder mode for the attached session.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid mode or a failed settings write.
+    fn set_inbox_reminder_mode(&self, _session_file: &str, _mode: &str) -> Result<()> {
         anyhow::bail!("Session inbox reminder settings are unavailable")
     }
 
@@ -256,6 +319,7 @@ pub trait ClientSettings: Send + Sync {
     /// The `/telemetry status` report: on or off and why, the endpoint,
     /// and the installation id.
     fn telemetry_status(&self) -> String;
+    fn telemetry_enabled(&self) -> bool { true }
     /// Persists `telemetry.enabled` (the TS key) and returns the report
     /// after the write (it names an environment variable or project
     /// setting that still decides).

@@ -3,12 +3,16 @@
 //! on Tab/number keys only), Enter opens submenus, type-to-search per tab. The caller owns the row
 //! data and change actions; this module navigation and rendering.
 
+mod child_models;
 mod tabs;
 
+use child_models::{policy_label, ChildModelPicker};
+use crate::client_settings::{ChildModelChoices, ChildPolicy};
 use crate::keybindings::{format_key_text, KeybindingsManager};
 use crate::search_input::SearchInput;
 use crate::theme::{Theme, ThemeColor};
 use crate::width::wrap_text;
+use pa_types::ai::ModelThinkingLevel;
 
 /// The reasoning-level descriptions the TS thinking submenu lists.
 fn thinking_description(level: &str) -> &'static str {
@@ -35,6 +39,10 @@ pub enum SettingsSubmenu {
     Warnings,
     /// "Default Service Tier" (TS `SERVICE_TIER_OPTIONS`).
     ServiceTier,
+    /// Service tiers supported by the session's current model.
+    SessionServiceTier { tiers: Vec<&'static str> },
+    /// Reasoning override for newly spawned children.
+    ChildEffort,
 }
 
 /// The service-tier descriptions the TS settings submenu lists.
@@ -51,6 +59,21 @@ pub fn service_tier_description(tier: &str) -> &'static str {
 
 /// The settings-row and autocomplete choice order.
 pub const SERVICE_TIER_CHOICES: [&str; 4] = ["default", "flex", "priority", "auto"];
+
+const CHILD_EFFORT_CHOICES: [Option<ModelThinkingLevel>; 8] = [
+    None,
+    Some(ModelThinkingLevel::Off),
+    Some(ModelThinkingLevel::Minimal),
+    Some(ModelThinkingLevel::Low),
+    Some(ModelThinkingLevel::Medium),
+    Some(ModelThinkingLevel::High),
+    Some(ModelThinkingLevel::Xhigh),
+    Some(ModelThinkingLevel::Max),
+];
+
+fn child_effort_label(effort: Option<ModelThinkingLevel>) -> &'static str {
+    effort.map_or("inherit", ModelThinkingLevel::wire_name)
+}
 
 /// One settings row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +100,17 @@ pub enum SettingsMenuAction {
         id: &'static str,
         value: String,
     },
+    /// Open the session model picker.
+    OpenPrimaryModel,
+    ShowTelemetryStatus,
+    /// Apply a depth to this session, optionally also saving the global default.
+    SaveRlmDepth { depth: u64, global: bool },
+    /// Load the authenticated catalog when the child-model row is opened.
+    OpenChildModels,
+    /// Persist the child model draft. None inherits, an explicit empty list allows all.
+    SaveChildModels(Option<Vec<String>>),
+    /// Persist the child effort; None inherits the spawn request or parent.
+    SaveChildEffort(Option<ModelThinkingLevel>),
     /// The theme submenu's selection moved: preview the theme live.
     PreviewTheme {
         name: String,
@@ -97,6 +131,13 @@ struct SubmenuState {
     selected: usize,
 }
 
+#[derive(Debug)]
+struct DepthEdit {
+    global: bool,
+    input: SearchInput,
+    invalid: bool,
+}
+
 /// The settings menu: the strip rides under the search field, each tab
 /// owns its own search input, filtered window, and selection.
 #[derive(Debug)]
@@ -105,6 +146,11 @@ pub struct SettingsMenu {
     tabs: Vec<SettingsTab>,
     tab: usize,
     sub: Option<SubmenuState>,
+    depth_edit: Option<DepthEdit>,
+    autonomous_edit: Option<SearchInput>,
+    pub(crate) inbox_session_file: Option<String>,
+    child_models: Option<ChildModelPicker>,
+    pub(crate) child_session_file: Option<String>,
     max_visible: usize,
 }
 
@@ -145,7 +191,30 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         thresholds.push(percent);
         thresholds.sort_by(f64::total_cmp);
     }
+    let toggle = |id, label, description, value: Option<bool>| SettingsMenuRow {
+        id, label, description,
+        current: value.map_or_else(|| "Unavailable".into(), |v| v.to_string()),
+        values: value.map(|_| bool_value()), submenu: None,
+    };
     vec![
+        toggle("factory", "Factory", "Enable factory orchestration for agents", current.factory_enabled),
+        toggle("speed-display", "Output speed", "Show output tokens per second in the footer", Some(current.speed_display)),
+        toggle("telemetry", "Usage telemetry", "Persist the telemetry preference; environment overrides still apply", current.telemetry_enabled),
+        SettingsMenuRow {
+            id: "telemetry-status", label: "Telemetry status", description: "View effective reporting status and any overrides without changing the preference",
+            current: if current.telemetry_enabled.is_some() { "View" } else { "Unavailable" }.into(),
+            values: None, submenu: None,
+        },
+        toggle("trace-sharing", "Trace sharing", "Automatically upload session traces", current.trace_sharing),
+        SettingsMenuRow {
+            id: "update-channel", label: "Update channel", description: "Stable releases or nightly pre-releases",
+            current: current.update_channel.clone().unwrap_or_else(|| "Unavailable".into()),
+            values: current.update_channel.as_ref().map(|_| vec!["stable".into(), "nightly".into()]), submenu: None,
+        },
+        SettingsMenuRow {
+            id: "autonomous", label: "Autonomous mode", description: "Inspect or configure continuous work, budgets and verification gates",
+            current: "Configure".into(), values: None, submenu: None,
+        },
         SettingsMenuRow {
             id: "autocompact-threshold",
             label: "Auto-compact threshold (%)",
@@ -341,12 +410,75 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         SettingsMenuRow {
             id: "thinking",
             label: "Thinking level",
-            description: "Reasoning depth for thinking-capable models",
+            description: "Current session's reasoning effort",
             current: current.thinking_level.clone().unwrap_or_default(),
             values: None,
             submenu: Some(SettingsSubmenu::Thinking {
                 levels: current.available_thinking_levels.clone(),
             }),
+        },
+        SettingsMenuRow {
+            id: "primary-model",
+            label: "Primary model",
+            description: "Choose the main model for this session",
+            current: current.primary_model.clone(),
+            values: None,
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "session-service-tier",
+            label: "Session service tier",
+            description: "Service tier for the current model in this session",
+            current: current.session_service_tier.clone(),
+            values: None,
+            submenu: Some(SettingsSubmenu::SessionServiceTier {
+                tiers: current.available_service_tiers.clone(),
+            }),
+        },
+        SettingsMenuRow {
+            id: "fast-mode",
+            label: "Fast mode",
+            description: "Use the priority service tier in this session when the model supports fast mode",
+            current: match (current.fast_mode_available, current.session_service_tier.as_str()) {
+                (false, _) => "Unavailable",
+                (true, "priority") => "on",
+                (true, _) => "off",
+            }
+            .into(),
+            values: None,
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "inbox-reminders",
+            label: "Inbox reminders",
+            description: "Include only a count, message previews, or full unread messages",
+            current: current
+                .inbox_reminders
+                .clone()
+                .unwrap_or_else(|| "Unavailable".into()),
+            values: current.inbox_reminders.as_ref().map(|_| {
+                ["count", "preview", "full"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            }),
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "rlm-max-depth",
+            label: "RLM max depth",
+            description: "Set the maximum child nesting depth for this session",
+            current: current.rlm_depth.clone(),
+            values: None,
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "rlm-max-depth-global",
+            label: "RLM max depth (global)",
+            description: "Set the depth for this session and save it as the global default",
+            current: "configure".into(),
+            values: None,
+            submenu: None,
         },
         SettingsMenuRow {
             id: "theme",
@@ -358,6 +490,22 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
                 themes: current.available_themes.clone(),
             }),
         },
+        SettingsMenuRow {
+            id: "child-models",
+            label: "Child allowed models",
+            description: "Select which models subagents can use in this session family",
+            current: "Unavailable".into(),
+            values: None,
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "child-effort",
+            label: "Child effort",
+            description: "Override reasoning effort for newly spawned subagents in this session family",
+            current: "Unavailable".into(),
+            values: None,
+            submenu: None,
+        },
     ]
 }
 
@@ -365,6 +513,11 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
 /// seam reads.
 #[derive(Debug, Clone, Default)]
 pub struct SettingsCurrentValues {
+    pub factory_enabled: Option<bool>,
+    pub speed_display: bool,
+    pub telemetry_enabled: Option<bool>,
+    pub trace_sharing: Option<bool>,
+    pub update_channel: Option<String>,
     pub autocompact: bool,
     pub compaction_threshold_percent: f64,
     pub show_images: bool,
@@ -385,6 +538,12 @@ pub struct SettingsCurrentValues {
     pub follow_up_mode: String,
     pub transport: String,
     pub default_service_tier: String,
+    pub primary_model: String,
+    pub session_service_tier: String,
+    pub available_service_tiers: Vec<&'static str>,
+    pub fast_mode_available: bool,
+    pub inbox_reminders: Option<String>,
+    pub rlm_depth: String,
     pub mermaid: String,
     pub quiet_startup: bool,
     pub tree_filter_mode: String,
@@ -413,7 +572,50 @@ impl SettingsMenu {
             tab: 0,
             rows,
             sub: None,
+            depth_edit: None,
+            autonomous_edit: None,
+            inbox_session_file: None,
+            child_models: None,
+            child_session_file: None,
             max_visible: 10,
+        }
+    }
+
+    pub(crate) fn bind_child_policy(&mut self, session_file: String, policy: &ChildPolicy) {
+        self.child_session_file = Some(session_file);
+        for row in &mut self.rows {
+            match row.id {
+                "child-models" => row.current = policy_label(policy),
+                "child-effort" => {
+                    row.current = child_effort_label(policy.effort).into();
+                    row.submenu = Some(SettingsSubmenu::ChildEffort);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub(crate) fn open_child_models(&mut self, choices: ChildModelChoices) {
+        if let Some(row) = self.rows.iter_mut().find(|row| row.id == "child-models") {
+            row.current = policy_label(&choices.policy);
+        }
+        self.child_models = Some(ChildModelPicker::new(choices));
+    }
+
+    pub(crate) fn child_models_saved(&mut self, model_rules: Option<usize>) {
+        let Some(picker) = self.child_models.take() else {
+            return;
+        };
+        if let Some(row) = self.rows.iter_mut().find(|row| row.id == "child-models") {
+            let mut policy = picker.into_policy();
+            policy.model_rules = model_rules;
+            row.current = policy_label(&policy);
+        }
+    }
+
+    pub(crate) fn child_effort_saved(&mut self, effort: Option<ModelThinkingLevel>) {
+        if let Some(sub) = self.sub.take() {
+            self.rows[sub.row].current = child_effort_label(effort).into();
         }
     }
 
@@ -421,8 +623,54 @@ impl SettingsMenu {
         &mut self.tabs[self.tab]
     }
 
+    pub(crate) fn set_row_value(&mut self, id: &str, value: &str) {
+        if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
+            row.current.clear();
+            row.current.push_str(value);
+        }
+    }
+
     /// One key id: the submenu, when open, takes it first.
     pub fn handle_key(&mut self, key: &str, kb: &KeybindingsManager) -> SettingsMenuAction {
+        if let Some(input) = &mut self.autonomous_edit {
+            if kb.matches(key, "tui.select.cancel") || key == "ctrl+c" {
+                self.autonomous_edit = None;
+                return SettingsMenuAction::SubmenuClosed;
+            }
+            if kb.matches(key, "tui.select.confirm") {
+                let value = input.value().trim().to_owned();
+                self.autonomous_edit = None;
+                return SettingsMenuAction::Change { id: "autonomous", value };
+            }
+            input.handle_key(key, kb);
+            return SettingsMenuAction::None;
+        }
+        if let Some(edit) = &mut self.depth_edit {
+            if kb.matches(key, "tui.select.cancel") || key == "ctrl+c" {
+                self.depth_edit = None;
+                return SettingsMenuAction::SubmenuClosed;
+            }
+            if kb.matches(key, "tui.select.confirm") {
+                let value = edit.input.value();
+                if let Some(depth) = value.parse::<u64>().ok().filter(|_| value.bytes().all(|byte| byte.is_ascii_digit())) {
+                    let global = edit.global;
+                    self.depth_edit = None;
+                    return SettingsMenuAction::SaveRlmDepth { depth, global };
+                }
+                edit.invalid = true;
+            } else {
+                edit.input.handle_key(key, kb);
+                edit.invalid = false;
+            }
+            return SettingsMenuAction::None;
+        }
+        if let Some(picker) = &mut self.child_models {
+            let action = picker.handle_key(key, kb);
+            if action == SettingsMenuAction::SubmenuClosed {
+                self.child_models = None;
+            }
+            return action;
+        }
         if let Some(mut sub) = self.sub.take() {
             let action = self.handle_submenu_key(&mut sub, key, kb);
             // A value select, a theme restore, or the submenu's Esc closes the
@@ -524,6 +772,18 @@ impl SettingsMenu {
     /// (Space stays the row activation), and the filter re-runs when the
     /// query changed.
     pub fn paste(&mut self, text: &str) {
+        if let Some(input) = &mut self.autonomous_edit {
+            input.paste(text);
+            return;
+        }
+        if let Some(edit) = &mut self.depth_edit {
+            edit.input.paste(text);
+            return;
+        }
+        if let Some(picker) = &mut self.child_models {
+            picker.paste(text);
+            return;
+        }
         // The submenu owns the frame while open (its key dispatch takes
         // every key first): a paste never edits the hidden parent list.
         if self.sub.is_some() {
@@ -554,12 +814,50 @@ impl SettingsMenu {
             return SettingsMenuAction::None;
         };
         let row = &mut self.rows[row_index];
+        match row.id {
+            "telemetry-status" if row.current != "Unavailable" => return SettingsMenuAction::ShowTelemetryStatus,
+            "autonomous" => {
+                self.autonomous_edit = Some(SearchInput::new());
+                return SettingsMenuAction::None;
+            }
+            "primary-model" => return SettingsMenuAction::OpenPrimaryModel,
+            "fast-mode" if row.current != "Unavailable" => {
+                return SettingsMenuAction::Change {
+                    id: row.id,
+                    value: if row.current == "on" { "default" } else { "priority" }.into(),
+                };
+            }
+            "rlm-max-depth" | "rlm-max-depth-global" => {
+                self.depth_edit = Some(DepthEdit {
+                    global: row.id == "rlm-max-depth-global",
+                    input: SearchInput::new(),
+                    invalid: false,
+                });
+                return SettingsMenuAction::None;
+            }
+            _ => {}
+        }
+        if row.id == "child-models" && self.child_session_file.is_some() {
+            return SettingsMenuAction::OpenChildModels;
+        }
         if let Some(kind) = row.submenu.clone() {
             // The tier submenu preselects the row's current tier.
             let selected = match &kind {
                 SettingsSubmenu::ServiceTier => SERVICE_TIER_CHOICES
                     .iter()
                     .position(|tier| *tier == row.current)
+                    .unwrap_or(0),
+                SettingsSubmenu::Thinking { levels } => levels
+                    .iter()
+                    .position(|level| *level == row.current)
+                    .unwrap_or(0),
+                SettingsSubmenu::SessionServiceTier { tiers } => tiers
+                    .iter()
+                    .position(|tier| *tier == row.current)
+                    .unwrap_or(0),
+                SettingsSubmenu::ChildEffort => CHILD_EFFORT_CHOICES
+                    .iter()
+                    .position(|&effort| child_effort_label(effort) == row.current)
                     .unwrap_or(0),
                 _ => 0,
             };
@@ -594,7 +892,9 @@ impl SettingsMenu {
                 (index as isize + delta).rem_euclid(count as isize) as usize
             });
         let value = values[index].clone();
-        row.current.clone_from(&value);
+        if row.id != "inbox-reminders" {
+            row.current.clone_from(&value);
+        }
         SettingsMenuAction::Change { id: row.id, value }
     }
 
@@ -610,6 +910,8 @@ impl SettingsMenu {
             SettingsSubmenu::Theme { themes } => themes.len(),
             SettingsSubmenu::Warnings => 1,
             SettingsSubmenu::ServiceTier => SERVICE_TIER_CHOICES.len(),
+            SettingsSubmenu::SessionServiceTier { tiers } => tiers.len(),
+            SettingsSubmenu::ChildEffort => CHILD_EFFORT_CHOICES.len(),
         };
         if kb.matches(key, "tui.select.up") {
             if options > 0 {
@@ -665,11 +967,27 @@ impl SettingsMenu {
                         id: row_id,
                         value: tier.to_string(),
                     }),
+                SettingsSubmenu::SessionServiceTier { tiers } => tiers
+                    .get(sub.selected)
+                    .map(|tier| SettingsMenuAction::Change {
+                        id: row_id,
+                        value: (*tier).to_owned(),
+                    }),
+                SettingsSubmenu::ChildEffort => {
+                    let effort = CHILD_EFFORT_CHOICES[sub.selected];
+                    if child_effort_label(effort) == self.rows[sub.row].current {
+                        Some(SettingsMenuAction::SubmenuClosed)
+                    } else {
+                        Some(SettingsMenuAction::SaveChildEffort(effort))
+                    }
+                }
             };
             // A value select closes the submenu and updates the row's displayed value.
             if let Some(action) = value {
-                if let SettingsMenuAction::Change { value, .. } = &action {
-                    self.rows[sub.row].current.clone_from(value);
+                if !matches!(row_id, "thinking" | "session-service-tier") {
+                    if let SettingsMenuAction::Change { value, .. } = &action {
+                        self.rows[sub.row].current.clone_from(value);
+                    }
                 }
                 return action;
             }
@@ -742,6 +1060,42 @@ impl SettingsMenu {
     /// the whole list.
     #[must_use]
     pub fn render(&self, theme: &Theme, width: usize, kb: &KeybindingsManager) -> Vec<crate::Line> {
+        if let Some(input) = &self.autonomous_edit {
+            let mut lines = vec![hint_row(theme, width, "Autonomous mode · Enter to apply, Esc to cancel")];
+            lines.extend(crate::menu_panel::search_field_lines(theme, width, input.value(), input.cursor(), true, "status, off, or on [options]"));
+            for hint in ["--max-continuations, --max-turns, --max-tokens, --timeout-ms: number or unlimited",
+                "--gate <command>, --gate-retries <n>, --gate-timeout-ms <n>, --subagent-keep-alive-ms <n>"] {
+                lines.push(hint_row(theme, width, hint));
+            }
+            return lines;
+        }
+        if let Some(edit) = &self.depth_edit {
+            let title = if edit.global {
+                "RLM max depth (session and global default)"
+            } else {
+                "RLM max depth (session)"
+            };
+            let mut lines = vec![
+                crate::menu_panel::rule_row(theme, width),
+                hint_row(theme, width, title),
+            ];
+            lines.extend(crate::menu_panel::search_field_lines(
+                theme,
+                width,
+                edit.input.value(),
+                edit.input.cursor(),
+                true,
+                "Non-negative integer",
+            ));
+            if edit.invalid {
+                lines.push(hint_row(theme, width, "Enter a non-negative integer."));
+            }
+            lines.push(hint_row(theme, width, &submenu_hint(kb)));
+            return lines;
+        }
+        if let Some(picker) = &self.child_models {
+            return picker.render(theme, width, kb);
+        }
         if let Some(sub) = &self.sub {
             return Self::render_submenu(sub, theme, width, kb);
         }
@@ -862,6 +1216,24 @@ impl SettingsMenu {
                     SERVICE_TIER_CHOICES
                         .iter()
                         .map(|tier| (tier.to_string(), Some(service_tier_description(tier))))
+                        .collect(),
+                ),
+                SettingsSubmenu::SessionServiceTier { tiers } => (
+                    "Session Service Tier",
+                    "Choose a tier supported by the current model",
+                    tiers.iter()
+                        .map(|tier| ((*tier).to_owned(), Some(service_tier_description(tier))))
+                        .collect(),
+                ),
+                SettingsSubmenu::ChildEffort => (
+                    "Child effort",
+                    "Effort override for new subagents; inherit uses the spawn request or parent",
+                    CHILD_EFFORT_CHOICES
+                        .iter()
+                        .map(|&effort| {
+                            let label = child_effort_label(effort);
+                            (label.to_owned(), effort.map(|_| thinking_description(label)))
+                        })
                         .collect(),
                 ),
             };

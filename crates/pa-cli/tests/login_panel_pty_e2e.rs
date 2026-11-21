@@ -464,7 +464,7 @@ fn model_picker_routes_the_sign_in_flow_and_applies_after_login() {
 
     harness.wait_from_start("\x1b[?1049h", "the startup alternate-screen enter");
 
-    harness.write(b"/model\r");
+    harness.write(b"\x0c"); // Ctrl+L opens the model picker.
     harness.wait_from_start("Search models", "the model picker");
     harness.wait_from_start("GLM 5.3 Fast", "the unauthenticated provider's model row");
     harness.wait_from_start("require sign in", "the row's sign-in marking");

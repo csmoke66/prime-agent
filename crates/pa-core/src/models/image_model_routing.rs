@@ -28,7 +28,7 @@ fn takes_image_input(model: &Model) -> bool {
 /// attached images and no image model is configured.
 fn format_image_model_required_message(session_model_id: &str) -> String {
     format!(
-        "This turn attaches images, but the selected model ({session_model_id}) does not accept image input.\n\nPick one:\n- Switch the session model to an image-capable one with /model, or\n- Set imageModel in settings.json to an image-capable model (\"provider/model-id\" or a bare id), e.g. \"anthropic/claude-sonnet-4-5\"\n\nThen resend the message. Without it the request would silently drop the images."
+        "This turn attaches images, but the selected model ({session_model_id}) does not accept image input.\n\nPick one:\n- Switch the session model to an image-capable one in /settings > Models > Primary model, or\n- Set imageModel in settings.json to an image-capable model (\"provider/model-id\" or a bare id), e.g. \"anthropic/claude-sonnet-4-5\"\n\nThen resend the message. Without it the request would silently drop the images."
     )
 }
 
@@ -188,6 +188,7 @@ mod tests {
         let inputs = inputs(&session, None, &available, false);
         let error = resolve_image_model_override(&inputs).unwrap_err();
         assert!(error.contains("does not accept image input"), "{error}");
+        assert!(error.contains("/settings > Models > Primary model"), "{error}");
         assert!(error.contains("Set imageModel in settings.json"), "{error}");
     }
 

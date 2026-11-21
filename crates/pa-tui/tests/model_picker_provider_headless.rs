@@ -1,4 +1,4 @@
-//! Headless e2e for the `/model` picker's current-model resolution across
+//! Headless e2e for the model picker's current-model resolution across
 //! providers: with the session on `prime-inference/z-ai/glm-5.3` and the
 //! catalog listing the SAME id under openrouter too, the picker must
 //! resolve the session's OWN provider's entry, not the openrouter row.
@@ -10,6 +10,7 @@ mod support;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep, InteractiveOptions};
 use pa_types::ai::Model;
 use serde_json::{json, Value};
@@ -162,14 +163,30 @@ fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
 /// The operator's duplicate-id repro: the session runs `prime-inference/z-ai/glm-5.3`, the catalog
 /// lists the same id under openrouter FIRST — the prime-inference row carries `current`.
 #[test]
-fn the_picker_marks_the_sessions_own_provider_current() {
-    let frames = run_plan(vec![
-        HeadlessStep::Submit("/model".to_string()),
-        HeadlessStep::WaitRender {
-            needle: "GLM 5.3 Prime".to_string(),
-            timeout_ms: 30_000,
-        },
-    ]);
+fn settings_opens_the_picker_on_the_sessions_own_provider() {
+    check_current_provider(&run_plan(vec![
+        HeadlessStep::Submit("/settings".into()),
+        wait_for("Search settings"),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)),
+        HeadlessStep::Paste("primary".into()),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        wait_for("GLM 5.3 Prime"),
+    ]));
+}
+
+#[test]
+fn keyboard_shortcut_opens_the_same_provider_aware_picker() {
+    check_current_provider(&run_plan(vec![
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL)),
+        wait_for("GLM 5.3 Prime"),
+    ]));
+}
+
+fn wait_for(needle: &str) -> HeadlessStep {
+    HeadlessStep::WaitRender { needle: needle.into(), timeout_ms: 5_000 }
+}
+
+fn check_current_provider(frames: &[String]) {
     let last = frames.last().expect("a frame with the picker open");
     let rows: Vec<&str> = last.split('\n').collect();
     let prime_row = rows

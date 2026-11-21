@@ -242,7 +242,7 @@ async fn nested_spawns_use_the_roots_live_policy_and_forward_its_effort() {
                 .selector,
             "mock/mock-1"
         );
-        assert!(error.to_string().contains("/subagent-settings"), "{error}");
+        assert!(error.to_string().contains("/settings"), "{error}");
     }
     assert!(create_seen_rx.try_recv().is_err());
 

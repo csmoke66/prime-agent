@@ -70,6 +70,11 @@ pub struct SessionSummary {
     pub thinking_level: Option<String>,
     pub is_streaming: bool,
     pub is_compacting: bool,
+    /// A terminal provider safety/refusal guardrail occurred in this worker.
+    /// RLM supervisors use it to kill the child even when detached work keeps
+    /// the ordinary busy flags set.
+    #[serde(default)]
+    pub provider_guardrail: bool,
     /// True while the session is parked waiting out a provider-reported
     /// usage reset (TS `session.isQuotaParked`); the parked banner names the wake time.
     #[serde(default, skip_serializing_if = "Option::is_none")]

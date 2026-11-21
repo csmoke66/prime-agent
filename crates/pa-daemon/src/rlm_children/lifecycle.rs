@@ -15,7 +15,7 @@ use super::{
     WATCH_POLL_INTERVAL_MS, WATCH_SETTLE_GRACE_MS, WATCH_WAIT_SLICE_MS,
 };
 
-const GUARDRAIL_CHILD_FAILURE: &str =
+pub(super) const GUARDRAIL_CHILD_FAILURE: &str =
     "Child stopped by a safety guardrail; no child result is available.";
 const MAX_GUARDRAIL_DIAGNOSES_PER_SESSION: usize = 3;
 
@@ -505,6 +505,16 @@ impl SupervisorChildSessionsInner {
             }
             state
         };
+        let guardrailed = {
+            let record = record.lock().await;
+            matches!(
+                record.run.verdict(),
+                Some(RunVerdict::Error(Some(error))) if error == GUARDRAIL_CHILD_FAILURE
+            )
+        };
+        if guardrailed {
+            return matches!(&state, Ok(state) if child_busy_flags(state));
+        }
         let busy = matches!(&state, Ok(state) if child_busy_flags(state));
         if busy || state.is_err() {
             return busy;
@@ -610,13 +620,6 @@ impl SupervisorChildSessionsInner {
                     tokio::time::sleep(Duration::from_millis(WATCH_POLL_INTERVAL_MS)).await;
                     continue;
                 }
-                // A registry-set `cancelled` (a user abort or a parent kill
-                // in flight, `cancel_child_run`/`close_children_inner`) lands
-                // before the run stops: keep watching until the child reads
-                // idle (the cancel path owns the terminal handling).
-                if busy {
-                    continue;
-                }
                 let guardrailed = {
                     let record = record.lock().await;
                     matches!(
@@ -636,6 +639,12 @@ impl SupervisorChildSessionsInner {
                         tokio::time::sleep(Duration::from_millis(WATCH_POLL_INTERVAL_MS)).await;
                         continue;
                     }
+                } else if busy {
+                    // A registry-set `cancelled` (a user abort or a parent kill
+                    // in flight, `cancel_child_run`/`close_children_inner`) lands
+                    // before the run stops: keep watching until the child reads
+                    // idle (the cancel path owns the terminal handling).
+                    continue;
                 }
                 // The run's final rows are attributed before the terminal
                 // notice rides the parent's follow-up route.
@@ -1187,11 +1196,24 @@ fn final_turn_failure_from_file(session_file: &str) -> Option<FinalTurnFailure> 
                 if assistant.stop_reason != pa_types::ai::StopReason::Error {
                     return None;
                 }
+                let typed_guardrail = assistant.diagnostics.as_ref().is_some_and(|diagnostics| {
+                    diagnostics.iter().any(|diagnostic| {
+                        diagnostic.type_ == "provider_stream_failure"
+                            && diagnostic.details.as_ref().is_some_and(|details| {
+                                matches!(
+                                    details.get("kind").and_then(Value::as_str),
+                                    Some("refusal" | "safety")
+                                )
+                            })
+                    })
+                });
                 let error = assistant
                     .error_message
                     .filter(|message| !message.trim().is_empty())
                     .unwrap_or_else(|| "The final model call failed".to_string());
-                return Some(classify(format!("Error: {error}")));
+                let mut failure = classify(format!("Error: {error}"));
+                failure.guardrail |= typed_guardrail;
+                return Some(failure);
             }
             FileEntry::Message { .. } => return None,
             FileEntry::Header { .. }
@@ -1459,6 +1481,26 @@ pub(super) mod exit_capture_tests {
             failure.error,
             "Error: Provider finish_reason: content_filter"
         );
+        let codex_error = "Codex error: This content was flagged for possible cybersecurity risk.";
+        let mut typed_refusal: Value = serde_json::from_str(&assistant_row_ending(
+            "",
+            StopReason::Error,
+            Some(codex_error),
+        ))
+        .expect("valid assistant row");
+        typed_refusal["message"]["diagnostics"] = json!([{
+            "type": "provider_stream_failure",
+            "timestamp": 2,
+            "details": {"kind": "safety", "providerErrorType": "safety"}
+        }]);
+        let typed_refusal =
+            serde_json::to_string(&typed_refusal).expect("serialize typed assistant row");
+        std::fs::write(&file, format!("{}\n{typed_refusal}\n", task_row()))
+            .expect("write the typed Codex guardrail session file");
+        let failure =
+            final_turn_failure_from_file(&file.to_string_lossy()).expect("typed guardrail failure");
+        assert!(failure.guardrail);
+        assert_eq!(failure.error, format!("Error: {codex_error}"));
         let _ = std::fs::remove_file(&file);
     }
 }

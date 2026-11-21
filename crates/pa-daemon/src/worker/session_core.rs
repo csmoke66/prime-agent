@@ -19,6 +19,10 @@ pub(crate) struct SessionCore {
     pub(crate) steering: VecDeque<QueuedItem>,
     pub(crate) follow_up: VecDeque<QueuedItem>,
     pub(crate) busy: bool,
+    /// A terminal provider safety/refusal guardrail occurred. This is monotonic
+    /// for the worker lifetime so later queued activity cannot hide the event
+    /// from the parent supervising an RLM child.
+    pub(crate) provider_guardrail: bool,
     pub(crate) created: bool,
     pub(crate) attached_client_ids: Vec<String>,
     pub(crate) abort_requested: bool,
@@ -124,6 +128,7 @@ impl SessionCore {
             steering: VecDeque::new(),
             follow_up: VecDeque::new(),
             busy: false,
+            provider_guardrail: false,
             created: true,
             attached_client_ids: Vec::new(),
             abort_requested: false,

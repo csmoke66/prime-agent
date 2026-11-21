@@ -247,7 +247,8 @@ async fn spawn_fake_supervisor(
                             command_type,
                             Some(child_subagents.scripted_states.lock().unwrap().pop_front().or_else(|| child_subagents.live_state.lock().unwrap().clone()).unwrap_or_else(|| {
                                 json!({
-                                    "isStreaming": false,
+                                    "isStreaming": matches!(child, FakeChild::FinalTurnGuardrail),
+                                    "providerGuardrail": matches!(child, FakeChild::FinalTurnGuardrail),
                                     "hasRunningSubagents": child_subagents.running.load(Ordering::SeqCst),
                                     "sessionActions": { "queuedCount": 0 },
                                     "progressNote": "halfway through the task",
@@ -1256,7 +1257,7 @@ async fn a_guardrailed_child_is_killed_and_cannot_steer_the_parent() {
     sessions.set_settle_hook(Arc::new(move || {
         let _ = hook_tx.send(());
     }));
-    let handle = spawn_child(&sessions).await;
+    let _handle = spawn_child(&sessions).await;
     sessions.notify_turn_done();
 
     let kill = tokio::time::timeout(Duration::from_secs(10), kill_rx.recv())

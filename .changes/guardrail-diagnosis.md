@@ -1,1 +1,1 @@
-- Recover false-positive child guardrails through one immutable Sol 5.6 diagnosis without retrying Codex cybersecurity blocks: pause the parent, deduplicate rejected tasks, fail closed, and resume allowed work with a compliant plan.
+- Recover false-positive child guardrails through one immutable Sol 5.6 diagnosis without retrying Codex cybersecurity blocks: pause the parent, permanently stop the rejected child even when queued or detached work remains, deduplicate rejected tasks, fail closed, and resume allowed work with a compliant plan.

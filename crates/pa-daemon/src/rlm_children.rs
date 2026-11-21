@@ -1017,6 +1017,18 @@ impl SupervisorChildSessionsInner {
                 record.tool_use_count = None;
             }
         }
+        if summary
+            .get("providerGuardrail")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            record.run.apply(RunEvent::Failed(
+                lifecycle::GUARDRAIL_CHILD_FAILURE.to_string(),
+            ));
+            record.answer_preview = None;
+            record.answer_text = None;
+            record.answer_captured = true;
+        }
         if let Some(note) = summary.get("progressNote").and_then(Value::as_str) {
             record.progress_note = Some(note.to_string());
         }

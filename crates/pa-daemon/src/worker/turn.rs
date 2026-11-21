@@ -815,6 +815,27 @@ impl TurnRunner {
                         }
                     }
                     EngineEvent::AssistantMessage(message) => {
+                        let provider_guardrail = message.get("stopReason").and_then(Value::as_str)
+                            == Some("error")
+                            && message
+                                .get("diagnostics")
+                                .and_then(Value::as_array)
+                                .is_some_and(|diagnostics| {
+                                    diagnostics.iter().any(|diagnostic| {
+                                        diagnostic.get("type").and_then(Value::as_str)
+                                            == Some("provider_stream_failure")
+                                            && matches!(
+                                                diagnostic
+                                                    .get("details")
+                                                    .and_then(|details| details.get("kind"))
+                                                    .and_then(Value::as_str),
+                                                Some("refusal" | "safety")
+                                            )
+                                    })
+                                });
+                        if provider_guardrail && core.runtime_kind == "subagent" {
+                            core.provider_guardrail = true;
+                        }
                         vec![json!({ "type": "message_end", "message": message })]
                     }
                     EngineEvent::ToolExecutionStart {

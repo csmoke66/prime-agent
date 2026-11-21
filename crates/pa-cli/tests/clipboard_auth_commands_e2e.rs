@@ -1272,12 +1272,14 @@ async fn tui_traces_renders_status_and_toggles_the_setting() {
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
             pa_tui::interactive::HeadlessStep::Submit("/traces".to_string()),
+            key(crossterm::event::KeyCode::Esc),
             pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
             pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
             pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces sideways".to_string()),
             pa_tui::interactive::HeadlessStep::Submit("/traces preview".to_string()),
+            key(crossterm::event::KeyCode::Esc),
             pa_tui::interactive::HeadlessStep::Submit("/traces upload".to_string()),
         ],
         width: 120,

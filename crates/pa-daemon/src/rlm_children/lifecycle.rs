@@ -6,14 +6,18 @@ use pa_core::session_engine::semantic_edges::ChildCancelledReason;
 use super::run_state::{RunEvent, RunVerdict};
 use super::{
     anyhow, cap_text, compact_rlm_text, create_rlm_child_failure_message,
-    create_rlm_child_terminal_notice, json, now_ms, Arc, ChildCloseReason, ChildObservationSource,
-    ChildRecord, Context, CustomMessage, DaemonCommand, DaemonSessionLifecycle, Duration, Map,
-    Mutex, ParentIdentity, Path, PromptInput, Result, RlmChildTerminalNotice,
-    SupervisorChildSessionsInner, Value, ANSWER_TEXT_MAX_CHARS, CREATE_TIMEOUT_MS,
-    IDLE_WAIT_GRACE_MS, KILL_TIMEOUT_MS, NOTICE_DELIVERY_TIMEOUT_MS, PROMPT_TIMEOUT_MS,
-    RUNTIME_METADATA_PROMPT_MAX, STATE_TIMEOUT_MS, WATCH_MAX_UNREACHABLE_POLLS,
-    WATCH_POLL_INTERVAL_MS, WATCH_SETTLE_GRACE_MS, WATCH_WAIT_SLICE_MS,
+    create_rlm_child_guardrail_message, create_rlm_child_terminal_notice, json, now_ms, Arc,
+    ChildCloseReason, ChildObservationSource, ChildRecord, Context, CustomMessage, DaemonCommand,
+    DaemonSessionLifecycle, Duration, Map, Mutex, ParentIdentity, Path, PromptInput, Result,
+    RlmChildTerminalNotice, SupervisorChildSessionsInner, Value, ANSWER_TEXT_MAX_CHARS,
+    CREATE_TIMEOUT_MS, IDLE_WAIT_GRACE_MS, KILL_TIMEOUT_MS, NOTICE_DELIVERY_TIMEOUT_MS,
+    PROMPT_TIMEOUT_MS, RUNTIME_METADATA_PROMPT_MAX, STATE_TIMEOUT_MS,
+    WATCH_MAX_UNREACHABLE_POLLS, WATCH_POLL_INTERVAL_MS, WATCH_SETTLE_GRACE_MS,
+    WATCH_WAIT_SLICE_MS,
 };
+
+const GUARDRAIL_CHILD_FAILURE: &str =
+    "Child stopped by a safety guardrail; no child result is available.";
 
 /// Parsed ids of one created child session.
 struct CreatedSessionIds {
@@ -347,6 +351,23 @@ impl SupervisorChildSessionsInner {
         Ok(())
     }
 
+    /// A guardrailed child is not reusable: terminate its session through
+    /// the live route or the durable wake route before notifying the parent.
+    async fn permanently_stop_guardrailed_child(&self, active_session_id: &str) -> Result<()> {
+        let make_command = |selector: &str| DaemonCommand::Kill {
+            id: None,
+            active_session_id: selector.to_string(),
+            rest: Map::from_iter([("rlmCloseReason".to_string(), json!("guardrail"))]),
+        };
+        self.command_with_durable_wake(
+            make_command,
+            active_session_id,
+            KILL_TIMEOUT_MS,
+            &format!("terminate guardrailed RLM child session {active_session_id}"),
+        )
+        .await
+    }
+
     /// The child's live session summary (`get_state`): the busy verdict,
     /// the note, and the tool count read one round trip.
     pub(super) async fn child_state(&self, active_session_id: &str) -> Result<Value> {
@@ -489,42 +510,43 @@ impl SupervisorChildSessionsInner {
                 return true;
             }
         }
-        // Capture the answer before taking the record lock (the capture is
-        // a link round trip): one fetch yields the raw text both lanes
-        // derive from — the compact preview for the roster rows and the
-        // full text for the collect envelope's binding lane. A worker that
-        // left after the idle read (a crash, a passivation) answers from
-        // its durable file.
-        let raw_answer = self
+        let mut raw_answer = self
             .last_assistant_text(&active_session_id, session_file.clone())
             .await;
-        // How the run's final turn ended (#3366): a run whose last model
-        // call failed (a provider error, after its retries if it had any)
-        // settles `error` with that text instead of a `done` with no
-        // answer. The worker persists every row before it reads idle,
-        // so its durable file holds the final turn; the read stays off
-        // the async workers.
-        let final_turn_error = match session_file.filter(|_| running) {
-            Some(path) => tokio::task::spawn_blocking(move || final_turn_error_from_file(&path))
+        // A safety refusal is quarantined: neither the provider's text nor
+        // the child's refusal body may become a parent result or inbox
+        // prompt. The durable child transcript remains the audit source.
+        let final_turn_failure = match session_file.filter(|_| running) {
+            Some(path) => tokio::task::spawn_blocking(move || final_turn_failure_from_file(&path))
                 .await
                 .ok()
                 .flatten(),
             None => None,
+        };
+        let guardrail = final_turn_failure
+            .as_ref()
+            .is_some_and(|failure| failure.guardrail);
+        if guardrail {
+            raw_answer = None;
         }
-        // A provider error can carry a whole raw response body (a gateway's
-        // HTML error page); the text reaches the parent's context.
-        .map(|error| compact_rlm_text(&error));
+        let final_turn_error = final_turn_failure.map(|failure| {
+            if failure.guardrail {
+                GUARDRAIL_CHILD_FAILURE.to_string()
+            } else {
+                compact_rlm_text(&failure.error)
+            }
+        });
         let answer = raw_answer.as_deref().map(compact_rlm_text);
         let answer_text = raw_answer
             .as_deref()
             .map(|text| cap_text(text, ANSWER_TEXT_MAX_CHARS));
         let mut record = record.lock().await;
-        // The verdict is one-shot, the answer capture is not: a first
-        // capture can miss (the settle raced the worker's answer hand-off),
-        // so every refresh fills a row that has no answer yet, and a
-        // settled preview is never overwritten with a later miss.
         record.run.apply(RunEvent::IdleRead { final_turn_error });
-        if (!record.answer_captured || record.answer_preview.is_none()) && answer.is_some() {
+        if guardrail {
+            record.answer_preview = None;
+            record.answer_text = None;
+            record.answer_captured = true;
+        } else if (!record.answer_captured || record.answer_preview.is_none()) && answer.is_some() {
             record.answer_preview = answer;
             record.answer_text = answer_text;
             record.answer_captured = true;
@@ -579,6 +601,26 @@ impl SupervisorChildSessionsInner {
                 // idle (the cancel path owns the terminal handling).
                 if busy {
                     continue;
+                }
+                let guardrailed = {
+                    let record = record.lock().await;
+                    matches!(
+                        record.run.verdict(),
+                        Some(RunVerdict::Error(Some(error))) if error == GUARDRAIL_CHILD_FAILURE
+                    )
+                };
+                if guardrailed {
+                    if let Err(error) = self
+                        .permanently_stop_guardrailed_child(&active_session_id)
+                        .await
+                    {
+                        eprintln!(
+                            "pa-daemon: failed to terminate guardrailed RLM child \
+                             {active_session_id}: {error:#}"
+                        );
+                        tokio::time::sleep(Duration::from_millis(WATCH_POLL_INTERVAL_MS)).await;
+                        continue;
+                    }
                 }
                 // The run's final rows are attributed before the terminal
                 // notice rides the parent's follow-up route.
@@ -751,11 +793,24 @@ impl SupervisorChildSessionsInner {
     async fn deliver_settle_notice(&self, record: &Arc<Mutex<ChildRecord>>) {
         let message = {
             let mut record = record.lock().await;
-            if record.notice_delivered || record.replied_since_task {
+            if record.notice_delivered {
+                return;
+            }
+            let guardrail = matches!(
+                record.run.verdict(),
+                Some(RunVerdict::Error(Some(error))) if error == GUARDRAIL_CHILD_FAILURE
+            );
+            if record.replied_since_task && !guardrail {
                 return;
             }
             record.notice_delivered = true;
-            if let Some(RunVerdict::Error(Some(error))) = record.run.verdict() {
+            if guardrail {
+                create_rlm_child_guardrail_message(
+                    &record.rlm_child_id,
+                    &record.session_name,
+                    now_ms(),
+                )
+            } else if let Some(RunVerdict::Error(Some(error))) = record.run.verdict() {
                 create_rlm_child_failure_message(
                     &record.rlm_child_id,
                     &record.session_name,
@@ -929,18 +984,25 @@ pub(super) fn last_assistant_text_from_file(session_file: &str) -> Option<String
     })
 }
 
-/// The error a child's final turn ended in, read from its durable session
-/// file (#3366), scanning back from the newest row. A failed
-/// `provider_retry_outcome` row (the retry episode's one durable outcome)
-/// answers its text, and an assistant row that stopped on `error` answers
-/// its error message. The scan answers `None` at the first other row that
-/// bounds the final turn: any other message row (a successful or aborted
-/// assistant reply, a tool result, a user prompt) or an `agent_message`
-/// row (a task delivered after an older failure). A missing file answers
-/// `None`. Non-message entries and other custom rows (notices, a recovered
-/// retry's outcome) are skipped.
-pub(super) fn final_turn_error_from_file(session_file: &str) -> Option<String> {
+#[derive(Debug, PartialEq, Eq)]
+struct FinalTurnFailure {
+    error: String,
+    guardrail: bool,
+}
+
+/// Classify the final failed turn from the durable child transcript. Safety
+/// classification uses the same typed provider-error vocabulary as retries;
+/// free-form refusal text is retained only in the child file.
+fn final_turn_failure_from_file(session_file: &str) -> Option<FinalTurnFailure> {
     use pa_types::session::{AgentMessage, FileEntry};
+    let classify = |error: String| FinalTurnFailure {
+        guardrail: pa_core::session_engine::error_classify::classify_error_message(
+            error.strip_prefix("Error: ").unwrap_or(&error),
+        )
+        .subtype
+            == "refusal",
+        error,
+    };
     let content = std::fs::read_to_string(session_file).ok()?;
     for line in content.lines().rev() {
         let Ok(entry) = serde_json::from_str::<FileEntry>(line.trim()) else {
@@ -967,9 +1029,8 @@ pub(super) fn final_turn_error_from_file(session_file: &str) -> Option<String> {
                 if !failed {
                     continue;
                 }
-                // The outcome row always carries the exhausted-retry text.
                 if let pa_types::ai::UserContent::Text(text) = payload.content {
-                    return Some(text);
+                    return Some(classify(text));
                 }
             }
             FileEntry::Message {
@@ -983,7 +1044,7 @@ pub(super) fn final_turn_error_from_file(session_file: &str) -> Option<String> {
                     .error_message
                     .filter(|message| !message.trim().is_empty())
                     .unwrap_or_else(|| "The final model call failed".to_string());
-                return Some(format!("Error: {error}"));
+                return Some(classify(format!("Error: {error}")));
             }
             FileEntry::Message { .. } => return None,
             FileEntry::Header { .. }
@@ -1004,6 +1065,11 @@ pub(super) fn final_turn_error_from_file(session_file: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+pub(super) fn final_turn_error_from_file(session_file: &str) -> Option<String> {
+    final_turn_failure_from_file(session_file).map(|failure| failure.error)
 }
 
 /// The busy flags of one child `get_state` summary (streaming, its own
@@ -1221,4 +1287,28 @@ pub(super) mod exit_capture_tests {
             None
         );
     }
+    #[test]
+    fn the_final_turn_reader_types_safety_refusals_without_exposing_them() {
+        use pa_types::ai::StopReason;
+        let file = std::env::temp_dir().join(format!(
+            "pa-rlm-guardrail-turn-{}.jsonl",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let refusal = assistant_row_ending(
+            "I cannot perform that request.",
+            StopReason::Error,
+            Some("Provider finish_reason: content_filter"),
+        );
+        std::fs::write(&file, format!("{}\n{refusal}\n", task_row()))
+            .expect("write the guardrail session file");
+        let failure = final_turn_failure_from_file(&file.to_string_lossy())
+            .expect("guardrail failure");
+        assert!(failure.guardrail);
+        assert_eq!(
+            failure.error,
+            "Error: Provider finish_reason: content_filter"
+        );
+        let _ = std::fs::remove_file(&file);
+    }
+
 }

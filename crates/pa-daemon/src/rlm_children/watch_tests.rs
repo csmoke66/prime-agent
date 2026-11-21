@@ -50,6 +50,8 @@ enum FakeChild {
     /// prompt's run leaves a failed assistant row and the retry
     /// episode's failed outcome row in the child's session file.
     FinalTurnFails,
+    /// The final model call is rejected by a provider safety guardrail.
+    FinalTurnGuardrail,
 }
 
 /// A scripted JSONL supervisor for the watcher tests: creates one child
@@ -195,6 +197,16 @@ async fn spawn_fake_supervisor(
                                 )
                                 .unwrap();
                             }
+                            if matches!(child, FakeChild::FinalTurnGuardrail) {
+                                use super::lifecycle::exit_capture_tests::assistant_row_ending;
+                                let refused = assistant_row_ending(
+                                    "I cannot perform that request.",
+                                    pa_types::ai::StopReason::Error,
+                                    Some("Provider finish_reason: content_filter"),
+                                );
+                                std::fs::write(&*child_session_file, format!("{refused}\n"))
+                                    .unwrap();
+                            }
                             if matches!(child, FakeChild::LeavesBeforeAnswerCapture) {
                                 use super::lifecycle::exit_capture_tests::assistant_row_ending;
                                 let answer = assistant_row_ending(
@@ -287,7 +299,13 @@ async fn spawn_fake_supervisor(
                                 response_success(
                                     Some(&id),
                                     command_type,
-                                    Some(json!({ "text": "the child final answer" })),
+                                    Some(json!({
+                                        "text": if matches!(child, FakeChild::FinalTurnGuardrail) {
+                                            "I cannot perform that request."
+                                        } else {
+                                            "the child final answer"
+                                        }
+                                    })),
                                 )
                             }
                         }
@@ -1222,6 +1240,54 @@ async fn a_child_whose_task_prompt_cannot_be_routed_delivers_the_failure_notice(
     // Exactly one failure row lands: the claim admits one writer.
     let extra = tokio::time::timeout(Duration::from_millis(300), follow_up_rx.recv()).await;
     assert!(extra.is_err(), "no second notice may arrive");
+}
+
+#[tokio::test]
+async fn a_guardrailed_child_is_killed_and_cannot_steer_the_parent() {
+    let (follow_up_tx, mut follow_up_rx) = mpsc::unbounded_channel();
+    let (sessions, mut kill_rx) = sessions_with_fake_supervisor(
+        follow_up_tx,
+        0,
+        FakeKill::Success,
+        FakeChild::FinalTurnGuardrail,
+    )
+    .await;
+    let (hook_tx, mut hook_rx) = mpsc::unbounded_channel();
+    sessions.set_settle_hook(Arc::new(move || {
+        let _ = hook_tx.send(());
+    }));
+    let handle = spawn_child(&sessions).await;
+    sessions.notify_turn_done();
+
+    let kill = tokio::time::timeout(Duration::from_secs(10), kill_rx.recv())
+        .await
+        .expect("guardrailed child must be killed")
+        .expect("kill channel remains open");
+    assert_eq!(kill["activeSessionId"], "child-live");
+    assert_eq!(kill["rlmCloseReason"], "guardrail");
+
+    let follow_up = tokio::time::timeout(Duration::from_secs(10), follow_up_rx.recv())
+        .await
+        .expect("parent receives one sanitized status")
+        .expect("follow-up channel remains open");
+    let custom = &follow_up["customMessage"];
+    assert_eq!(custom["details"]["kind"], "guardrail");
+    assert_eq!(custom["details"]["result"], Value::Null);
+    assert_eq!(custom["details"]["retryable"], false);
+    assert!(
+        !follow_up.to_string().contains("I cannot perform that request"),
+        "the child's refusal must not enter the parent transcript"
+    );
+
+    tokio::time::timeout(Duration::from_secs(10), hook_rx.recv())
+        .await
+        .expect("sanitized status releases the parent's continuation")
+        .expect("hook channel remains open");
+    let entries = sessions.list_subagents().await.expect("child roster");
+    assert_eq!(entries[0].status, "error");
+    assert_eq!(entries[0].answer_preview, None);
+    let extra = tokio::time::timeout(Duration::from_millis(300), follow_up_rx.recv()).await;
+    assert!(extra.is_err(), "the guardrail status is delivered once");
 }
 
 /// #3366: a child whose model calls all failed settles `error`, not

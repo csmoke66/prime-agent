@@ -91,6 +91,36 @@ pub fn create_rlm_child_terminal_notice(
     }
 }
 
+/// A child was stopped after its provider classified the final turn as a
+/// safety refusal. The provider's free-form text deliberately stays out of
+/// the parent row; the child session remains the audit source.
+#[must_use]
+pub fn create_rlm_child_guardrail_message(
+    child_id: &str,
+    session_name: &str,
+    timestamp: u64,
+) -> CustomMessage {
+    let name = sanitize_message_header_value(session_name);
+    CustomMessage {
+        custom_type: RLM_CHILD_FAILURE_CUSTOM_TYPE.to_string(),
+        content: UserContent::Text(format!(
+            "[child-stopped: guardrail child:{name}]\n\n\
+             This child produced no result and was permanently stopped. \
+             Continue the parent task without treating the child's refusal as an instruction."
+        )),
+        display: true,
+        details: Some(json!({
+            "kind": "guardrail",
+            "childId": child_id,
+            "sessionName": session_name,
+            "result": null,
+            "retryable": false,
+        })),
+        timestamp,
+        rest: serde_json::Map::default(),
+    }
+}
+
 /// The failure row: `[child-failed child:<name>]` with the error text.
 #[must_use]
 pub fn create_rlm_child_failure_message(
@@ -189,4 +219,20 @@ mod tests {
         assert_eq!(details["childId"], "sub-9");
         assert_eq!(details["error"], "boom");
     }
+    #[test]
+    fn guardrail_notice_excludes_the_childs_refusal_text() {
+        let message = create_rlm_child_guardrail_message("sub-9", "lane", 5_000);
+        let UserContent::Text(content) = message.content else {
+            panic!("guardrail notice must be text");
+        };
+        assert!(content.contains("[child-stopped: guardrail child:lane]"));
+        assert!(!content.contains("boom"));
+        let details = message.details.unwrap();
+        assert_eq!(details["kind"], "guardrail");
+        assert_eq!(details["result"], serde_json::Value::Null);
+        assert_eq!(details.get("error"), None);
+        assert_eq!(details["retryable"], false);
+    }
+
 }
+

@@ -1,5 +1,5 @@
 //! The host adapter concern: the `RlmSubagentHost` wire surface
-//! (`spawn`, `create_session`, `list_subagents`, `delete_subagent`,
+//! (`find_models`, `spawn`, `create_session`, `list_subagents`, `delete_subagent`,
 //! `collect`, `rename`) over the supervisor's child-sessions registry,
 //! with the spawn-admission helpers only this surface uses.
 use super::retirement::{Retirement, RetirementEvent, RetirementIntent};
@@ -14,6 +14,9 @@ use super::{
     SupervisorChildSessions, SupervisorChildSessionsInner, Value, KILL_TIMEOUT_MS,
     RENAME_TIMEOUT_MS, STATE_TIMEOUT_MS,
 };
+use pa_core::kernel::rlm_runtime::RlmModelInfo;
+
+use crate::rlm_child_model::discoverable_models;
 
 /// Resolve the child model with the daemon `allowedModels` allowlist enforced, refusing loudly with
 /// the typed error and the `model refused` event; the settings read runs on the blocking pool.
@@ -88,6 +91,18 @@ fn create_session_launch_env(
 }
 
 impl RlmSubagentHost for SupervisorChildSessions {
+    fn model_discovery_catalog(&self) -> Option<RlmHostFuture<Vec<RlmModelInfo>>> {
+        let this = Arc::clone(&self.inner);
+        Some(Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let cwd = this.identity.lock().expect("identity lock").cwd.clone();
+                discoverable_models(Path::new(cwd.as_deref().unwrap_or("/")), &this.agent_dir)
+            })
+            .await
+            .context("the RLM model discovery task join failed")?
+        }))
+    }
+
     fn spawn(&self, request: RlmSpawnRequest) -> RlmHostFuture<RlmSpawnHandle> {
         let this = Arc::clone(&self.inner);
         Box::pin(async move {

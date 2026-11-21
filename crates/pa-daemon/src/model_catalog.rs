@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use crate::model_allowlist::{self, DaemonAllowlist};
 use crate::protocol::{response_success, DaemonResponse};
 use crate::worker::{OutboundFrame, Worker};
 
@@ -20,8 +21,8 @@ pub(crate) struct RefreshGate {
 }
 
 impl Worker {
-    /// `get_model_catalog`: the full catalog and configured providers from
-    /// the current validated snapshot — never a network request here.
+    /// `get_model_catalog`: the policy-visible catalog and configured providers
+    /// from the current validated snapshot — never a network request here.
     pub(crate) fn handle_get_model_catalog(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_model_catalog") {
             return response;
@@ -32,12 +33,9 @@ impl Worker {
             pa_core::auth::AuthStorage::create(&agent_dir),
             models_json.clone(),
         );
-        let available = registry
-            .get_available()
-            .into_iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        let served = catalog_payload(&registry, &available);
+        let cwd = self.core.lock().unwrap().cwd.clone();
+        let allowlist = model_allowlist::load(cwd.as_ref(), &agent_dir);
+        let served = catalog_payload(&registry, registry.get_available(), &allowlist);
         // An observed credential-scope change forces the refresh; the
         // observation consumes the scope, so one change forces exactly once.
         let credentials = pa_core::models::prime_credentials_for_dir(&agent_dir);
@@ -47,14 +45,19 @@ impl Worker {
         } else {
             pa_core::models::RefreshTrigger::PickerOpen
         };
-        self.spawn_catalog_refresh(trigger, served.clone());
+        self.spawn_catalog_refresh(trigger, served.clone(), allowlist);
         response_success(None, "get_model_catalog", Some(served))
     }
 
     /// The background catalog refresh: the same awaited chain the TS
     /// request runs, settled off the response path; failures keep the
     /// last-good snapshot and stay silent.
-    fn spawn_catalog_refresh(&self, trigger: pa_core::models::RefreshTrigger, served: Value) {
+    fn spawn_catalog_refresh(
+        &self,
+        trigger: pa_core::models::RefreshTrigger,
+        served: Value,
+        allowlist: DaemonAllowlist,
+    ) {
         let gate = std::sync::Arc::clone(&self.model_catalog_refresh_gate);
         if gate.in_flight.swap(true, Ordering::SeqCst) {
             // A refresh already runs: remember the request and return — the
@@ -74,7 +77,7 @@ impl Worker {
                 let available = registry
                     .refresh_available_models_with_trigger(trigger)
                     .await;
-                let refreshed = catalog_payload(&registry, &available);
+                let refreshed = catalog_payload(&registry, &available, &allowlist);
                 if refreshed != baseline {
                     events.send(OutboundFrame::model_catalog_changed());
                 }
@@ -96,30 +99,36 @@ impl Worker {
     }
 }
 
-/// The wire payload of one catalog snapshot: the full catalog minus
-/// unauthorized private Prime Inference models, plus sorted providers.
-fn catalog_payload(
+/// The wire payload of one catalog snapshot: policy-visible models (excluding
+/// unauthorized private Prime Inference models) and their configured providers.
+fn catalog_payload<'a>(
     registry: &pa_core::models::ModelRegistry,
-    available: &[pa_types::ai::Model],
+    available: impl IntoIterator<Item = &'a pa_types::ai::Model>,
+    allowlist: &DaemonAllowlist,
 ) -> Value {
-    let mut providers: Vec<String> = available
-        .iter()
-        .map(|model| model.provider.clone())
-        .collect();
+    let mut providers = Vec::new();
+    let mut available_private = std::collections::HashSet::new();
+    for model in available {
+        if allowlist.allows_model(model) {
+            providers.push(model.provider.as_str());
+            if pa_core::models::is_private_prime_inference_model(model) {
+                available_private.insert((model.provider.as_str(), model.id.as_str()));
+            }
+        }
+    }
     providers.sort();
     providers.dedup();
-    let available_keys: std::collections::HashSet<String> = available
-        .iter()
-        .map(|model| format!("{}/{}", model.provider, model.id))
-        .collect();
     // Canonical (provider, id) order: the served and refreshed snapshots
     // compare verbatim.
     let mut entries: Vec<&pa_types::ai::Model> = registry
         .get_all()
         .iter()
         .filter(|model| {
-            !pa_core::models::is_private_prime_inference_model(model)
-                || available_keys.contains(&format!("{}/{}", model.provider, model.id))
+            if pa_core::models::is_private_prime_inference_model(model) {
+                available_private.contains(&(model.provider.as_str(), model.id.as_str()))
+            } else {
+                allowlist.allows_model(model)
+            }
         })
         .collect();
     entries.sort_by(|a, b| (&a.provider, &a.id).cmp(&(&b.provider, &b.id)));
@@ -568,6 +577,57 @@ mod tests {
                 Err(error) => panic!("model_catalog_changed never landed: {error}"),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn daemon_picker_and_available_models_respect_global_policy_across_refresh() {
+        let mut fixture = fixture(create_phase_answers()).await;
+        std::fs::write(
+            fixture.agent_dir.join("settings.json"),
+            json!({ "allowedModels": ["prime-inference/mock-1", "anthropic/probe-v2"] })
+                .to_string(),
+        )
+        .expect("write global settings");
+        write_auth_json(&fixture.agent_dir, "sk-account-b", "team-b");
+        let (release, held) = gate();
+        fixture.server.push(held);
+        fixture
+            .server
+            .push(Answer::Raw(ok_json(&pi_snapshot_payload(
+                "live/team-b-marker",
+            ))));
+
+        let served = get_model_catalog(&fixture.worker, "catalog-session").await;
+        let served_models = served["models"].as_array().expect("models array");
+        assert_eq!(served_models.len(), 1);
+        assert!(has_model(&served, "mock-1"));
+        assert_eq!(served["configuredProviders"], json!(["prime-inference"]));
+
+        let available = fixture
+            .worker
+            .dispatch(
+                "get_available_models",
+                &json!({ "activeSessionId": "catalog-session" }),
+            )
+            .await;
+        assert!(
+            available.success,
+            "get_available_models failed: {available:?}"
+        );
+        assert_eq!(
+            available.data.expect("available models")["models"],
+            served["models"]
+        );
+
+        let _ = release.send(ok_json(&catalog_aggregate(&["probe-v1", "probe-v2"])));
+        await_catalog_changed(&mut fixture.events).await;
+        let refreshed = get_model_catalog(&fixture.worker, "catalog-session").await;
+        assert_eq!(
+            refreshed["models"].as_array().expect("models array").len(),
+            2
+        );
+        assert!(has_model(&refreshed, "mock-1"));
+        assert!(has_model(&refreshed, "probe-v2"));
     }
 
     #[tokio::test]

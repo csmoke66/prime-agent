@@ -7,6 +7,7 @@ use std::path::Path;
 
 use pa_core::models::ModelAllowlistRefusal;
 use pa_telemetry::TelemetryClient;
+use pa_types::ai::Model;
 
 /// The daemon allowlist's loaded state (settings `allowedModels`, global
 /// scope). A security guardrail fails CLOSED: a settings document that
@@ -23,9 +24,32 @@ pub enum DaemonAllowlist {
     Unreadable(String),
 }
 
+impl DaemonAllowlist {
+    /// Whether a selector may be listed. An unreadable policy allows nothing.
+    #[must_use]
+    pub fn allows(&self, selector: &str) -> bool {
+        match self {
+            Self::Unrestricted => true,
+            Self::Allowed(patterns) => pa_core::models::model_allowed(selector, patterns),
+            Self::Unreadable(_) => false,
+        }
+    }
+
+    /// Whether a catalog model may be listed; only configured patterns need its selector.
+    #[must_use]
+    pub fn allows_model(&self, model: &Model) -> bool {
+        match self {
+            Self::Unrestricted => true,
+            Self::Allowed(_) => self.allows(&format!("{}/{}", model.provider, model.id)),
+            Self::Unreadable(_) => false,
+        }
+    }
+}
+
 /// Load the daemon allowlist state (settings `allowedModels`, global
 /// scope).
-pub(crate) fn load(cwd: &Path, agent_dir: &Path) -> DaemonAllowlist {
+#[must_use]
+pub fn load(cwd: &Path, agent_dir: &Path) -> DaemonAllowlist {
     let settings = pa_core::settings::SettingsManager::create(cwd, agent_dir);
     if let Some(error) = settings
         .errors()
@@ -66,22 +90,16 @@ pub(crate) fn load(cwd: &Path, agent_dir: &Path) -> DaemonAllowlist {
 /// unreadable.
 pub(crate) fn assert_allowed(allowlist: &DaemonAllowlist, selector: &str) -> Result<()> {
     match allowlist {
-        DaemonAllowlist::Unrestricted => Ok(()),
-        DaemonAllowlist::Allowed(patterns) => {
-            if pa_core::models::model_allowed(selector, patterns) {
-                Ok(())
-            } else {
-                Err(ModelAllowlistRefusal {
-                    selector: selector.to_string(),
-                }
-                .into())
-            }
-        }
         DaemonAllowlist::Unreadable(error) => Err(anyhow::anyhow!(
             "The daemon model allowlist could not be read ({error}); \
              refusing to resolve model \"{selector}\" — the daemon fails closed instead of \
              bypassing the configured allowedModels policy. Fix settings.json and retry."
         )),
+        _ if allowlist.allows(selector) => Ok(()),
+        _ => Err(ModelAllowlistRefusal {
+            selector: selector.to_string(),
+        }
+        .into()),
     }
 }
 
@@ -224,6 +242,7 @@ mod tests {
         std::fs::write(agent_dir.join("settings.json"), "{ not json").unwrap();
         let state = load(dir.path(), &agent_dir);
         assert!(matches!(state, DaemonAllowlist::Unreadable(_)));
+        assert!(!state.allows("prime-inference/mock-1"));
         let error = assert_allowed(&state, "prime-inference/mock-1").expect_err("fail closed");
         let message = error.to_string();
         assert!(message.contains("could not be read"), "{message}");

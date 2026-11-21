@@ -1,12 +1,15 @@
-//! RLM child model resolution and roster text helpers: reference resolution against the
-//! credential-backed catalog, the spawn-time thinking-support check, the requested child cwd,
-//! plus the roster text caps.
+//! RLM child model discovery and resolution against the authenticated catalog and
+//! daemon policy, plus the spawn-time thinking and working-directory checks and
+//! roster text caps.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 use pa_ai::models::{get_supported_thinking_levels, thinking_level_from_str};
 use pa_core::kernel::rlm_runtime::{find_rlm_model_matches, RlmModelInfo};
+use pa_types::ai::Model;
+
+use crate::model_allowlist::{self, DaemonAllowlist};
 
 /// Close matches listed in model-resolution errors.
 const MODEL_ERROR_SUGGESTION_LIMIT: usize = 3;
@@ -23,22 +26,39 @@ pub const LABEL_MAX_CHARS: usize = 200;
 pub const ANSWER_TEXT_MAX_CHARS: usize = 65_536;
 const ELLIPSIS: &str = "...";
 
-/// The model catalog the RLM surface resolves against: the same
-/// credential-backed list `rlm.find_models` searches (entitled `internal/*` models resolve).
-#[must_use]
-pub fn catalog_models(agent_dir: &Path) -> Vec<RlmModelInfo> {
+/// The authenticated RLM catalog, narrowed to the global daemon policy before ranking.
+pub(super) fn discoverable_models(cwd: &Path, agent_dir: &Path) -> Result<Vec<RlmModelInfo>> {
+    let allowlist = model_allowlist::load(cwd, agent_dir);
+    require_readable_policy(&allowlist)?;
     let registry = crate::state_getters::worker_model_registry(agent_dir);
-    registry
-        .get_rlm_searchable_models()
+    Ok(eligible_models(
+        registry.get_rlm_searchable_models(),
+        &allowlist,
+    ))
+}
+
+fn require_readable_policy(allowlist: &DaemonAllowlist) -> Result<()> {
+    if let DaemonAllowlist::Unreadable(error) = allowlist {
+        bail!(
+            "The daemon model allowlist could not be read ({error}); \
+             refusing model discovery. Fix settings.json and retry."
+        );
+    }
+    Ok(())
+}
+
+fn model_selector(model: &Model) -> String {
+    format!("{}/{}", model.provider, model.id)
+}
+
+fn eligible_models(models: Vec<&Model>, allowlist: &DaemonAllowlist) -> Vec<RlmModelInfo> {
+    models
         .into_iter()
+        .filter(|model| allowlist.allows_model(model))
         .map(|model| RlmModelInfo {
             provider: model.provider.clone(),
             id: model.id.clone(),
-            name: if model.name.is_empty() {
-                model.id.clone()
-            } else {
-                model.name.clone()
-            },
+            name: model.name.clone(),
         })
         .collect()
 }
@@ -54,15 +74,14 @@ pub fn resolve_child_model(
     reference: Option<&str>,
     parent_model: Option<&str>,
     target: &str,
-    allowlist: &crate::model_allowlist::DaemonAllowlist,
+    allowlist: &DaemonAllowlist,
 ) -> Result<String> {
-    let model = resolve_child_model_unchecked(agent_dir, reference, parent_model, target)?;
-    crate::model_allowlist::assert_allowed(allowlist, &model)?;
+    let model = resolve_child_model_reference(agent_dir, reference, parent_model, target, allowlist)?;
+    model_allowlist::assert_allowed(allowlist, &model)?;
     Ok(model)
 }
 
-/// The resolution before the allowlist gate: `None` inherits the parent model; a reference resolves
-/// parent equality first, then an exact catalog selector, then a unique short-form match.
+/// Resolve a child model using the authenticated catalog and without applying daemon policy.
 /// Public for the daemonless print host: print sessions do not enforce
 /// `allowedModels`, so its children do not either.
 ///
@@ -73,6 +92,22 @@ pub fn resolve_child_model_unchecked(
     reference: Option<&str>,
     parent_model: Option<&str>,
     target: &str,
+) -> Result<String> {
+    resolve_child_model(
+        agent_dir,
+        reference,
+        parent_model,
+        target,
+        &DaemonAllowlist::Unrestricted,
+    )
+}
+
+fn resolve_child_model_reference(
+    agent_dir: &Path,
+    reference: Option<&str>,
+    parent_model: Option<&str>,
+    target: &str,
+    allowlist: &DaemonAllowlist,
 ) -> Result<String> {
     let Some(reference) = reference else {
         return parent_model
@@ -86,35 +121,53 @@ pub fn resolve_child_model_unchecked(
             return Ok(parent.to_string());
         }
     }
-    let candidates = catalog_models(agent_dir);
-    let selector_of = |model: &RlmModelInfo| format!("{}/{}", model.provider, model.id);
-    if let Some(exact) = candidates
-        .iter()
-        .find(|model| selector_of(model).to_lowercase() == normalized)
-    {
-        return Ok(selector_of(exact));
+    let registry = crate::state_getters::worker_model_registry(agent_dir);
+    let candidates = registry.get_rlm_searchable_models();
+    // Resolve explicit selectors against the authenticated catalog so a blocked
+    // selector still reaches the typed refusal rather than appearing unavailable.
+    if normalized.contains('/') {
+        if let Some(exact) = candidates
+            .iter()
+            .map(|model| model_selector(model))
+            .find(|selector| selector.to_lowercase() == normalized)
+        {
+            return Ok(exact);
+        }
     }
-    // Short form: the full selector ends with "/<reference>".
-    let short_matches: Vec<&RlmModelInfo> = candidates
-        .iter()
-        .filter(|model| {
-            selector_of(model)
-                .to_lowercase()
-                .ends_with(&format!("/{normalized}"))
-        })
-        .collect();
-    match short_matches.len() {
-        1 => return Ok(selector_of(short_matches[0])),
-        0 => {
-            if let Some(parent) = parent_model {
-                if parent.to_lowercase().ends_with(&format!("/{normalized}")) {
-                    return Ok(parent.to_string());
-                }
+    let suffix = format!("/{normalized}");
+    let mut short_matches = candidates.iter().filter_map(|model| {
+        let selector = model_selector(model);
+        selector
+            .to_lowercase()
+            .ends_with(&suffix)
+            .then_some(selector)
+    });
+    let ambiguous = match (short_matches.next(), short_matches.next()) {
+        // Preserve refusals for a uniquely-resolved short reference, too.
+        (Some(single), None) => return Ok(single),
+        (Some(first), Some(second)) => {
+            let mut allowed = [first, second]
+                .into_iter()
+                .chain(short_matches)
+                .filter(|selector| allowlist.allows(selector));
+            match (allowed.next(), allowed.next()) {
+                (Some(single), None) => return Ok(single),
+                (Some(_), Some(_)) => true,
+                _ => false,
             }
         }
-        _ => {}
+        _ => false,
+    };
+    if !ambiguous {
+        if let Some(parent) = parent_model {
+            if parent.to_lowercase().ends_with(&suffix) {
+                return Ok(parent.to_string());
+            }
+        }
     }
-    Err(model_unavailable_error(reference, target, &candidates))
+    require_readable_policy(allowlist)?;
+    let eligible = eligible_models(candidates, allowlist);
+    Err(model_unavailable_error(reference, target, &eligible))
 }
 
 /// A requested thinking level must be supported by the resolved model;
@@ -237,7 +290,6 @@ pub fn cap_text(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model_allowlist::DaemonAllowlist;
     use serde_json::json;
 
     /// A models.json custom provider, like the pa-core registry tests.
@@ -255,12 +307,133 @@ mod tests {
                             { "id": "glm-5.3", "name": "GLM 5.3", "contextWindow": 1000, "maxTokens": 100 },
                             { "id": "glm-5.3-turbo", "name": "GLM Turbo", "contextWindow": 1000, "maxTokens": 100 }
                         ]
+                    },
+                    "other-provider": {
+                        "baseUrl": "http://localhost:9",
+                        "apiKey": "test-key",
+                        "api": "openai-completions",
+                        "models": [
+                            { "id": "glm-5.3", "name": "Other GLM", "contextWindow": 1000, "maxTokens": 100 }
+                        ]
                     }
                 }
             })
             .to_string(),
         )
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn daemon_find_models_filters_global_policy_before_ranking_and_fails_closed() {
+        use std::sync::Arc;
+
+        use pa_core::kernel::shared::HostRequestPayload;
+        use pa_core::session::manager::SessionManager;
+        use pa_core::session_engine::runtime_wiring::{wire_session_runtime, RlmWiring};
+
+        use crate::rlm_children::{ParentIdentity, SupervisorChildSessions};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let agent_dir = dir.path().join("agent");
+        write_catalog(&agent_dir);
+        let settings = agent_dir.join("settings.json");
+        std::fs::write(
+            &settings,
+            r#"{"allowedModels":["test-provider/glm-5.3-turbo"]}"#,
+        )
+        .unwrap();
+        let project_settings = dir.path().join(".prime/agent");
+        std::fs::create_dir_all(&project_settings).unwrap();
+        std::fs::write(
+            project_settings.join("settings.json"),
+            r#"{"allowedModels":["test-provider/glm-5.3"]}"#,
+        )
+        .unwrap();
+        let host = SupervisorChildSessions::new(
+            Arc::new(crate::supervisor_link::SupervisorLink::new(
+                dir.path().join("supervisor.sock"),
+            )),
+            agent_dir.clone(),
+            "parent-live".into(),
+            Arc::new(model_allowlist::ModelRefusalTelemetry::new(
+                agent_dir.clone(),
+                true,
+            )),
+            String::new(),
+        );
+        host.set_identity(ParentIdentity {
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+            ..ParentIdentity::with_default_depth()
+        });
+        let wiring = wire_session_runtime(
+            SessionManager::in_memory(dir.path()),
+            &agent_dir,
+            RlmWiring {
+                subagent_host: Some(Arc::new(host)),
+                ..RlmWiring::default()
+            },
+            None,
+            None,
+        );
+        let handler = wiring.handlers.get("rlm.find_models").unwrap();
+        let search = || {
+            handler(HostRequestPayload {
+                data: json!({ "query": "test-provider/glm-5.3", "limit": 1 }),
+            })
+        };
+        let response = search().await.unwrap();
+        assert_eq!(
+            response["models"],
+            json!([{
+                "provider": "test-provider",
+                "id": "glm-5.3-turbo",
+                "name": "GLM Turbo",
+                "selector": "test-provider/glm-5.3-turbo",
+            }])
+        );
+        std::fs::write(&settings, r#"{"allowedModels":"invalid"}"#).unwrap();
+        let error = search().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("daemon model allowlist could not be read"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn short_model_resolution_and_suggestions_use_the_allowed_catalog() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_catalog(dir.path());
+        let allow = DaemonAllowlist::Allowed(vec!["test-provider/*".into()]);
+        let resolved =
+            resolve_child_model(dir.path(), Some("glm-5.3"), None, "subagent", &allow).unwrap();
+        assert_eq!(resolved, "test-provider/glm-5.3");
+
+        let refused = resolve_child_model(
+            dir.path(),
+            Some("other-provider/glm-5.3"),
+            None,
+            "subagent",
+            &allow,
+        )
+        .unwrap_err();
+        assert_eq!(
+            refused
+                .downcast_ref::<pa_core::models::ModelAllowlistRefusal>()
+                .unwrap()
+                .selector,
+            "other-provider/glm-5.3"
+        );
+
+        let error = resolve_child_model(dir.path(), Some("glm-5"), None, "subagent", &allow)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("close matches: \"test-provider/glm-5.3\""),
+            "{error}"
+        );
+        assert!(!error.contains("other-provider"), "{error}");
     }
 
     #[test]
@@ -496,7 +669,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(catalog_models(dir.path())
+        assert!(discoverable_models(dir.path(), dir.path())
+            .unwrap()
             .iter()
             .any(|model| model.id == "internal/glm-5.3-fast"));
         let resolved = resolve_child_model(
@@ -589,7 +763,7 @@ mod tests {
         )
         .unwrap();
         let selector = format!("openai-codex/{PROBE_ID}");
-        let catalog = catalog_models(dir.path());
+        let catalog = discoverable_models(dir.path(), dir.path()).unwrap();
         let probe = catalog
             .iter()
             .find(|model| model.selector() == selector)

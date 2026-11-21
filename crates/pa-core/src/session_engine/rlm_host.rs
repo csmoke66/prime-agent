@@ -181,6 +181,11 @@ pub type RlmHostFuture<T> = std::pin::Pin<Box<dyn Future<Output = anyhow::Result
 /// host answer with the no-children behavior: empty rosters, explicit
 /// spawn failures, no selector matches.
 pub trait RlmSubagentHost: Send + Sync {
+    /// The models this host can admit for new sessions, before search ranking and limits.
+    /// Hosts with no discovery policy use the engine's authenticated model registry.
+    fn model_discovery_catalog(&self) -> Option<RlmHostFuture<Vec<RlmModelInfo>>> {
+        None
+    }
     fn spawn(&self, request: RlmSpawnRequest) -> RlmHostFuture<RlmSpawnHandle>;
     fn create_session(
         &self,
@@ -544,11 +549,11 @@ pub fn register_rlm_host_handlers(handlers: &mut HostRequestHandlers, bridge: &A
 }
 
 fn register_find_models(handlers: &mut HostRequestHandlers, bridge: &Arc<RlmHostBridge>) {
-    let registry = Arc::clone(&bridge.registry);
+    let bridge = Arc::clone(bridge);
     handlers.register(
         "rlm.find_models",
         host_handler(move |payload| {
-            let registry = Arc::clone(&registry);
+            let bridge = Arc::clone(&bridge);
             Box::pin(async move {
                 let data = &payload.data;
                 let Some(query) = data.get("query").and_then(Value::as_str) else {
@@ -565,19 +570,19 @@ fn register_find_models(handlers: &mut HostRequestHandlers, bridge: &Arc<RlmHost
                         "rlm.find_models limit must be an integer from 1 to {MAX_RLM_MODEL_SEARCH_LIMIT}"
                     );
                 };
-                let models: Vec<RlmModelInfo> = registry
-                    .get_rlm_searchable_models()
-                    .into_iter()
-                    .map(|model| RlmModelInfo {
-                        provider: model.provider.clone(),
-                        id: model.id.clone(),
-                        name: if model.name.is_empty() {
-                            model.id.clone()
-                        } else {
-                            model.name.clone()
-                        },
-                    })
-                    .collect();
+                let models = match bridge.host.model_discovery_catalog() {
+                    Some(catalog) => catalog.await?,
+                    None => bridge
+                        .registry
+                        .get_rlm_searchable_models()
+                        .into_iter()
+                        .map(|model| RlmModelInfo {
+                            provider: model.provider.clone(),
+                            id: model.id.clone(),
+                            name: model.name.clone(),
+                        })
+                        .collect(),
+                };
                 let matches = find_rlm_model_matches(query, &models, limit as usize);
                 Ok(json!({ "models": matches }))
             })

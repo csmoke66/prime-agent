@@ -21,10 +21,24 @@ async fn list(options: &RunOptions) -> Result<i32, String> {
     if let Some(error) = registry.get_error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
-    let models = registry.refresh_available_models().await;
+    let policy = pa_daemon::model_allowlist::load(&config.cwd, &config.agent_dir);
+    if let pa_daemon::model_allowlist::DaemonAllowlist::Unreadable(reason) = &policy {
+        return Err(format!("Could not read allowedModels: {reason}"));
+    }
+    let mut models = registry.refresh_available_models().await;
     if models.is_empty() {
         println!("{}", no_models_available_message());
         return Ok(0);
+    }
+    if matches!(
+        policy,
+        pa_daemon::model_allowlist::DaemonAllowlist::Allowed(_)
+    ) {
+        models.retain(|model| policy.allows_model(model));
+        if models.is_empty() {
+            println!("No available models match your allowedModels setting.");
+            return Ok(0);
+        }
     }
     let search = options.list_models.clone().flatten();
     let mut filtered = match search {

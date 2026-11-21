@@ -264,15 +264,18 @@ impl Worker {
         )
     }
 
-    /// `get_available_models` (TS `refreshAvailableModels`): the auth-configured models.
+    /// `get_available_models`: the auth-configured models allowed by daemon policy.
     pub(crate) fn handle_get_available_models(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_available_models") {
             return response;
         }
         let registry = worker_model_registry(&self.config.agent_dir);
+        let cwd = self.core.lock().unwrap().cwd.clone();
+        let allowlist = crate::model_allowlist::load(cwd.as_ref(), &self.config.agent_dir);
         let models: Vec<Value> = registry
             .get_available()
             .into_iter()
+            .filter(|model| allowlist.allows_model(model))
             .filter_map(|model| serde_json::to_value(model).ok())
             .collect();
         response_success(

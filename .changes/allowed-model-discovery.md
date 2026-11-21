@@ -1,0 +1,1 @@
+- When `allowedModels` is set, sub-agents, the model picker, and `prime-agent model list` only offer matching models available through your configured providers.

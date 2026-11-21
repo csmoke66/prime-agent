@@ -459,12 +459,17 @@ fn build_tui_options(
     let fullscreen_mouse = settings.get_fullscreen_mouse();
     let tree_filter_mode = settings.get_tree_filter_mode();
     let branch_summary_skip_prompt = settings.get_branch_summary_skip_prompt();
-    // A startup snapshot of the available models drives the `/model` picker
-    // (entitlement refreshes run daemon-side); models.json custom models too.
+    // Seed `/model` with the same policy the daemon applies to refreshed catalogs.
     let auth = pa_core::auth::AuthStorage::create(&config.agent_dir);
     let registry =
         pa_core::models::ModelRegistry::create(auth, config.agent_dir.join("models.json"));
-    let catalog: Vec<pa_types::ai::Model> = registry.get_available().into_iter().cloned().collect();
+    let allowlist = pa_daemon::model_allowlist::load(&config.cwd, &config.agent_dir);
+    let catalog: Vec<pa_types::ai::Model> = registry
+        .get_available()
+        .into_iter()
+        .filter(|model| allowlist.allows_model(model))
+        .cloned()
+        .collect();
     let configured_providers: std::collections::HashSet<String> =
         catalog.iter().map(|model| model.provider.clone()).collect();
     let settings = pa_core::settings::SettingsManager::create(&config.cwd, &config.agent_dir);

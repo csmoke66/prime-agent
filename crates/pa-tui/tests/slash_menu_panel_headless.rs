@@ -7,6 +7,7 @@
 
 mod support;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pa_tui::interactive::{HeadlessPlan, HeadlessStep};
 use serde_json::json;
 
@@ -77,7 +78,7 @@ fn slash_menu_opens_with_the_top_border_rule() {
         // The command-catalog fetch lands in the background (the attach
         // spawns it); give the fold a beat before typing.
         HeadlessStep::WaitMs(300),
-        HeadlessStep::Type("/".to_string()),
+        HeadlessStep::Type("/set".to_string()),
         HeadlessStep::SettleIdle,
         HeadlessStep::WaitMs(100),
     ];
@@ -96,6 +97,7 @@ fn slash_menu_opens_with_the_top_border_rule() {
         .iter()
         .position(|line| line.trim_start().starts_with('\u{203a}'))
         .expect("the selected marker row");
+    assert!(lines[marker].contains("settings"), "{frame}");
     assert!(
         marker > 0,
         "the marker row is not the frame's first row:\n{frame}"
@@ -104,5 +106,21 @@ fn slash_menu_opens_with_the_top_border_rule() {
         lines[marker - 1],
         "\u{2500}".repeat(usize::from(WIDTH)),
         "the panel's top border sits directly above the menu rows:\n{frame}"
+    );
+}
+
+#[test]
+fn tab_after_a_removed_model_command_does_not_open_the_model_picker() {
+    let frames = run_plan(vec![
+        HeadlessStep::Type("/model gp".into()),
+        HeadlessStep::SettleIdle,
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+        HeadlessStep::SettleIdle,
+    ]);
+    let frame = frames.last().expect("a frame after Tab");
+    assert!(frame.contains("/model gp"), "{frame}");
+    assert!(
+        frames.iter().all(|frame| !frame.contains("effort · Enter select")),
+        "Tab must not execute removed /model"
     );
 }

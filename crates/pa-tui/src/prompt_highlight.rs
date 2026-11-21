@@ -849,7 +849,7 @@ mod tests {
             "the @-token ends at the chunk start and is skipped; the flag clips in"
         );
 
-        let source = "/model @a.rs --flag";
+        let source = "/goal  @a.rs --flag";
         let command = command_token(source).unwrap();
         let spans = find_arg_tokens(source, 0, false);
         let highlights = editor_chunk_highlights(source, &spans, 0, Some(&command), Some(7));
@@ -858,15 +858,17 @@ mod tests {
             vec![
                 (7, 12, ThemeColor::Success),
                 (13, 19, ThemeColor::MdLink),
-                (0, 6, ThemeColor::Accent)
+                (0, 5, ThemeColor::Accent)
             ]
         );
         // The cursor inside the token suppresses it entirely.
-        let highlights = editor_chunk_highlights("/model", &[], 0, Some(&command), Some(3));
+        let highlights = editor_chunk_highlights("/goal", &[], 0, Some(&command), Some(3));
         assert!(highlights.is_empty());
-        // An unknown command never highlights.
-        let command = command_token("/nope").unwrap();
-        assert!(editor_chunk_highlights("/nope", &[], 0, Some(&command), None).is_empty());
+        // Unknown commands and settings-only former commands never highlight.
+        for text in ["/nope", "/model", "/effort", "/tier"] {
+            let command = command_token(text).unwrap();
+            assert!(editor_chunk_highlights(text, &[], 0, Some(&command), None).is_empty());
+        }
     }
 
     /// A selection range renders reversed-video, clipped to the chunk, and the cursor cell keeps

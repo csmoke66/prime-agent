@@ -1,16 +1,5 @@
-//! Headless e2e for the `/factory` command (the factory's opt-in gate):
-//! the status arm reports the disabled default, `on`/`off` persist the
-//! gate through the settings seam (a stub seam: the write lands in
-//! memory; the persisted settings-file shape is covered by the pa-cli
-//! seam round-trip test), and a bad argument gets the usage error. The
-//! harness daemon advertises no `factory_activity` lane, so the dock
-//! mounts no factory group anywhere while it stays unadvertised (the
-//! opt-in contract's off surface). The lane-advertised battery below
-//! drives the off guard end to end, and the page battery opens the
-//! dock's factory group into the live page and pins the picker keys'
-//! repaint contract (the input loop paints every dispatched input — the
-//! moved selection lands on the arrow's own repaint, never waiting for
-//! the refresh poll).
+//! Headless coverage for the Factory setting, its live-run disable guard, and the factory page.
+//! The settings seam records the gate in memory; the pa-cli seam covers its on-disk shape.
 #![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
@@ -336,25 +325,31 @@ impl pa_tui::client_settings::ClientSettings for RecordingSettings {
     }
 }
 
-fn options(socket: PathBuf) -> InteractiveOptions {
-    InteractiveOptions {
-        client_settings: Some(std::sync::Arc::new(RecordingSettings::default())),
-        ..support::options(socket)
-    }
+fn factory_setting() -> [HeadlessStep; 3] {
+    [
+        HeadlessStep::Submit("/settings".into()),
+        HeadlessStep::Key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE)),
+        HeadlessStep::Type("Factory".into()),
+    ]
 }
 
-fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
-    run_plan_config(Vec::new(), None, steps)
+fn factory_round_trip() -> Vec<HeadlessStep> {
+    factory_setting()
+        .into_iter()
+        .chain([
+            HeadlessStep::Key(enter()),
+            HeadlessStep::Key(enter()),
+            HeadlessStep::Key(escape()),
+        ])
+        .collect()
 }
 
-/// The harness entry with a configured mock daemon: the hello's
-/// advertised capabilities and the `factory_activity` graph reply (the
-/// `/factory off` lifecycle guard's lane).
+/// The mock daemon's advertised capabilities and `factory_activity` graph reply.
 fn run_plan_config(
     server_capabilities: Vec<String>,
     factory_graph: Option<Value>,
     steps: Vec<HeadlessStep>,
-) -> Vec<String> {
+) -> (Vec<String>, bool) {
     run_plan_config_with_graph_error(server_capabilities, factory_graph, None, steps)
 }
 
@@ -365,14 +360,19 @@ fn run_plan_config_with_graph_error(
     factory_graph: Option<Value>,
     factory_graph_error: Option<String>,
     steps: Vec<HeadlessStep>,
-) -> Vec<String> {
+) -> (Vec<String>, bool) {
+    let settings = std::sync::Arc::new(RecordingSettings::default());
+    let settings_for_ui = settings.clone();
     let outcome = run_headless(
         HeadlessPlan {
             steps,
             width: 100,
             height: 30,
         },
-        options,
+        move |socket| InteractiveOptions {
+            client_settings: Some(settings_for_ui),
+            ..support::options(socket)
+        },
         |socket| {
             let supervisor = MockSupervisor::bind_with(
                 socket,
@@ -383,7 +383,8 @@ fn run_plan_config_with_graph_error(
             move || supervisor.serve()
         },
     );
-    outcome.frames
+    let enabled = *settings.factory_enabled.lock().expect("factory gate lock");
+    (outcome.frames, enabled)
 }
 
 /// The frames wrap notes to the frame width, so an assertion reads the
@@ -396,78 +397,26 @@ fn flat_text(frames: &[String]) -> String {
         .join(" ")
 }
 
-/// `/factory status` (and a bare `/factory`) report the disabled default,
-/// and the dock never mounts a factory group while the daemon's hello
-/// advertises no `factory_activity` lane: no `⚙` segment renders anywhere
-/// (the opt-in contract's off surface).
 #[test]
-fn factory_status_reports_the_disabled_default_without_a_factory_group() {
-    let steps = vec![
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
-    assert!(!frames.is_empty(), "frames were captured");
+fn factory_defaults_to_disabled_without_a_factory_group() {
+    let (frames, enabled) = run_plan_config(Vec::new(), None, factory_setting().into());
     let all = flat_text(&frames);
-    assert!(
-        all.contains(
-            "The factory is disabled (off by default). Run /factory on to enable it (takes effect on the next client start)."
-        ),
-        "the disabled status note rendered:\n{all}"
-    );
+    assert!(all.contains("Enable factory orchestration for agents"), "{all}");
+    assert!(!enabled, "the factory is opt-in");
     assert!(
         !frames.join("\n").contains('⚙'),
-        "no factory group renders while the lane is unadvertised:\n{all}"
+        "the lane is unadvertised:\n{all}"
     );
 }
 
-/// `/factory on` persists the gate and the status arm reads the new state
-/// back; `/factory off` disables it again, and a bad argument keeps the
-/// usage error.
+/// The settings toggle writes the gate in both directions.
 #[test]
 fn factory_on_and_off_round_trip_the_gate_through_the_seam() {
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory maybe".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan(steps);
+    let (frames, enabled) = run_plan_config(Vec::new(), None, factory_round_trip());
     let all = flat_text(&frames);
-    assert!(
-        all.contains(
-            "The factory is enabled. Restart the client to surface the factory group (the factory page and the agent-side factory API follow the same gate)."
-        ),
-        "the enabled note rendered:\n{all}"
-    );
-    assert!(
-        all.contains("The factory is enabled. Run /factory off to disable it."),
-        "the enabled status read back:\n{all}"
-    );
-    assert!(
-        all.contains(
-            "The factory is disabled. The factory group and page disappear on the next client start."
-        ),
-        "the off note rendered:\n{all}"
-    );
-    assert!(
-        all.contains(
-            "The factory is disabled (off by default). Run /factory on to enable it (takes effect on the next client start)."
-        ),
-        "the disabled status read back:\n{all}"
-    );
-    assert!(
-        all.contains("Usage: /factory [on|off|status]"),
-        "the usage error rendered:\n{all}"
-    );
+    assert!(all.contains("The factory is enabled."), "{all}");
+    assert!(all.contains("The factory is disabled."), "{all}");
+    assert!(!enabled, "the disable write persisted");
 }
 
 /// One factory run row in the wire shape the kernel's graph lane sends
@@ -487,7 +436,7 @@ fn factory_run_row(id: &str, state: &str, running_children: u64) -> Value {
     })
 }
 
-/// `/factory off` refuses while the session's kernel reports live runs
+/// Disabling the Factory setting refuses while the session's kernel reports live runs
 /// (the lifecycle guard, end to end through the daemon lane): the
 /// refusal names the live count, and the gate stays enabled — the runs
 /// keep their stop and visibility path (the page, `rlm.factory.stop`)
@@ -503,30 +452,18 @@ fn factory_off_refuses_while_runs_are_live() {
             factory_run_row("live", "running", 1),
         ]
     });
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
+    let (frames, enabled) = run_plan_config(
+        vec!["factory_activity".to_string()],
+        Some(graph),
+        factory_round_trip(),
+    );
     let all = flat_text(&frames);
     assert!(
-        all.contains(
-            "Cannot disable the factory while 2 runs are still live — stop them first (the factory page's stop action or rlm.factory.stop), then /factory off."
-        ),
+        all.contains("Cannot disable the factory while 2 runs are still live"),
         "the refusal names the live count:\n{all}"
     );
-    assert!(
-        all.contains("The factory is enabled. Run /factory off to disable it."),
-        "the gate stayed enabled after the refused off:\n{all}"
-    );
-    assert!(
-        !all.contains("The factory is disabled. The factory group and page disappear on the next client start."),
-        "the off note never rendered:\n{all}"
-    );
+    assert!(enabled, "the gate stayed enabled after the refused off");
+    assert!(!all.contains("The factory is disabled."), "{all}");
 }
 
 /// The complement: once no run is live (a fully terminal history), the
@@ -537,52 +474,34 @@ fn factory_off_proceeds_once_no_runs_are_live() {
     let graph = json!({
         "runs": [factory_run_row("terminal", "done", 0)]
     });
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
-    let frames = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
+    let (frames, enabled) = run_plan_config(
+        vec!["factory_activity".to_string()],
+        Some(graph),
+        factory_round_trip(),
+    );
     let all = flat_text(&frames);
-    assert!(
-        all.contains("The factory is disabled. The factory group and page disappear on the next client start."),
-        "the off proceeded with only terminal runs:\n{all}"
-    );
-    assert!(
-        all.contains("The factory is disabled (off by default). Run /factory on to enable it (takes effect on the next client start)."),
-        "the disabled status read back:\n{all}"
-    );
+    assert!(all.contains("The factory is disabled."), "{all}");
+    assert!(!enabled, "terminal history does not block the disable write");
 }
 
 /// The same refusal on a client whose hello predates the gate: a client
 /// started while the factory was off keeps its unadvertised hello (the
-/// running connection never re-reads the advertisement), but `/factory
-/// on` opens the kernel gate immediately — runs started after the toggle
-/// are live in that same client, so the off guard must read the lane even
-/// without the advertisement and refuse while they run.
+/// running connection never re-reads the advertisement), but enabling
+/// Factory opens the kernel gate immediately. The off guard must read
+/// the lane even without the advertisement and refuse while runs live.
 #[test]
 fn factory_off_refuses_on_a_client_whose_hello_predates_the_gate() {
     let graph = json!({
         "runs": [factory_run_row("live", "running", 1)]
     });
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-    ];
     // The hello advertises nothing; the daemon still answers the lane.
-    let frames = run_plan_config(Vec::new(), Some(graph), steps);
+    let (frames, enabled) = run_plan_config(Vec::new(), Some(graph), factory_round_trip());
     let all = flat_text(&frames);
     assert!(
-        all.contains(
-            "Cannot disable the factory while 1 run is still live — stop it first (the factory page's stop action or rlm.factory.stop), then /factory off."
-        ),
+        all.contains("Cannot disable the factory while 1 run is still live"),
         "the unadvertised-lane guard still refused:\n{all}"
     );
+    assert!(enabled, "the gate stayed enabled after the refused off");
 }
 
 /// The None path never blocks the client whose hello predates the lane
@@ -593,23 +512,11 @@ fn factory_off_refuses_on_a_client_whose_hello_predates_the_gate() {
 /// (the pin below).
 #[test]
 fn factory_off_proceeds_when_the_lane_cannot_report() {
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-    ];
     // The mock answers every factory action with empty data: no runs list.
-    let frames = run_plan_config(Vec::new(), None, steps);
+    let (frames, enabled) = run_plan_config(Vec::new(), None, factory_round_trip());
     let all = flat_text(&frames);
-    assert!(
-        all.contains("The factory is disabled. The factory group and page disappear on the next client start."),
-        "the unreadable count never blocked off:\n{all}"
-    );
-    assert!(
-        !all.contains("Cannot disable the factory"),
-        "no refusal without a readable count:\n{all}"
-    );
+    assert!(all.contains("The factory is disabled."), "{all}");
+    assert!(!enabled, "the unreadable unadvertised lane never blocked off");
 }
 
 /// The advertised lane fails closed on an unreadable count: a timed-out
@@ -618,28 +525,19 @@ fn factory_off_proceeds_when_the_lane_cannot_report() {
 /// unreadable count; the gate stays enabled for the retry.
 #[test]
 fn factory_off_refuses_when_the_advertised_lane_cannot_count() {
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
     // The lane is advertised; the mock answers every factory action with
     // empty data (a malformed reply the guard reads as an unreadable count).
-    let frames = run_plan_config(vec!["factory_activity".to_string()], None, steps);
+    let (frames, enabled) = run_plan_config(
+        vec!["factory_activity".to_string()],
+        None,
+        factory_round_trip(),
+    );
     let all = flat_text(&frames);
     assert!(
-        all.contains(
-            "Cannot disable the factory: the live-run count could not be read from the factory lane — try /factory off again once it answers."
-        ),
+        all.contains("Cannot verify live factory runs; factory remains enabled."),
         "the unreadable count refused the off:\n{all}"
     );
-    assert!(
-        all.contains("The factory is enabled. Run /factory off to disable it."),
-        "the gate stayed enabled after the refused off:\n{all}"
-    );
+    assert!(enabled, "the gate stayed enabled after the refused off");
 }
 
 /// The kernel-not-running class never fails closed: the lane never
@@ -651,35 +549,17 @@ fn factory_off_refuses_when_the_advertised_lane_cannot_count() {
 /// so the advertised client could never disable an idle factory).
 #[test]
 fn factory_off_proceeds_when_the_kernel_is_not_running() {
-    let steps = vec![
-        HeadlessStep::Submit("/factory on".to_string()),
-        HeadlessStep::WaitMs(200),
-        HeadlessStep::Submit("/factory off".to_string()),
-        HeadlessStep::WaitMs(400),
-        HeadlessStep::Submit("/factory status".to_string()),
-        HeadlessStep::WaitMs(200),
-    ];
     // The lane is advertised; the mock answers the graph read with the
     // worker arm's exact kernel-not-running refusal.
-    let frames = run_plan_config_with_graph_error(
+    let (frames, enabled) = run_plan_config_with_graph_error(
         vec!["factory_activity".to_string()],
         None,
         Some("Kernel is not running".to_string()),
-        steps,
+        factory_round_trip(),
     );
     let all = flat_text(&frames);
-    assert!(
-        all.contains("The factory is disabled. The factory group and page disappear on the next client start."),
-        "the no-kernel count never blocked off:\n{all}"
-    );
-    assert!(
-        all.contains("The factory is disabled (off by default). Run /factory on to enable it (takes effect on the next client start)."),
-        "the disabled status read back:\n{all}"
-    );
-    assert!(
-        !all.contains("Cannot disable the factory"),
-        "no refusal without a kernel to host live runs:\n{all}"
-    );
+    assert!(all.contains("The factory is disabled."), "{all}");
+    assert!(!enabled, "no kernel means no live runs to block off");
 }
 
 /// One live named run row for the page battery (the wire shape the
@@ -764,7 +644,7 @@ fn factory_page_picker_keys_paint_the_moved_selection_on_the_key() {
         HeadlessStep::Key(escape()),
         HeadlessStep::WaitMs(200),
     ];
-    let frames = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
+    let (frames, _) = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
     let all = flat_text(&frames);
     assert!(
         all.contains("factory: second-run"),
@@ -798,7 +678,7 @@ fn a_paste_on_the_factory_page_stays_out_of_the_hidden_editor() {
             timeout_ms: 5_000,
         },
     ];
-    let frames = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
+    let (frames, _) = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
     let all = flat_text(&frames);
     assert!(
         all.contains("factory: only-run"),
@@ -835,7 +715,7 @@ fn a_closed_session_clears_the_open_factory_page() {
         },
         HeadlessStep::WaitMs(200),
     ];
-    let frames = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
+    let (frames, _) = run_plan_config(vec!["factory_activity".to_string()], Some(graph), steps);
     let last = flat_text(&frames[frames.len() - 1..]);
     assert!(
         last.contains("No live factory runs.") && !last.contains("only-run"),

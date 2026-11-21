@@ -1152,7 +1152,7 @@ fn decodes_the_preparing_turn_label_as_the_starting_row() {
             "active": {
                 "kind": "session_command",
                 "phase": "preparing",
-                "label": "/theme dark",
+                "label": "/compact focus on test coverage",
             },
         },
     });

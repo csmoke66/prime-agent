@@ -3,7 +3,7 @@
 //! and file/path completion with a select list, plus the `@` fuzzy
 //! file search — a parallel walk on a background thread).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::fuzzy::fuzzy_filter;
 use crate::path_token::{self, PathToken, Quoting};
@@ -86,9 +86,6 @@ pub trait AutocompleteProvider: Send {
     /// Replace the session's `skill:` commands. A default no-op for
     /// providers without command listings.
     fn set_skill_commands(&mut self, _skills: Vec<SlashCommandEntry>) {}
-    /// Replace one command's argument completions; a default no-op for
-    /// providers without argument completions.
-    fn set_argument_completions(&mut self, _command: &'static str, _items: Vec<CompletionItem>) {}
 }
 
 /// Slash-command context: which part of a `/command args` line the cursor is in.
@@ -640,9 +637,6 @@ pub struct CombinedAutocompleteProvider {
     /// Commands the current model filters out of the listing (TS drops
     /// `/fast` when the model is not fast-mode-eligible).
     hidden: std::collections::HashSet<String>,
-    /// Per-command argument completions: the items offered at the
-    /// command's argument position (e.g. the `/tier` tier choices).
-    arguments: std::collections::HashMap<&'static str, Vec<CompletionItem>>,
     paths: PathCompletionProvider,
     /// The `@` file search's in-memory file index (one per session view).
     file_index: file_index::FileIndex,
@@ -678,7 +672,6 @@ impl CombinedAutocompleteProvider {
             commands,
             skill_commands: Vec::new(),
             hidden: HashSet::default(),
-            arguments: HashMap::default(),
             paths: PathCompletionProvider { base },
             file_index: file_index::FileIndex::new(),
         }
@@ -700,12 +693,6 @@ impl CombinedAutocompleteProvider {
     /// builtins; the fetch replaces the whole list, never merges.
     pub fn set_skill_commands(&mut self, skills: Vec<SlashCommandEntry>) {
         self.skill_commands = skills;
-    }
-
-    /// Replace one command's argument completions (TS
-    /// `command.getArgumentCompletions`, e.g. the `/tier` tier choices).
-    pub fn set_argument_completions(&mut self, command: &'static str, items: Vec<CompletionItem>) {
-        self.arguments.insert(command, items);
     }
 
     /// The slash-name suggestions for a typed prefix (fuzzy filter over `name + aliases`,
@@ -795,10 +782,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
         CombinedAutocompleteProvider::set_skill_commands(self, skills);
     }
 
-    fn set_argument_completions(&mut self, command: &'static str, items: Vec<CompletionItem>) {
-        CombinedAutocompleteProvider::set_argument_completions(self, command, items);
-    }
-
     fn get_suggestions(
         &self,
         lines: &[String],
@@ -825,27 +808,8 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
                             items,
                         }));
                     }
-                    // Argument items answer at the argument position (filtered by the typed
-                    // term); commands without items and terms with no match answer nothing
-                    // (the force-triggered path completion is the file surface there).
-                    SlashKind::Argument => {
-                        let command = context.command_name.as_deref()?;
-                        let items = self.arguments.get(command)?;
-                        let term = context.prefix.trim().to_lowercase();
-                        let matches: Vec<CompletionItem> = items
-                            .iter()
-                            .filter(|item| term.is_empty() || item.value.starts_with(&term))
-                            .cloned()
-                            .collect();
-                        if matches.is_empty() {
-                            return None;
-                        }
-                        return Some(SuggestionLookup::Ready(Suggestions {
-                            prefix: context.prefix.clone(),
-                            kind: Some(SuggestionKind::SlashCommand),
-                            items: matches,
-                        }));
-                    }
+                    // Tab can still request forced file completion in an argument.
+                    SlashKind::Argument => return None,
                 }
             }
         }
@@ -862,9 +826,7 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
     }
 
     /// Replace the token at the cursor as the current text reads, never as the lookup that
-    /// built the menu read it (typing runs ahead of an open menu): the `@` token, else a
-    /// `/name` token or a command's argument, else the path token — `get_suggestions`'
-    /// extraction order.
+    /// built the menu read it: the `@` token, else a `/name` token, else the path token.
     fn apply_completion(
         &self,
         lines: &[String],
@@ -895,22 +857,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
                     item,
                     &context.prefix,
                 );
-            }
-            // An argument item replaces the whole typed argument, as `get_suggestions` matched
-            // it against the trimmed argument text.
-            if context.kind == SlashKind::Argument
-                && context
-                    .command_name
-                    .as_deref()
-                    .and_then(|command| self.arguments.get(command))
-                    .is_some_and(|items| items.iter().any(|argument| argument.value == item.value))
-            {
-                // The argument is plain text, so its replacement token is bare.
-                let start = cursor_col
-                    .min(line.len())
-                    .saturating_sub(context.prefix.chars().count());
-                let token = path_token::bare_token(&context.prefix, start);
-                return apply_file_completion(lines, cursor_line, cursor_col, item, &token);
             }
         }
         let token = path_token::path_token_before(before);

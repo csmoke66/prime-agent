@@ -231,18 +231,6 @@ impl Editor {
         }
     }
 
-    /// Replace one command's argument completions on the installed provider (e.g. the `/tier` tier
-    /// choices).
-    pub fn set_autocomplete_argument_completions(
-        &mut self,
-        command: &'static str,
-        items: Vec<crate::autocomplete::CompletionItem>,
-    ) {
-        if let Some(provider) = self.autocomplete_provider.as_mut() {
-            provider.set_argument_completions(command, items);
-        }
-    }
-
     /// Replace the provider's `skill:` commands (this port swaps the list on
     /// the installed provider; TS `setupAutocompleteProvider` rebuilds the
     /// whole list). The open dropdown drops, but a PARKED request stays: the
@@ -767,17 +755,12 @@ mod tests {
     #[test]
     fn picker_argument_context_reports_command_and_partial() {
         let mut e = ed();
-        e.set_text("/model gp");
-        assert_eq!(
-            e.picker_argument_context(),
-            Some(("model".to_string(), "gp".to_string()))
-        );
         e.set_text("/mcp lin ");
         assert_eq!(
             e.picker_argument_context(),
             Some(("mcp".to_string(), "lin ".to_string()))
         );
-        e.set_text("/model");
+        e.set_text("/mcp");
         assert_eq!(e.picker_argument_context(), None);
         e.set_text("hello there");
         assert_eq!(e.picker_argument_context(), None);
@@ -837,10 +820,10 @@ mod tests {
         // and drop the tail on accept, so the Tab interception only fires
         // when the cursor sits at the argument's end.
         let mut e = ed();
-        e.set_text("/model gp");
+        e.set_text("/mcp lin");
         assert_eq!(
             e.picker_argument_context(),
-            Some(("model".to_string(), "gp".to_string()))
+            Some(("mcp".to_string(), "lin".to_string()))
         );
         e.handle_input("left");
         assert_eq!(e.picker_argument_context(), None);
@@ -857,7 +840,7 @@ mod tests {
     #[test]
     fn picker_argument_context_rejects_later_draft_lines() {
         let mut e = ed();
-        e.set_text("/model gp\ndraft reply");
+        e.set_text("/mcp link\ndraft reply");
         e.handle_input("up");
         assert_eq!(e.get_cursor(), (0, 9));
         assert_eq!(
@@ -865,15 +848,29 @@ mod tests {
             None,
             "a later draft line must not be discarded by a picker apply"
         );
-        e.set_text("/model gp\n   ");
+        e.set_text("/mcp link\n   ");
         e.handle_input("up");
         e.handle_input("end");
         assert_eq!(e.get_cursor(), (0, 9));
         assert_eq!(
             e.picker_argument_context(),
-            Some(("model".to_string(), "gp".to_string())),
+            Some(("mcp".to_string(), "link".to_string())),
             "whitespace-only later lines keep the interception"
         );
+    }
+
+    #[test]
+    fn removed_model_command_is_not_completed_by_tab() {
+        let mut e = ed();
+        e.set_text("/model");
+        e.handle_input("tab");
+        e.materialize_autocomplete();
+        assert_eq!(e.get_text(), "/model");
+        assert!(!e.is_showing_autocomplete());
+        assert!(!e
+            .take_events()
+            .iter()
+            .any(|event| matches!(event, EditorEvent::Submitted(_))));
     }
 
     #[test]

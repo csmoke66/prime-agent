@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 fn provider(base: &str) -> CombinedAutocompleteProvider {
     CombinedAutocompleteProvider::from_registry(std::path::PathBuf::from(base))
@@ -54,9 +55,9 @@ fn slash_suggestions_filter_fuzzily() {
     assert_eq!(suggestions.kind, Some(SuggestionKind::SlashCommand));
     assert_eq!(suggestions.prefix, "/se");
     assert!(suggestions.items.iter().any(|i| i.value == "settings"));
-    // Aliases join the search text: /think matches the effort command.
-    let suggestions = ready(provider.get_suggestions(&["/think".to_string()], 0, 6, false));
-    assert_eq!(suggestions.items[0].value, "effort");
+    // Aliases join the search text: /side matches the side-question command.
+    let suggestions = ready(provider.get_suggestions(&["/side".to_string()], 0, 5, false));
+    assert_eq!(suggestions.items[0].value, "btw");
     // The bare '/' shows the whole registry.
     let suggestions = ready(provider.get_suggestions(&["/".to_string()], 0, 1, false));
     assert_eq!(
@@ -79,19 +80,19 @@ fn hidden_commands_drop_rows_from_the_menu() {
     let visible = provider.get_suggestions(&["/f".to_string()], 0, 2, false);
     let items = ready(visible).items;
     assert!(
-        items.iter().any(|item| item.value == "fast"),
-        "fast lists by default: {items:?}"
+        items.iter().any(|item| item.value == "fork"),
+        "fork lists by default: {items:?}"
     );
-    provider.set_hidden_commands(std::collections::HashSet::from(["fast".to_string()]));
+    provider.set_hidden_commands(std::collections::HashSet::from(["fork".to_string()]));
     let visible = provider.get_suggestions(&["/f".to_string()], 0, 2, false);
     let items = ready(visible).items;
     assert!(
-        !items.iter().any(|item| item.value == "fast"),
-        "hidden fast drops from the menu: {items:?}"
+        !items.iter().any(|item| item.value == "fork"),
+        "hidden fork drops from the menu: {items:?}"
     );
 }
 
-/// `/update` stays VISIBLE: the fast filter is the only hidden-command policy.
+/// Hiding another command does not hide `/update`.
 #[test]
 fn update_lists_in_the_menu_under_every_hidden_set() {
     let mut provider = provider("/tmp");
@@ -101,64 +102,46 @@ fn update_lists_in_the_menu_under_every_hidden_set() {
         items.iter().any(|item| item.value == "update"),
         "update lists by default: {items:?}"
     );
-    provider.set_hidden_commands(std::collections::HashSet::from(["fast".to_string()]));
+    provider.set_hidden_commands(std::collections::HashSet::from(["fork".to_string()]));
     let visible = provider.get_suggestions(&["/up".to_string()], 0, 3, false);
     let items = ready(visible).items;
     assert!(
         items.iter().any(|item| item.value == "update"),
-        "update stays listed under the fast filter: {items:?}"
+        "update stays listed when fork is hidden: {items:?}"
     );
 }
 
-/// The `/tier` argument position offers the injected items, filtered by the typed term,
-/// with the current tier marked; other commands fall through to path completion.
 #[test]
-fn tier_argument_completions_list_filter_and_mark_current() {
-    let mut provider = provider("/tmp");
-    let tier_items = |current: &str| {
-        ["default", "flex", "priority", "auto"]
-            .iter()
-            .map(|tier| CompletionItem {
-                value: tier.to_string(),
-                label: tier.to_string(),
-                description: Some(if *tier == current {
-                    "tier (current)".to_string()
-                } else {
-                    "tier".to_string()
-                }),
-                argument_hint: None,
-                source_tag: None,
-            })
-            .collect::<Vec<_>>()
-    };
-    provider.set_argument_completions("tier", tier_items("flex"));
-    // No term: every tier lists, the current one marked.
-    let suggestions = provider.get_suggestions(&["/tier ".to_string()], 0, 6, false);
-    let items = ready(suggestions).items;
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item.value.as_str())
-            .collect::<Vec<_>>(),
-        ["default", "flex", "priority", "auto"]
-    );
-    assert!(items
-        .iter()
-        .any(|item| item.description.as_deref() == Some("tier (current)")));
-    // A term filters by prefix.
-    let suggestions = provider.get_suggestions(&["/tier pr".to_string()], 0, 8, false);
-    let items = ready(suggestions).items;
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item.value.as_str())
-            .collect::<Vec<_>>(),
-        ["priority"]
-    );
-    // A term with no match answers nothing.
-    assert!(provider
-        .get_suggestions(&["/tier zz".to_string()], 0, 8, false)
-        .is_none());
+fn settings_only_commands_are_not_suggested() {
+    let provider = provider("/tmp");
+    let all = ready(provider.get_suggestions(&["/".to_string()], 0, 1, false));
+    for command in [
+        "model",
+        "effort",
+        "think",
+        "thinking",
+        "tier",
+        "fast",
+        "subagent-settings",
+        "inbox-reminders",
+        "rlm-max-depth",
+        "factory",
+        "telemetry",
+        "speed",
+        "nightly",
+        "autonomous",
+    ] {
+        assert!(
+            all.items.iter().all(|item| item.value != command),
+            "removed /{command} must not appear in the slash menu"
+        );
+        let text = format!("/{command}");
+        if let Some(SuggestionLookup::Ready(suggestions)) =
+            provider.get_suggestions(&[text], 0, command.len() + 1, false)
+        {
+            assert!(suggestions.items.iter().all(|item| item.value != command));
+        }
+    }
 }
 
 #[test]
@@ -174,18 +157,12 @@ fn slash_completion_applies_separator_by_argument() {
     assert_eq!(result.cursor_col, 7);
 }
 
-/// Accepting an argument item replaces the whole typed argument, a trailing space included; a
-/// forced path completion there still replaces only the path token.
 #[test]
-fn argument_completion_replaces_the_typed_argument() {
-    let mut provider = provider("/tmp");
-    provider.set_argument_completions("tier", vec![item("default")]);
-    let result = provider.apply_completion(&["/tier de ".to_string()], 0, 9, &item("default"));
-    assert_eq!(result.lines[0], "/tier default");
-    assert_eq!(result.cursor_col, 13);
+fn file_completion_in_a_slash_argument_replaces_only_the_path_token() {
+    let provider = provider("/tmp");
     let result =
-        provider.apply_completion(&["/tier a src/ma".to_string()], 0, 14, &item("src/main.rs"));
-    assert_eq!(result.lines[0], "/tier a src/main.rs");
+        provider.apply_completion(&["/goal a src/ma".to_string()], 0, 14, &item("src/main.rs"));
+    assert_eq!(result.lines[0], "/goal a src/main.rs");
 }
 
 #[test]

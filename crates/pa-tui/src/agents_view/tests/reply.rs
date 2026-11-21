@@ -378,7 +378,7 @@ fn the_reply_completion_lists_session_and_view_commands() {
     assert!(
         !labels
             .iter()
-            .any(|label| label.contains("tree") || label.contains("model")),
+            .any(|label| label.contains("tree") || label.contains("settings")),
         "the client builtins never suggest: {labels:?}"
     );
 }

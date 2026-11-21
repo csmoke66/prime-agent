@@ -162,7 +162,7 @@ mod tests {
             1 => prop::sample::select(vec![
                 "", "```python", "```", "| a | b |", "|---|---|", "- item",
                 "1. item", "10. item", "> quote", "# Heading", "---",
-                "    indented", "/model --flag @src/a.rs",
+                "    indented", "/goal --flag @src/a.rs",
                 "| a | b |\n|---|---|",
                 "[link](https://example.com) **bold**",
                 "\u{1b}]8;;https://example.com\u{7}link\u{1b}]8;;\u{7} tail",

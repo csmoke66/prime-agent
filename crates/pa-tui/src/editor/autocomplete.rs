@@ -28,7 +28,7 @@ impl Editor {
             return None;
         }
         // The context only reports text up to the cursor, so a cursor
-        // inside the argument (`/model g|p`) would filter the picker on
+        // inside the argument (`/mcp li|nk`) would filter the picker on
         // the head and leave the tail behind on accept. Only intercept
         // when the cursor sits at the argument's end.
         let line: Vec<char> = self.lines[self.cursor_line].chars().collect();

@@ -1,0 +1,1 @@
+- Added `/harness` to browse live session-local and global harness entries, inspect saved skill references, and delete individual entries after confirmation.

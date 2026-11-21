@@ -1,11 +1,13 @@
-//! The interactive client-settings seam implementation: every call opens the
-//! file-backed settings manager over the run's directories.
+//! The interactive client-settings seam over the run's local settings and harness stores.
 
-use anyhow::Result;
-use std::path::PathBuf;
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use pa_core::refinement::{self, HarnessScope};
+use pa_core::session_engine::harness_digest::local_harness_dir_for_log;
 use pa_tui::client_settings::ClientSettings;
+use serde_json::Value;
 
 /// The seam handle the interactive run carries.
 #[derive(Clone)]
@@ -22,6 +24,11 @@ impl CliClientSettings {
     fn manager(&self) -> pa_core::settings::SettingsManager {
         pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
     }
+}
+
+fn local_harness_dir(session_file: &str) -> Result<PathBuf> {
+    local_harness_dir_for_log(Path::new(session_file))
+        .with_context(|| format!("Cannot locate the harness store for session {session_file}"))
 }
 
 macro_rules! setting {
@@ -67,6 +74,31 @@ impl ClientSettings for CliClientSettings {
             });
         }
         Ok(())
+    }
+
+    fn harness_entries(&self, session_file: Option<&str>) -> Result<Vec<Value>> {
+        let mut rows = refinement::read_harness_entries(
+            &refinement::get_global_harness_state_dir(&self.agent_dir),
+            HarnessScope::Global,
+        )?;
+        if let Some(session_file) = session_file {
+            rows.extend(refinement::read_harness_entries(
+                &local_harness_dir(session_file)?,
+                HarnessScope::Local,
+            )?);
+        }
+        Ok(rows)
+    }
+
+    fn delete_harness_entry(&self, session_file: Option<&str>, entry: &Value) -> Result<()> {
+        let dir = match entry.get("scope").and_then(Value::as_str) {
+            Some("global") => refinement::get_global_harness_state_dir(&self.agent_dir),
+            Some("local") => local_harness_dir(
+                session_file.context("A persisted session is required to delete a local entry")?,
+            )?,
+            _ => anyhow::bail!("Invalid scope for the selected harness entry"),
+        };
+        refinement::delete_harness_entry_from_store(&dir, entry)
     }
 
     fn compaction_threshold_percent(&self) -> f64 {
@@ -342,6 +374,210 @@ impl ClientSettings for CliClientSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn harness_fixture(source: &Path) -> Value {
+        let selected = json!({
+            "id": "shared",
+            "kind": "memory",
+            "title": "Selected memory",
+            "content": "A useful note",
+            "path": "notes",
+            "reference": {"path": source},
+            "arguments": {"key": "value"},
+            "metadata": {"custom": [1, 2]},
+            "source": "agent",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "version": 1,
+            "future_field": {"enabled": true}
+        });
+        let mut kept = selected.clone();
+        kept["id"] = json!("kept");
+        json!({
+            "schema": 1,
+            "entries": {
+                "memory": { "shared": selected, "kept": kept },
+                "future_kind": { "untouched": {"future_field": 42} }
+            },
+            "refinements": [{
+                "id": "refinement",
+                "trigger": "test",
+                "changes": ["create memory"],
+                "evidence": "",
+                "outcome": "",
+                "created_at": "2026-01-01T00:00:00Z",
+                "future_field": true
+            }],
+            "future_top_level_field": ["untouched"]
+        })
+    }
+
+    fn write_harness_fixture(path: &Path, state: &Value) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, state.to_string()).unwrap();
+    }
+
+    #[test]
+    fn harness_seam_deletes_only_the_selected_store_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join("agent");
+        let settings = CliClientSettings::new(dir.path().to_path_buf(), agent_dir.clone());
+        let parent_artifacts = agent_dir.join("session-artifacts/parent");
+        let parent_file = agent_dir.join("sessions/parent.jsonl");
+        let parent_file = parent_file.to_str().unwrap();
+        let child_file = parent_artifacts.join("rlm-child/child-log.jsonl");
+        let child_file = child_file.to_str().unwrap();
+        let child_harness = parent_artifacts.join("session-artifacts/child-log/harness");
+        let child_path = child_harness.join("harness_state.json");
+        let parent_path = parent_artifacts.join("harness/harness_state.json");
+        let global_path = agent_dir.join("harness/harness_state.json");
+        let source_file = dir.path().join("source.md");
+        std::fs::write(&source_file, "referenced source").unwrap();
+
+        let global = harness_fixture(&source_file);
+        let mut child = global.clone();
+        // The store, not a field claiming a different scope, identifies the row.
+        child["entries"]["memory"]["shared"]["scope"] = json!("global");
+        write_harness_fixture(&global_path, &global);
+        write_harness_fixture(&parent_path, &global);
+        write_harness_fixture(&child_path, &child);
+        let history = child_harness.join("refinement_history.jsonl");
+        std::fs::write(&history, "{\"id\":\"history\"}\n").unwrap();
+
+        let rows = settings.harness_entries(Some(child_file)).unwrap();
+        let global_rows = settings.harness_entries(None).unwrap();
+        let parent_rows = settings.harness_entries(Some(parent_file)).unwrap();
+        assert_eq!(parent_rows.len(), 4);
+        assert_eq!(
+            parent_rows
+                .iter()
+                .filter(|entry| entry["scope"] == "local")
+                .count(),
+            2
+        );
+        assert_eq!(rows.len(), 4);
+        assert_eq!(global_rows.len(), 2);
+        let selected = rows
+            .iter()
+            .find(|entry| entry["scope"] == "local" && entry["id"] == "shared")
+            .unwrap();
+        let mut expected = child["entries"]["memory"]["shared"].clone();
+        expected["scope"] = json!("local");
+        assert_eq!(selected, &expected);
+        assert!(settings.delete_harness_entry(None, selected).is_err());
+
+        // Edits to a neighboring record after listing must survive deletion.
+        child["entries"]["memory"]["kept"]["future_field"] = json!("updated");
+        write_harness_fixture(&child_path, &child);
+        settings
+            .delete_harness_entry(Some(child_file), selected)
+            .unwrap();
+
+        child["entries"]["memory"]
+            .as_object_mut()
+            .unwrap()
+            .remove("shared");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&std::fs::read(&child_path).unwrap()).unwrap(),
+            child
+        );
+        assert_eq!(
+            std::fs::read_to_string(&global_path).unwrap(),
+            global.to_string()
+        );
+        assert_eq!(
+            std::fs::read_to_string(&parent_path).unwrap(),
+            global.to_string()
+        );
+        assert_eq!(
+            std::fs::read_to_string(&source_file).unwrap(),
+            "referenced source"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&history).unwrap(),
+            "{\"id\":\"history\"}\n"
+        );
+        let rows = settings.harness_entries(Some(child_file)).unwrap();
+        assert_eq!(rows.len(), 3);
+        let selected = rows
+            .iter()
+            .find(|entry| entry["scope"] == "global" && entry["id"] == "shared")
+            .unwrap();
+        settings
+            .delete_harness_entry(Some(child_file), selected)
+            .unwrap();
+        assert!(!settings
+            .harness_entries(Some(child_file))
+            .unwrap()
+            .iter()
+            .any(|entry| entry["id"] == "shared"));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&std::fs::read(&child_path).unwrap()).unwrap(),
+            child,
+        );
+    }
+
+    #[test]
+    fn harness_seam_rejects_a_stale_snapshot_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = CliClientSettings::new(dir.path().to_path_buf(), dir.path().to_path_buf());
+        let path = dir.path().join("harness/harness_state.json");
+        let original = harness_fixture(&dir.path().join("source.md"));
+        write_harness_fixture(&path, &original);
+        let rows = settings.harness_entries(None).unwrap();
+        let selected = rows.iter().find(|entry| entry["id"] == "shared").unwrap();
+
+        for (field, value) in [
+            ("version", json!(2)),
+            ("content", json!("changed without a version bump")),
+            ("future_field", json!({"enabled": false})),
+        ] {
+            let mut changed = original.clone();
+            changed["entries"]["memory"]["shared"][field] = value;
+            write_harness_fixture(&path, &changed);
+            let before = std::fs::read(&path).unwrap();
+            let error = settings.delete_harness_entry(None, selected).unwrap_err();
+            assert!(error.to_string().contains("changed or was removed"));
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+
+        std::fs::remove_file(&path).unwrap();
+        let error = settings.delete_harness_entry(None, selected).unwrap_err();
+        assert!(error.to_string().contains("changed or was removed"));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn harness_seam_distinguishes_an_absent_store_from_malformed_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = CliClientSettings::new(dir.path().to_path_buf(), dir.path().to_path_buf());
+        let harness_dir = dir.path().join("harness");
+        let path = harness_dir.join("harness_state.json");
+        assert!(settings.harness_entries(None).unwrap().is_empty());
+        assert!(!harness_dir.exists());
+        std::fs::create_dir(&harness_dir).unwrap();
+
+        for malformed in [
+            "}",
+            r#"{"entries":[]}"#,
+            r#"{"entries":{"memory":{"bad":1}}}"#,
+        ] {
+            std::fs::write(&path, malformed).unwrap();
+            let error = settings.harness_entries(None).unwrap_err();
+            assert!(error.to_string().contains("malformed harness state"));
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), malformed);
+        }
+
+        // An existing snapshot must not overwrite a store that became malformed.
+        write_harness_fixture(&path, &harness_fixture(&dir.path().join("source.md")));
+        let rows = settings.harness_entries(None).unwrap();
+        let malformed = br#"{"entries":{"memory":[]}}"#;
+        std::fs::write(&path, malformed).unwrap();
+        let error = settings.delete_harness_entry(None, &rows[0]).unwrap_err();
+        assert!(error.to_string().contains("malformed harness state"));
+        assert_eq!(std::fs::read(&path).unwrap().as_slice(), malformed);
+    }
 
     /// The seam over the real pa-core settings store.
     #[test]

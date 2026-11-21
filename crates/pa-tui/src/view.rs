@@ -90,6 +90,7 @@ pub struct AgentView {
     /// like the model picker.
     pub(crate) choice_picker: Option<crate::choice_picker::ChoicePicker>,
     pub mcp_view: Option<crate::mcp_view::McpView>,
+    pub(crate) harness_browser: Option<crate::harness_browser::HarnessBrowser>,
     /// The factory page: while set, it owns the editor dock like the
     /// inline pickers (one panel per live factory run) — the activity
     /// dock's factory group's destination.
@@ -264,6 +265,7 @@ impl AgentView {
         // editor behind.
         if self.factory_view.is_some()
             || self.heartbeats_picker.is_some()
+            || self.harness_browser.is_some()
             || self.bash_view.is_some()
             || self.goal_panel.is_some()
             || self.info_panel.is_some()
@@ -307,6 +309,7 @@ impl AgentView {
             fork_selector: None,
             choice_picker: None,
             mcp_view: None,
+            harness_browser: None,
             factory_view: None,
             heartbeats_picker: None,
             goal_panel: None,

@@ -73,6 +73,12 @@ impl AgentView {
             let mut dock = prompt_context;
             dock.extend(mcp_view.render(&self.theme, width, self.editor.keybindings()));
             Some(dock)
+        } else if let Some(browser) = self.harness_browser.as_mut() {
+            let mut dock = prompt_context;
+            let chrome_rows = 1 + dock.len() + usize::from(self.chrome.speed_text.is_some());
+            let browser_rows = height.saturating_sub(chrome_rows + FULLSCREEN_MIN_TRANSCRIPT_ROWS);
+            dock.extend(browser.render(&self.theme, width, browser_rows));
+            Some(dock)
         } else if let Some(factory_view) = self.factory_view.as_ref() {
             let mut dock = prompt_context;
             dock.extend(factory_view.render(&self.theme, width, self.editor.keybindings()));
@@ -282,6 +288,7 @@ impl AgentView {
             || self.model_picker.is_some()
             || self.choice_picker.is_some()
             || self.heartbeats_picker.is_some()
+            || self.harness_browser.is_some()
             || self.goal_panel.is_some()
             || self.bash_view.is_some()
             || self.info_panel.is_some()

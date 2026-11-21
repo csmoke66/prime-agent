@@ -544,6 +544,14 @@ impl SessionUi {
             // The auth flows run in the client process; other management subcommands
             // surface through the `mcp` CLI command instead of the TUI.
             "mcp" => self.handle_mcp_command(resolved, view).await?,
+            "harness" => {
+                if !resolved.args.is_empty() {
+                    view.editor.set_text(text);
+                    self.error_row("Usage: /harness", view);
+                    return Ok(());
+                }
+                self.open_harness_browser(view);
+            }
             // `/plugins [search]` opens the `/mcp` view (this client folds the
             // catalog into it); an argument prefills its search field.
             "plugins" => {

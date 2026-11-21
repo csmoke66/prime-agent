@@ -296,6 +296,10 @@ fn the_headless_settle_names_every_stuck_member() {
             ..Default::default()
         },
         HeadlessSettle {
+            harness_pending: true,
+            ..Default::default()
+        },
+        HeadlessSettle {
             anthropic_warning_mark_pending: true,
             ..Default::default()
         },
@@ -328,12 +332,13 @@ fn the_headless_settle_names_every_stuck_member() {
         share_pending: true,
         reload_pending: true,
         traces_upload_pending: true,
+        harness_pending: true,
         auth_panel_open: true,
         traces_login_pending: true,
         mcp_auth_pending: true,
         anthropic_warning_mark_pending: true,
     };
-    assert_eq!(all.blockers().len(), 13);
+    assert_eq!(all.blockers().len(), 14);
     assert!(
         all.blockers()
             .iter()

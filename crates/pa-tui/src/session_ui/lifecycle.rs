@@ -161,6 +161,7 @@ impl SessionUi {
             activity_group: crate::chrome::ActivityGroup::Subagents,
             subagent_counts: crate::subagents::SubagentCounts::default(),
             session_file: None,
+            harness_work: super::harness::HarnessWork::Closed,
             pending_selection: None,
             pending_selection_rlm_depth: None,
             pending_selection_origin: None,
@@ -408,6 +409,17 @@ impl SessionUi {
         );
         let reconstructed = reconstruct(&attach);
         let mounted_session_changes = previous != attach.active_session_id;
+        let session_file = state
+            .and_then(|state| state.get("sessionFile"))
+            .and_then(Value::as_str)
+            .filter(|file| !file.is_empty());
+        if mounted_session_changes
+            || self.session_id != reconstructed.session_id
+            || self.session_file.as_deref() != session_file
+        {
+            self.harness_work.retire();
+        }
+        self.session_file = session_file.map(str::to_string);
         self.active_session_id = attach.active_session_id;
         // Retire the superseded id's subscription now, addressed by the captured previous id (the
         // detach must target the OLD address, not the newly adopted one).
@@ -436,13 +448,6 @@ impl SessionUi {
         self.session_name.clone_from(&reconstructed.session_name);
         self.service_tier.clone_from(&reconstructed.service_tier);
         self.pending_model_fallback_message = reconstructed.model_fallback_message;
-        self.session_file = attach
-            .snapshot
-            .get("state")
-            .and_then(|state| state.get("sessionFile"))
-            .and_then(Value::as_str)
-            .filter(|file| !file.is_empty())
-            .map(str::to_string);
         // The subagent summary follows the fresh session's family; the focus
         // returns to the editor.
         self.roster.clear();
@@ -580,6 +585,7 @@ impl SessionUi {
     /// Fold the pending snapshot into the view (fresh transcript, footer
     /// labels). Called after attach and after every session switch.
     pub(crate) fn rebuild_view(&mut self, view: &mut AgentView, kind: &RebuildKind) {
+        self.dismiss_retired_harness_browser(view);
         let resync_bash = self.resync_bash.take();
         // The held cards' fate diverges by rebuild: a rebind drops them with the
         // old transcript, a resync keeps them mounted above the indicator.
@@ -841,6 +847,7 @@ mod backfill_tests {
         backfill_tx: mpsc::UnboundedSender<TranscriptPageNote>,
     ) -> (SessionUi, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::UnixListener::bind(socket).unwrap();
+        let session_dir = socket.parent().unwrap().to_owned();
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let (read, mut write) = stream.into_split();
@@ -850,14 +857,18 @@ mod backfill_tests {
                 let request: Value = serde_json::from_str(&line).unwrap();
                 let kind = request["command"]["type"].as_str().unwrap();
                 let data = match kind {
-                    "attach" => json!({
-                        "activeSessionId": "s1", "snapshot": {
-                            "activeSessionId": "s1", "summary": {"id": "s1", "cwd": "/tmp"},
-                            "state": {"sessionId": "s1", "cwd": "/tmp", "isStreaming": false},
-                            "messages": [], "historyBefore": 1, "lastEventSequence": 0,
-                        }, "replay": {"status": "complete", "toSequence": 0},
-                        "lastEventSequence": 0,
-                    }),
+                    "attach" => {
+                        let id = request["command"]["activeSessionId"].as_str().unwrap();
+                        let session_file = session_dir.join(format!("{id}.jsonl"));
+                        json!({
+                            "activeSessionId": id, "snapshot": {
+                                "activeSessionId": id, "summary": {"id": id, "cwd": "/tmp"},
+                                "state": {"sessionId": id, "sessionFile": session_file, "cwd": "/tmp", "isStreaming": false},
+                                "messages": [], "historyBefore": 1, "lastEventSequence": 0,
+                            }, "replay": {"status": "complete", "toSequence": 0},
+                            "lastEventSequence": 0,
+                        })
+                    }
                     "get_messages" => {
                         json!({"messages": [{"role": "user", "content": "rebuilt transcript", "timestamp": 1}]})
                     }
@@ -900,6 +911,49 @@ mod backfill_tests {
         .await
         .unwrap();
         (session, server)
+    }
+
+    #[tokio::test]
+    async fn a_harness_browser_is_dismissed_on_session_switch() {
+        use crate::harness_browser::HarnessBrowser;
+        use crate::session_ui::harness::{HarnessUpdate, HarnessWork};
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let dir = tempfile::tempdir().unwrap();
+            let socket = dir.path().join("harness.sock");
+            let (mut session, server) = mock_session(&socket, mpsc::unbounded_channel().0).await;
+            assert_eq!(
+                session.session_file.as_deref().map(std::path::Path::new),
+                Some(dir.path().join("s1.jsonl").as_path())
+            );
+            let mut view = AgentView::new(crate::theme::Theme::builtin(
+                "prime",
+                crate::theme::ColorMode::TrueColor,
+            ));
+            view.harness_browser = Some(HarnessBrowser::loading());
+            session.harness_work = HarnessWork::Reading(tokio::spawn(std::future::pending()));
+
+            session.attach_session("s1", DockFold::Held).await.unwrap();
+            session.rebuild_view(&mut view, &RebuildKind::Resync);
+            assert!(view.harness_browser.is_some());
+            assert!(session.harness_work.has_pending_job());
+
+            session.attach_session("s2", DockFold::Held).await.unwrap();
+            session.rebuild_view(&mut view, &RebuildKind::Rebind);
+            assert_eq!(
+                session.session_file.as_deref().map(std::path::Path::new),
+                Some(dir.path().join("s2.jsonl").as_path())
+            );
+            assert!(view.harness_browser.is_none());
+            assert!(matches!(session.harness_work, HarnessWork::Closed));
+            session.apply_harness_update(HarnessUpdate::Entries(Ok(Vec::new())), &mut view);
+            assert!(view.harness_browser.is_none());
+            assert!(matches!(session.harness_work, HarnessWork::Closed));
+            drop(session);
+            server.abort();
+        })
+        .await
+        .expect("mock session open and switch complete within ten seconds");
     }
 
     /// A rebind that tears down an agents-view panel drops its return: a later dock-opened shells

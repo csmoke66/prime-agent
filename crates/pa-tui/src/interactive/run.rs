@@ -1483,6 +1483,9 @@ async fn run_interactive_surface(
                     session.apply_model_catalog(update, &mut view);
                 }
             }
+            update = session.harness_work.next() => {
+                session.apply_harness_update(update, &mut view);
+            }
             daybreak_blue = async {
                 match session.daybreak_blue_refresh.as_mut() {
                     Some(refresh) => refresh.await,
@@ -1724,6 +1727,7 @@ async fn run_interactive_surface(
                 // accumulated state now.
             }
         }
+        session.dismiss_retired_harness_browser(&mut view);
 
         // OSC 7501 program status.
         if renderer.is_terminal() {

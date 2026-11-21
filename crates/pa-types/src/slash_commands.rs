@@ -25,9 +25,8 @@ pub enum SlashCommandExecution {
     Session,
 }
 
-/// One builtin slash command. Descriptions and argument hints are user-facing: byte-identical to
-/// the TS table. `update` is the one sanctioned divergence (2026-09-27 operator directive): it is
-/// the TS->Rust migration path.
+/// One builtin slash command. Descriptions and argument hints are user-facing:
+/// existing TS commands retain their text except for `update`, the TS->Rust migration path.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltinSlashCommand {
     pub name: &'static str,
@@ -70,6 +69,7 @@ const CANONICAL_BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     BuiltinSlashCommand { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", execution: SlashCommandExecution::Client, argument_hint: Some("[--name \"session name\" --] [prompt]"), aliases: &["clear"], takes_argument: true },
     BuiltinSlashCommand { name: "compact", description: "Compact the session context; optional instructions focus the summary", execution: SlashCommandExecution::Session, argument_hint: Some("[instructions]"), aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "refine", description: "Refine continual harness prompt notes, skills, subagents, and memory", execution: SlashCommandExecution::Session, argument_hint: None, aliases: &[], takes_argument: false },
+    BuiltinSlashCommand { name: "harness", description: "Browse and delete local and global harness entries", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "goal", description: "Set or view a persistent goal; supports pause, resume, and clear", execution: SlashCommandExecution::Session, argument_hint: Some("[objective]"), aliases: &[], takes_argument: true },
     BuiltinSlashCommand { name: "autonomous", description: "Set or view autonomous mode with an optional budget", execution: SlashCommandExecution::Session, argument_hint: Some("[status|off|on [--max-continuations <n>] [--max-turns <n>] [--max-tokens <n>] [--timeout-ms <n>] [--gate <command>]]"), aliases: &[], takes_argument: true },
     BuiltinSlashCommand { name: "rlm-max-depth", description: "Set/view the per-chat persistent RLM max depth immediately; never interrupts or queues the running turn", execution: SlashCommandExecution::Client, argument_hint: Some("[<int> [--global]]"), aliases: &[], takes_argument: true },

@@ -87,6 +87,7 @@ impl SessionUi {
         let overlay_focused = view.model_picker.is_some()
             || view.choice_picker.is_some()
             || view.heartbeats_picker.is_some()
+            || view.harness_browser.is_some()
             || view.goal_panel.is_some()
             || view.bash_view.is_some()
             || view.info_panel.is_some()
@@ -338,7 +339,7 @@ impl SessionUi {
         }
         // Any non-Escape key re-arms the double-Esc tree shortcut (one shot per input chain);
         // Escape itself never resets, so repeated Escape converges to the inert empty state.
-        if id.is_some_and(|id| id != "escape") {
+        if id.as_deref().is_some_and(|id| id != "escape") {
             self.escape_tree_shortcut_spent = false;
         }
         // The `/model` picker owns the frame while open: its keys go before the
@@ -352,6 +353,12 @@ impl SessionUi {
         }
         if view.mcp_view.is_some() {
             return self.handle_mcp_view_key(key, view);
+        }
+        if view.harness_browser.is_some() {
+            if let Some(id) = id.as_deref() {
+                self.handle_harness_key(id, view);
+            }
+            return Ok(());
         }
         // The factory page owns the frame the same way.
         if view.factory_view.is_some() {
@@ -392,7 +399,7 @@ impl SessionUi {
         if view.share_loader.is_some() {
             return self.handle_share_loader_key(key, view);
         }
-        let Some(id) = key_event_to_id(&key) else {
+        let Some(id) = id else {
             return Ok(());
         };
         // Dispatch order: the transcript viewport keys, then the focused subagent summary line,

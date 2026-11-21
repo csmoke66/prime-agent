@@ -8,6 +8,7 @@ mod auth;
 mod bash;
 mod commands;
 mod factory;
+mod harness;
 mod heartbeats;
 mod keys;
 mod lifecycle;
@@ -341,6 +342,7 @@ pub(crate) struct SessionUi {
     /// This session's persisted file path (family identity of the
     /// subagent linkage; `None` for unpersisted sessions).
     session_file: Option<String>,
+    pub(crate) harness_work: harness::HarnessWork,
     pub(crate) pending_selection: Option<SessionSelection>,
     pub(crate) pending_selection_rlm_depth: Option<u32>,
     pub(crate) pending_selection_origin: Option<crate::interactive::SelectionOrigin>,

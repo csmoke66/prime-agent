@@ -292,10 +292,13 @@ impl SessionUi {
                             "The Prime Agent daemon shut down while this window was attached. The session transcript remains saved; restart Prime Agent and reopen it from Agents View.",
                             view,
                         ),
-                        "replaced" => self.error_row(
-                            "The daemon replaced this agent session with another session. Reopen the current session from Agents View.",
-                            view,
-                        ),
+                        "replaced" => {
+                            self.close_harness_browser(view);
+                            self.error_row(
+                                "The daemon replaced this agent session with another session. Reopen the current session from Agents View.",
+                                view,
+                            );
+                        }
                         "killed" => self.error_row(
                             "The daemon stopped this agent session. Its transcript remains saved and can be reopened from Agents View.",
                             view,
@@ -386,6 +389,7 @@ impl SessionUi {
                     && !active_session_id.is_empty()
                     && active_session_id != self.active_session_id
                 {
+                    self.close_harness_browser(view);
                     self.pending_rebind = Some(active_session_id);
                 }
             }

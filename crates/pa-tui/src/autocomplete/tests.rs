@@ -66,6 +66,14 @@ fn slash_suggestions_filter_fuzzily() {
 }
 
 #[test]
+fn harness_completes_from_the_client_registry() {
+    let provider = provider("/tmp");
+    let suggestions = ready(provider.get_suggestions(&["/harn".to_string()], 0, 5, false));
+    assert_eq!(suggestions.items[0].value, "harness");
+    assert!(suggestions.items[0].argument_hint.is_none());
+}
+
+#[test]
 fn hidden_commands_drop_rows_from_the_menu() {
     let mut provider = provider("/tmp");
     let visible = provider.get_suggestions(&["/f".to_string()], 0, 2, false);

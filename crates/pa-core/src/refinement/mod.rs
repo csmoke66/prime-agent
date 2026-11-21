@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 /// Refinement entry kinds (the continual harness component set).
 pub const REFINEMENT_KINDS: [&str; 5] = ["prompt", "memory", "skill", "subagent", "factory"];
@@ -250,6 +252,86 @@ pub fn load_harness_state(harness_state_dir: &Path, scope: HarnessScope) -> Harn
     state
 }
 
+fn read_harness_document(path: &Path) -> anyhow::Result<Option<Map<String, Value>>> {
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot read harness state at {}", path.display()));
+        }
+    };
+    let document: Map<String, Value> = serde_json::from_slice(&raw)
+        .with_context(|| format!("malformed harness state at {}", path.display()))?;
+    anyhow::ensure!(
+        !document.get("schema").is_some_and(|value| !value.is_u64())
+            && !document.get("refinements").is_some_and(|value| !value.is_array()),
+        "malformed harness state at {}: invalid schema or refinements",
+        path.display()
+    );
+    Ok(Some(document))
+}
+
+fn harness_entries_object<'a>(
+    document: &'a mut Map<String, Value>,
+    path: &Path,
+) -> anyhow::Result<&'a mut Map<String, Value>> {
+    document
+        .get_mut("entries")
+        .and_then(Value::as_object_mut)
+        .with_context(|| {
+            format!(
+                "malformed harness state at {}: expected an entries object",
+                path.display()
+            )
+        })
+}
+
+/// Read raw entries for the browser, labeling each row by the store it came from.
+/// Unknown fields are left intact and an absent state file is an empty store.
+///
+/// # Errors
+/// Returns an error if the store cannot be read or its entries are malformed.
+pub fn read_harness_entries(
+    harness_state_dir: &Path,
+    scope: HarnessScope,
+) -> anyhow::Result<Vec<Value>> {
+    let path = get_harness_state_path(harness_state_dir);
+    let Some(mut document) = read_harness_document(&path)? else {
+        return Ok(Vec::new());
+    };
+    let scope = match scope {
+        HarnessScope::Local => "local",
+        HarnessScope::Global => "global",
+    };
+    let entries = harness_entries_object(&mut document, &path)?;
+    let mut rows = Vec::new();
+    for kind in REFINEMENT_KINDS {
+        let Some(records) = entries.remove(kind) else {
+            continue;
+        };
+        let Value::Object(records) = records else {
+            anyhow::bail!(
+                "malformed harness state at {}: expected an object for {kind} entries",
+                path.display()
+            );
+        };
+        for (id, mut entry) in records {
+            anyhow::ensure!(
+                entry.get("kind").and_then(Value::as_str) == Some(kind)
+                    && entry.get("id").and_then(Value::as_str) == Some(id.as_str())
+                    && entry.get("title").is_some_and(Value::is_string)
+                    && entry.get("content").is_some_and(Value::is_string),
+                "malformed harness state at {}: invalid {kind} entry {id}",
+                path.display()
+            );
+            entry["scope"] = Value::String(scope.into());
+            rows.push(entry);
+        }
+    }
+    Ok(rows)
+}
+
 /// Merge global + local states: local ids conflict-prefixed with their scope.
 ///
 /// # Panics
@@ -313,13 +395,99 @@ pub fn save_harness_state(
     // Replace the real file behind a state symlink, never the alias: the
     // link survives and both writers keep naming one file.
     let state_path = resolved_state_file(&get_harness_state_path(harness_state_dir));
-    let content = format!("{}\n", serde_json::to_string_pretty(state)?);
+    write_harness_state_file(&state_path, state)?;
+    Ok(state_path)
+}
+
+fn write_harness_state_file(state_path: &Path, state: &impl Serialize) -> anyhow::Result<()> {
+    let mut content = serde_json::to_string_pretty(state)?;
+    content.push('\n');
     crate::settings::storage::atomic_write_with(
-        &state_path,
+        state_path,
         &content,
         crate::settings::storage::AtomicWriteOptions { fsync: true },
-    )?;
-    Ok(state_path)
+    )
+}
+
+fn lock_harness_state_file(state_path: &Path) -> std::io::Result<crate::platform::lock_dir::LockDir> {
+    crate::platform::lock_dir::LockDir::acquire_owned_retrying(
+        state_path,
+        std::time::Duration::from_secs(10),
+        50,
+        std::time::Duration::from_millis(20),
+    )
+}
+
+/// Delete the row returned by [`read_harness_entries`] from its original store.
+/// Only that entry is removed; source files and refinement history are untouched.
+///
+/// # Errors
+/// Returns an error for a missing or changed row, a malformed document, or failed persistence.
+pub fn delete_harness_entry_from_store(
+    harness_state_dir: &Path,
+    snapshot: &Value,
+) -> anyhow::Result<()> {
+    let snapshot = snapshot
+        .as_object()
+        .context("invalid harness entry snapshot")?;
+    let kind = snapshot
+        .get("kind")
+        .and_then(Value::as_str)
+        .filter(|kind| REFINEMENT_KINDS.contains(kind))
+        .context("invalid harness entry kind")?;
+    let id = snapshot
+        .get("id")
+        .and_then(Value::as_str)
+        .context("invalid harness entry ID")?;
+    let stale = || format!("harness entry {kind}:{id} changed or was removed; reopen /harness");
+
+    let path = resolved_state_file(&get_harness_state_path(harness_state_dir));
+    let lock = match lock_harness_state_file(&path) {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(error).with_context(stale);
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot lock harness state at {}", path.display()));
+        }
+    };
+    let mut document = read_harness_document(&path)?.with_context(stale)?;
+    let records = harness_entries_object(&mut document, &path)?
+        .get_mut(kind)
+        .with_context(stale)?
+        .as_object_mut()
+        .with_context(|| {
+            format!(
+                "malformed harness state at {}: expected an object for {kind} entries",
+                path.display()
+            )
+        })?;
+    let current = records
+        .get(id)
+        .with_context(stale)?
+        .as_object()
+        .with_context(|| {
+            format!(
+                "malformed harness state at {}: invalid {kind} entry {id}",
+                path.display()
+            )
+        })?;
+    // Scope is assigned by the store, not by the persisted entry. Compare every
+    // other field, including unknown fields, without changing the loaded document.
+    anyhow::ensure!(
+        current
+            .iter()
+            .all(|(key, value)| key == "scope" || snapshot.get(key) == Some(value))
+            && snapshot
+                .keys()
+                .all(|key| key == "scope" || current.contains_key(key)),
+        "{}",
+        stale()
+    );
+    records.remove(id);
+    lock.ensure_owned()?;
+    write_harness_state_file(&path, &document)
 }
 
 /// Locked read-modify-write of the harness state file: both writer sides
@@ -346,12 +514,7 @@ pub(crate) fn try_update_harness_state<R>(
     // Lock the file the kernel locks: the real file behind a state
     // symlink, so both writers contend on one lock directory.
     let state_path = resolved_state_file(&get_harness_state_path(harness_state_dir));
-    let lock = crate::platform::lock_dir::LockDir::acquire_owned_retrying(
-        &state_path,
-        std::time::Duration::from_secs(10),
-        50,
-        std::time::Duration::from_millis(20),
-    )?;
+    let lock = lock_harness_state_file(&state_path)?;
     let mut state = load_harness_state(harness_state_dir, scope);
     let result = update(&mut state)?;
     lock.ensure_owned()?;
@@ -631,6 +794,44 @@ mod tests {
             updated_at: "2024-01-01T00:00:00.000Z".to_string(),
             version: 1,
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn harness_browser_delete_contends_on_the_state_symlink_target_lock() {
+        let root = tempfile::tempdir().unwrap();
+        let harness_dir = root.path().join("harness");
+        std::fs::create_dir(&harness_dir).unwrap();
+        let alias = get_harness_state_path(&harness_dir);
+        let target = root.path().join("actual-state.json");
+        std::os::unix::fs::symlink("../actual-state.json", &alias).unwrap();
+
+        let mut state = empty_harness_state();
+        state
+            .entries
+            .get_mut(&RefinementKind::Memory)
+            .unwrap()
+            .insert(
+                "m1".to_string(),
+                entry("m1", RefinementKind::Memory, HarnessScope::Global, "original"),
+            );
+        save_harness_state(&harness_dir, &state).unwrap();
+        let rows = read_harness_entries(&harness_dir, HarnessScope::Global).unwrap();
+
+        let lock = lock_harness_state_file(&target).unwrap();
+        let before = std::fs::read(&target).unwrap();
+        let error = delete_harness_entry_from_store(&harness_dir, &rows[0]).unwrap_err();
+        assert!(error.to_string().contains("cannot lock harness state"));
+        assert_eq!(std::fs::read(&target).unwrap(), before);
+        drop(lock);
+
+        delete_harness_entry_from_store(&harness_dir, &rows[0]).unwrap();
+        assert!(std::fs::symlink_metadata(alias).unwrap().is_symlink());
+        assert!(
+            read_harness_entries(&harness_dir, HarnessScope::Global)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

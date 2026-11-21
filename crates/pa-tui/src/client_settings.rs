@@ -1,9 +1,9 @@
 //! The client-settings seam: pa-tui depends on pa-types only, so
 //! interactive commands that read or persist user settings call this
-//! trait; the composition root (pa-cli) implements it over the real
-//! settings manager. Setters persist the global scope.
+//! trait; the composition root (pa-cli) implements it over the local stores.
 
 use anyhow::Result;
+use serde_json::Value;
 
 pub trait ClientSettings: Send + Sync {
     /// Master harness refinement switch, enabled by default.
@@ -16,6 +16,22 @@ pub trait ClientSettings: Send + Sync {
     /// Returns an error if the settings store fails or is unavailable.
     fn set_harness_refinements(&self, _enabled: bool) -> Result<()> {
         anyhow::bail!("Harness refinement settings are unavailable")
+    }
+
+    /// Load raw harness entries from the global and active session's local stores.
+    ///
+    /// # Errors
+    /// Returns an error if the harness store fails or is unavailable.
+    fn harness_entries(&self, _session_file: Option<&str>) -> Result<Vec<Value>> {
+        anyhow::bail!("Harness storage is unavailable")
+    }
+
+    /// Delete the selected entry from the store it came from if it is unchanged.
+    ///
+    /// # Errors
+    /// Returns an error if the selection is stale or the harness store fails or is unavailable.
+    fn delete_harness_entry(&self, _session_file: Option<&str>, _entry: &Value) -> Result<()> {
+        anyhow::bail!("Harness storage is unavailable")
     }
 
     /// `webSearchProvider` (default `serper`): the service the

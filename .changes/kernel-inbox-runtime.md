@@ -1,0 +1,1 @@
+- Kernel startup now checks for `rlm.inbox.read()` and `rlm.inbox.count()` rather than accepting an older Python runtime without inbox support.

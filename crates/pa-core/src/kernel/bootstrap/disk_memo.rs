@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// The on-disk schema. Bumped when the memo key format changes; every entry
-/// written under an older schema then reads as a miss and re-probes.
-pub(crate) const DISK_MEMO_SCHEMA: u64 = 1;
+/// Bump when the memo key or required runtime capabilities change. Old probes
+/// that didn't check the kernel's inbox interface must not certify readiness.
+pub(crate) const DISK_MEMO_SCHEMA: u64 = 2;
 pub(crate) const DISK_MEMO_FILE: &str = ".runtime-probe-memo.json";
 
 /// Same bound and same clear-at-cap rule as the in-process memo: one rule, two layers. A map (not a

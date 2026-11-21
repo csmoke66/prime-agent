@@ -377,7 +377,14 @@ async fn run_stream(
         connection: crate::utils_inner::stream_failure::ConnectionErrorProfile::RawFetch,
         transport: crate::utils_inner::http::Transport::Http1,
     })
-    .await?;
+    .await
+    .inspect_err(|error| {
+        if transport != Transport::Sse && matches!(error, ProviderError::Connection(_)) {
+            if let Some(id) = session_id.as_deref() {
+                session::clear_failed_fallback(id);
+            }
+        }
+    })?;
 
     if let Some(on_response) = &options.base.on_response {
         on_response(
@@ -1454,6 +1461,38 @@ mod tests {
             crate::types::AssistantContent::Text(text) => Some(text.text.clone()),
             _ => None,
         })
+    }
+
+    #[tokio::test]
+    async fn websocket_recovers_after_sse_fallback_connection_fails() {
+        let server = spawn_scripted_codex_server(vec![vec![codex_response_events(
+            "resp_ok", "msg_ok", "Recovered",
+        )]])
+        .await;
+        let session = "retry-websocket-after-failed-fallback";
+        let options = codex_test_options(&server, session);
+        let context = codex_test_context("Continue");
+        // Reserve a port without listening so both initial transports fail.
+        let unavailable = tokio::net::TcpSocket::new_v4().unwrap();
+        unavailable.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let failed = stream_openai_codex_responses(
+            &codex_test_model(unavailable.local_addr().unwrap().port()),
+            &context,
+            Some(&options),
+        )
+        .result()
+        .await;
+        assert_eq!(failed.stop_reason, StopReason::Error);
+        let recovered = stream_openai_codex_responses(
+            &codex_test_model(server.port),
+            &context,
+            Some(&options),
+        )
+        .result()
+        .await;
+        assert_eq!(codex_message_text(&recovered).as_deref(), Some("Recovered"));
+        session::close_websocket_sessions(Some(session));
+        session::reset_debug_stats(Some(session));
     }
 
     /// Lifecycle and vendor metadata events before a stale `previous_response_id` rejection

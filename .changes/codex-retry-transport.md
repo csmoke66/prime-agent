@@ -1,0 +1,1 @@
+- Fixed Codex sessions sticking to HTTP after a WebSocket interruption even when the HTTP fallback also failed to connect. The next request can use WebSocket again.

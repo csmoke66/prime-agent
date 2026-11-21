@@ -76,6 +76,16 @@ pub fn record_websocket_failure(session_id: Option<&str>, error: &CodexStreamErr
     session_stats.websocket_fallback_active = Some(true);
 }
 
+/// A failed SSE connection is no longer a viable fallback for the next request.
+pub(super) fn clear_failed_fallback(session_id: &str) {
+    if let Ok(mut state) = session_state().lock() {
+        state.sse_fallback_sessions.remove(session_id);
+        if let Some(stats) = state.stats.get_mut(session_id) {
+            stats.websocket_fallback_active = Some(false);
+        }
+    }
+}
+
 #[must_use]
 pub fn get_debug_stats(session_id: &str) -> Option<WebSocketDebugStats> {
     session_state().lock().ok()?.stats.get(session_id).cloned()

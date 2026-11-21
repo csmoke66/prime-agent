@@ -480,9 +480,15 @@ fn safety_failure_text_is_replaced_before_persistence() {
 
     record_stream_failure((&provider, &model, &api), &mut output, &error);
 
+    assert_eq!(output.stop_reason, crate::types::StopReason::Stop);
+    assert_eq!(output.error_message, None);
     assert_eq!(
-        output.error_message.as_deref(),
-        Some(PROVIDER_BLOCKED_MESSAGE)
+        output.content,
+        vec![AssistantContent::Text(TextContent {
+            text: PROVIDER_BLOCKED_MESSAGE.to_string(),
+            text_signature: None,
+            rest: Default::default(),
+        })]
     );
     let diagnostic = &output.diagnostics.as_ref().expect("diagnostic")[0];
     assert!(diagnostic.error.is_none());

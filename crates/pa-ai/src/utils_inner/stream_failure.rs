@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use serde::Serialize;
 use serde_json::Map;
 
-use crate::types::AssistantMessage;
+use crate::types::{AssistantContent, AssistantMessage, StopReason, TextContent};
 use crate::utils::diagnostics::{
     append_assistant_message_diagnostic, create_assistant_message_diagnostic, now_ms,
     DiagnosticErrorInfo,
@@ -871,8 +871,14 @@ pub fn record_stream_failure(
     );
     if redacted {
         info.raw = None;
-        output.content.clear();
-        output.error_message = Some(PROVIDER_BLOCKED_MESSAGE.to_string());
+        output.content = vec![AssistantContent::Text(TextContent {
+            text: PROVIDER_BLOCKED_MESSAGE.to_string(),
+            text_signature: None,
+            rest: Map::default(),
+        })];
+        output.stop_reason = StopReason::Stop;
+        output.stop_reason_raw = None;
+        output.error_message = None;
     }
     let info_json = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
     append_assistant_message_diagnostic(

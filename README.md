@@ -40,13 +40,13 @@ Install the latest stable version with the one-command installer:
 curl -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh
 ```
 
-On Windows, install from PowerShell:
+On Windows x64, install this fork from PowerShell:
 
 ```powershell
-irm https://app.primeintellect.ai/prime-agent/install.ps1 | iex
+irm https://raw.githubusercontent.com/csmoke66/prime-agent/main/install.ps1 | iex
 ```
 
-The Windows installer downloads the latest stable Windows x64 build and verifies its checksum before installation.
+The installer downloads the fork's [published Windows build](https://github.com/csmoke66/prime-agent/releases/latest) and verifies its SHA-256 checksum. To publish the first build, enable [GitHub Actions](https://github.com/csmoke66/prime-agent/actions) on the fork and push `main` from GitHub Desktop. Wait for the Windows publish workflow to finish before running the command. No version bump, manual tag, or R2 account is needed.
 
 ## License
 

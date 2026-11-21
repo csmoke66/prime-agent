@@ -1,7 +1,6 @@
-# Windows installer channel-selection regression: missing stable artifacts
-# must fail, explicit beta must work, and the production default stays stable.
-# Uses a local HTTP fixture with a stub payload; the Windows runtime battery
-# separately verifies the real executable and production one-liner.
+# Windows installer channel and URL regression. The local HTTP fixture serves
+# both the legacy custom-channel layout and the fork's GitHub Releases layout.
+# The Windows runtime battery separately verifies the real executable.
 
 $ErrorActionPreference = 'Stop'
 
@@ -43,13 +42,20 @@ Set-Content -LiteralPath (Join-Path $channel 'beta.json') -Value ('{"version": "
 # It dials the channel server's $baseUrl, which the try block below learns
 # from the server itself.
 function Invoke-Installer {
-    param([string]$ChannelKnob, [string]$Prefix)
+    param(
+        [string]$ChannelKnob,
+        [string]$Prefix,
+        [string]$Installer = (Join-Path $repo 'install.ps1'),
+        [string]$DownloadBase = $baseUrl,
+        [string]$VersionPin
+    )
     Remove-Item -Path 'Env:PRIME_AGENT_DOWNLOAD_BASE_URL', 'Env:PRIME_AGENT_RELEASE_CHANNEL', 'Env:PRIME_AGENT_RUST_PREFIX', 'Env:PRIME_AGENT_ALLOW_HTTP', 'Env:PRIME_AGENT_VERSION' -ErrorAction SilentlyContinue
-    $env:PRIME_AGENT_DOWNLOAD_BASE_URL = $baseUrl
+    if ($DownloadBase) { $env:PRIME_AGENT_DOWNLOAD_BASE_URL = $DownloadBase }
     $env:PRIME_AGENT_ALLOW_HTTP = '1'
     $env:PRIME_AGENT_RUST_PREFIX = $Prefix
     if ($ChannelKnob) { $env:PRIME_AGENT_RELEASE_CHANNEL = $ChannelKnob }
-    $lines = @(& pwsh -NoProfile -File (Join-Path $repo 'install.ps1') 2>&1 | ForEach-Object { "$_" })
+    if ($VersionPin) { $env:PRIME_AGENT_VERSION = $VersionPin }
+    $lines = @(& pwsh -NoProfile -File $Installer 2>&1 | ForEach-Object { "$_" })
     return [pscustomobject]@{ Lines = $lines; Exit = $LASTEXITCODE }
 }
 
@@ -129,7 +135,7 @@ try {
     $marker = Get-Content -LiteralPath (Join-Path $prefixBeta 'share\prime-agent\.prime-agent-install') -Raw
     if ($marker -ne "install-rust.sh channel beta`nversion $betaVersion") { throw "unexpected beta marker: $marker" }
 
-    # Publish stable and verify the production default selects its artifact.
+    # Publish stable and verify the custom-base default selects its artifact.
     $stableFile = "prime-agent-$stableVersion-$platform.tar.gz"
     $stableDir = Join-Path $channel "releases\v$stableVersion"
     New-Item -ItemType Directory -Path $stableDir -Force | Out-Null
@@ -149,7 +155,66 @@ try {
         if (-not (Test-Path (Join-Path $prefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) { throw "missing payload in $prefix" }
     }
 
-    Write-Host "WIN_CHANNEL_SELECTION default=$stableVersion explicit-beta=$betaVersion; missing stable artifacts refused"
+    # Redirect only the fork's built-in origin to the fixture, not the override:
+    # this exercises the unstamped default, including both release URL shapes.
+    $installerSource = Get-Content -LiteralPath (Join-Path $repo 'install.ps1') -Raw
+    $forkInstaller = Join-Path $scratch 'install-fork.ps1'
+    Set-Content -LiteralPath $forkInstaller -Value ($installerSource.Replace('https://github.com/csmoke66/prime-agent/releases', "$baseUrl/fork/releases"))
+    $forkPrefix = Join-Path $scratch 'prefix-fork'
+    $forkArgs = @{ Installer = $forkInstaller; DownloadBase = ''; Prefix = $forkPrefix }
+    $missingFork = Invoke-Installer @forkArgs
+    if ($missingFork.Exit -eq 0 -or ($missingFork.Lines -join ' ') -notmatch 'no Windows build has been published on the fork.*push main from GitHub Desktop') {
+        $missingFork.Lines | Write-Host
+        throw 'the fork default did not explain how to publish its missing Windows build'
+    }
+    $betaFork = Invoke-Installer @forkArgs -ChannelKnob beta -VersionPin $stableVersion
+    if ($betaFork.Exit -eq 0 -or ($betaFork.Lines -join ' ') -notmatch 'the fork publishes only the stable Windows channel') {
+        $betaFork.Lines | Write-Host
+        throw 'beta must be refused on the fork, even with an exact version pin'
+    }
+
+    $forkLatest = Join-Path $channel 'fork\releases\latest\download'
+    $forkTag = Join-Path $channel "fork\releases\download\windows-v$stableVersion"
+    New-Item -ItemType Directory -Path $forkLatest, $forkTag -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $channel 'stable'), (Join-Path $channel 'latest.json') -Destination $forkLatest
+    Copy-Item -LiteralPath (Join-Path $stableDir $stableFile), (Join-Path $stableDir 'SHA256SUMS') -Destination $forkTag
+    $stableFork = Invoke-Installer @forkArgs
+    if ($stableFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkPrefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) {
+        $stableFork.Lines | Write-Host
+        throw 'the fork default must read the latest metadata and download the versioned payload'
+    }
+
+    # Pins must bypass latest metadata but still verify the versioned SHA256SUMS.
+    Remove-Item -LiteralPath $forkLatest -Recurse
+    $forkArgs.Prefix = Join-Path $scratch 'prefix-fork-pin'
+    $forkSums = Join-Path $forkTag 'SHA256SUMS'
+    Set-Content -LiteralPath $forkSums -Value "$('0' * 64)  $stableFile"
+    $corruptPin = Invoke-Installer @forkArgs -VersionPin "v$stableVersion"
+    if ($corruptPin.Exit -eq 0 -or ($corruptPin.Lines -join ' ') -notmatch 'checksum mismatch for .*: the download is corrupt' -or (Test-Path $forkArgs.Prefix)) {
+        $corruptPin.Lines | Write-Host
+        throw 'the pinned fork install must reject a corrupt versioned payload before publishing'
+    }
+    Copy-Item -LiteralPath (Join-Path $stableDir 'SHA256SUMS') -Destination $forkTag -Force
+    $pinnedFork = Invoke-Installer @forkArgs -VersionPin "v$stableVersion"
+    if ($pinnedFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkArgs.Prefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) {
+        $pinnedFork.Lines | Write-Host
+        throw 'an exact fork version must install from its tag without reading latest metadata'
+    }
+
+    # The R2 renderer stamps these assignments with a legacy base and channel.
+    $renderedInstaller = Join-Path $scratch 'install-rendered-beta.ps1'
+    $renderedSource = $installerSource.Replace("`$DownloadBaseUrlDefault = ''", "`$DownloadBaseUrlDefault = '$baseUrl'").Replace("`$ReleaseChannelDefault = 'stable'", "`$ReleaseChannelDefault = 'beta'")
+    Set-Content -LiteralPath $renderedInstaller -Value $renderedSource
+    $renderedPrefix = Join-Path $scratch 'prefix-rendered-beta'
+    $renderedBeta = Invoke-Installer -Installer $renderedInstaller -DownloadBase '' -Prefix $renderedPrefix
+    if ($renderedBeta.Exit -ne 0) {
+        $renderedBeta.Lines | Write-Host
+        throw 'the rendered legacy beta installer failed'
+    }
+    $marker = Get-Content -LiteralPath (Join-Path $renderedPrefix 'share\prime-agent\.prime-agent-install') -Raw
+    if ($marker -ne "install-rust.sh channel beta`nversion $betaVersion") { throw "unexpected rendered beta marker: $marker" }
+
+    Write-Host "WIN_CHANNEL_SELECTION custom-stable=$stableVersion explicit-and-rendered-beta=$betaVersion; fork stable and pinned installs verified"
 } finally {
     Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
     # The User PATH: strip ONLY the entries this test added - the ones

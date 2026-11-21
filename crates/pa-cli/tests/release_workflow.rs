@@ -101,6 +101,11 @@ struct Job {
     steps: Vec<Step>,
 }
 
+#[derive(Deserialize)]
+struct CompositeAction {
+    runs: Job,
+}
+
 #[derive(Clone, Deserialize)]
 struct Step {
     name: Option<String>,
@@ -110,6 +115,15 @@ struct Step {
     with: Option<serde_yaml::Value>,
     #[serde(default)]
     env: Option<serde_yaml::Value>,
+}
+
+const WINDOWS_RELEASE_ACTION: &str = "./.github/actions/assemble-windows-release";
+
+fn windows_release_steps() -> Vec<Step> {
+    let action_path = repo_root().join(WINDOWS_RELEASE_ACTION).join("action.yml");
+    let text = fs::read_to_string(action_path).expect("read Windows release action");
+    let action: CompositeAction = serde_yaml::from_str(&text).expect("parse Windows release action");
+    action.runs.steps
 }
 
 /// The promote job's steps from the committed `.github/workflows/release.yml`.
@@ -472,9 +486,21 @@ fn windows_build_job_contract() {
         .jobs
         .get("build-windows")
         .expect("the build-windows job exists");
+    let fork = fs::read_to_string(repo_root().join(".github/workflows/windows-release.yml"))
+        .expect("read the fork's Windows release workflow");
+    let fork: Workflow = serde_yaml::from_str(&fork).expect("parse the fork's Windows workflow");
+    for job in [windows, fork.jobs.get("build").expect("the fork's build job")] {
+        assert!(
+            job.steps
+                .iter()
+                .any(|step| step.uses.as_deref() == Some(WINDOWS_RELEASE_ACTION)),
+            "both Windows releases must use the shared packaging action"
+        );
+    }
+    let steps = windows_release_steps();
     assert!(
-        windows.steps.iter().any(|step| {
-            step.name.as_deref() == Some("Livecheck gate: --version prints the tag version")
+        steps.iter().any(|step| {
+            step.name.as_deref() == Some("Livecheck gate: --version prints the workspace version")
                 && step
                     .run
                     .as_deref()
@@ -483,13 +509,12 @@ fn windows_build_job_contract() {
         "the Windows livecheck must name the .exe binary Cargo's MSVC linker emits"
     );
     assert!(
-        windows
-            .steps
-            .iter()
-            .any(|step| step.run.as_deref().is_some_and(|run| {
+        steps.iter().any(|step| {
+            step.run.as_deref().is_some_and(|run| {
                 run.contains("cargo build --release --locked --target")
                     && !run.contains("dist/prime-agent")
-            })),
+            })
+        }),
         "the Windows build compiles the MSVC target (the split-debug step is linux-only)"
     );
     // promote's needs list and route gate must include build-windows (it
@@ -553,12 +578,8 @@ fn the_windows_build_links_the_static_vc_runtime() {
     let text = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
         .expect("read release.yml");
     let workflow: Workflow = serde_yaml::from_str(&text).expect("release.yml parses as YAML");
-    let windows = workflow
-        .jobs
-        .get("build-windows")
-        .expect("the build-windows job exists");
-    let build = windows
-        .steps
+    let steps = windows_release_steps();
+    let build = steps
         .iter()
         .find(|step| {
             step.name.as_deref() == Some("Build (release, locked)")
@@ -567,7 +588,7 @@ fn the_windows_build_links_the_static_vc_runtime() {
                     .as_deref()
                     .is_some_and(|run| run.contains("cargo build --release --locked"))
         })
-        .expect("the build-windows job's Build step exists");
+        .expect("the shared Windows release build step exists");
     let rustflags = build
         .env
         .as_ref()

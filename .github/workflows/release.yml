@@ -458,69 +458,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      # The pinned SHA is the toolchain pin: this action version has no
-      # `toolchain` input, and its parse step hard-codes 1.98.1. Change the
-      # compiler by changing the SHA; a `toolchain:` input is ignored.
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e
+      - name: Build and package Windows
+        uses: ./.github/actions/assemble-windows-release
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: ${{ matrix.target }}
-      # The Windows runner images ship `python` (python3 is not a stable alias
-      # there); the release scripts run under whichever spelling exists.
-      - name: Resolve the Python interpreter
-        shell: bash
-        run: echo "PY=$(command -v python3 || command -v python)" >> "$GITHUB_ENV"
-      # Only the shipped binary links here (the build-gnu/build-darwin rule).
-      # THE STATIC VC RUNTIME (the operator's real-machine report,
-      # 2026-10-06: the dynamically linked launcher died at process start -
-      # 0xC0000135, STATUS_DLL_NOT_FOUND, exit -1073741515 - on a stock
-      # Windows box, which carries no vcruntime140.dll; the windows-2022
-      # runner image has it, so the livecheck never sees the gap): the
-      # step-scoped RUSTFLAGS below links the shipped binary against the
-      # static CRT. The pin rides THIS STEP alone and never Cargo.toml,
-      # whose dev builds stay dynamic; cargo's unit fingerprints carry
-      # RUSTFLAGS, so a cache restored from the dynamic-link era rebuilds
-      # instead of reusing a dynamically linked tree.
-      - name: Build (release, locked)
-        env:
-          RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked --target ${{ matrix.target }} -j 4 -p pa-cli --bin prime-agent
-      - name: "Livecheck gate: --version prints the tag version"
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Cargo's MSVC linker emits prime-agent.exe; the payload name the
-          # assembler stages and the installer extracts.
-          bin="target/${{ matrix.target }}/release/prime-agent.exe"
-          out="$("${bin}" --version)"
-          [[ "${out}" == "${RELEASE_VERSION#v}" ]]             || { echo "binary reports '${out}', expected '${RELEASE_VERSION#v}'"; exit 1; }
-      # The live catalog from prime-agent-catalog (public; no token needed)
-      # at the commit the catalog-ref job resolved: a fresh install's first
-      # model list comes from this snapshot, identical across targets.
-      - name: Generate bundled catalog assets (live catalog)
-        shell: bash
-        env:
-          CATALOG_REF: ${{ needs.catalog-ref.outputs.sha }}
-        run: |
-          set -euo pipefail
-          "${PY}" scripts/release/bundle_catalog.py generate --network \
-            --catalog-ref "${CATALOG_REF}" --out "target/${{ matrix.target }}/catalog-assets"
-      - name: Install cargo-about (renders the archive's third-party notices)
-        uses: ./.github/actions/install-cargo-about
-      - name: Assemble tarball + checksums + manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          "${PY}" scripts/release/assemble_artifacts.py \
-            --repo-root . \
-            --version "${RELEASE_VERSION#v}" \
-            --target "${{ matrix.target }}" \
-            --binary "target/${{ matrix.target }}/release/prime-agent.exe" \
-            --catalog-assets "target/${{ matrix.target }}/catalog-assets" \
-            --out-dir "target/${{ matrix.target }}/dist"
-          cat "target/${{ matrix.target }}/dist/manifest.json"
+          target: ${{ matrix.target }}
+          version: ${{ env.RELEASE_VERSION }}
+          catalog-ref: ${{ needs.catalog-ref.outputs.sha }}
       - name: Upload artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:

@@ -223,14 +223,7 @@ jobs:
         run: |
           pwsh -NoProfile -File scripts/release/test_windows_channel_fallback.ps1 2>&1 | Tee-Object -FilePath win-channel-fallback.log
           exit $LASTEXITCODE
-      # THE RAW ONE-LINER on the real channel, end to end: install.ps1
-      # itself from raw.githubusercontent (the ref under test, before its
-      # publication to the README's production endpoint), then the manifest,
-      # the win32-x64 tarball, and its sums from the real bucket, the real
-      # default prefix ($HOME\.local), the stable channel, and the launcher
-      # answering --version. The transcript
-      # (win-raw-one-liner.log) is the evidence: the install transcript,
-      # the --version output, and the exit codes.
+      # Exercise this repository's raw installer against its published Windows release.
       - name: the raw one-liner on the real channel (irm | iex)
         id: raw_one_liner
         continue-on-error: true
@@ -243,7 +236,7 @@ jobs:
           Start-Transcript -Path win-raw-one-liner.log
           $installExit = 0
           try {
-            irm "https://raw.githubusercontent.com/PrimeIntellect-ai/prime-agent/$env:RAW_REF/install.ps1" | iex
+            irm "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:RAW_REF/install.ps1" | iex
           } catch {
             $installExit = 1
             Write-Output "RAW_ONE_LINER: the one-liner threw: $($_.Exception.Message)"

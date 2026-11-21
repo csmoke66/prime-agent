@@ -1,30 +1,24 @@
 # install.ps1 — the Windows-native installer for Prime Agent (Rust build).
 #
-# THE ONE-LINER (the production endpoint serves the stable installer):
+# THE FORK ONE-LINER (the GitHub release supplies the stable Windows build):
 #
-#   irm https://app.primeintellect.ai/prime-agent/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/csmoke66/prime-agent/main/install.ps1 | iex
 #
-# The release pipeline's publish step renders this file to <base>/install.ps1
-# (the stable channel) and <base>/install-beta.ps1 (the beta channel), the
-# build's download base + channel stamped in.
+# The legacy R2 release pipeline still renders this file to <base>/install.ps1
+# (stable) and <base>/install-beta.ps1 (beta), stamping in its base and channel.
 #
-# The Git Bash route is the same channel through install-rust.sh (the sh
-# one-liner `curl -fsSL .../install.sh | sh` under Git Bash/MSYS2/Cygwin);
-# this script is the PowerShell-native form. Both routes publish the SAME
-# layout — $PREFIX\share\prime-agent\ (the payload) and $PREFIX\bin\
-# (the launcher pair) — so either route can update the other's install.
+# On the legacy channel, Git Bash uses install-rust.sh (the sh one-liner
+# `curl -fsSL .../install.sh | sh` under Git Bash/MSYS2/Cygwin). Both
+# publish to $PREFIX\share\prime-agent\ (the payload) and $PREFIX\bin\
+# (the launcher pair), so either route can update the other's install.
 #
-# THE CHANNEL (install-rust.sh parity): the channel pointer (<base>/stable
-# or <base>/beta) gives the version, the channel manifest (<base>/latest.json
-# or <base>/beta.json) gives this platform's artifact row, and the versioned
-# release prefix serves the tarball plus its SHA256SUMS; the checksum is
-# verified before anything is published. Every file this installer reads
-# comes from the download base. CI may fetch this script from a GitHub ref
-# to verify changes before they reach the production installer endpoint.
-#
-# CHANNEL SELECTION: the production installer uses stable. A missing
-# platform artifact is a release error, not permission to switch channels.
-# Beta remains available through an explicit channel selection.
+# The fork's stable pointer and latest.json live under releases/latest/download;
+# the tarball and SHA256SUMS come from releases/download/windows-v<version>.
+# Custom/R2 bases use <base>/stable or <base>/beta for the pointer,
+# <base>/latest.json or <base>/beta.json for the manifest, and
+# <base>/releases/v<version> for the tarball and SHA256SUMS.
+# Every install verifies the checksum before publishing. A missing artifact
+# never triggers a channel switch. Beta requires a legacy channel base.
 #
 # NO TYPESCRIPT TAKEOVER STEPS: the TypeScript product never shipped a
 # Windows build, so there is no TS daemon, native install, or npm package
@@ -33,8 +27,8 @@
 # binary open; the payload swap needs the daemon down first).
 #
 # Configuration (environment, install-rust.sh's own knobs):
-#   PRIME_AGENT_DOWNLOAD_BASE_URL  the R2-backed download base
-#   PRIME_AGENT_RELEASE_CHANNEL    stable | beta
+#   PRIME_AGENT_DOWNLOAD_BASE_URL  override the fork base with a custom channel base
+#   PRIME_AGENT_RELEASE_CHANNEL    stable | beta (beta only on custom/R2 channels)
 #   PRIME_AGENT_VERSION            pin an exact version
 #   PRIME_AGENT_RUST_PREFIX        install prefix (default: $HOME\.local)
 #   PRIME_AGENT_UV_BIN_DIR         uv install dir (default: $HOME\.local\bin)
@@ -57,12 +51,10 @@ try {
 & {
 $ErrorActionPreference = 'Stop'
 
-# The publish-rendered defaults: the release pipeline copies this file to
-# <base>/install.ps1 with $DownloadBaseUrlDefault set to the R2 public base
-# and $ReleaseChannelDefault set to the channel; the repo-file default is
-# the same bucket-root base install-rust.sh carries, so the raw repo copy
-# installs out of the box too.
-$DownloadBaseUrlDefault = 'https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev'
+# The unstamped script defaults to the fork's GitHub releases.
+$ForkReleaseBaseUrl = 'https://github.com/csmoke66/prime-agent/releases'
+# The R2 publish render stamps the following base and channel assignments.
+$DownloadBaseUrlDefault = ''
 $ReleaseChannelDefault = 'stable'
 
 # The installer-owned bookkeeping, initialized BEFORE any Fail can run
@@ -183,16 +175,21 @@ function Save-Release {
 }
 
 # --- the knobs ----------------------------------------------------------------
-$baseUrl = if ($env:PRIME_AGENT_DOWNLOAD_BASE_URL) { $env:PRIME_AGENT_DOWNLOAD_BASE_URL } else { $DownloadBaseUrlDefault }
+$baseUrl = if ($env:PRIME_AGENT_DOWNLOAD_BASE_URL) {
+    $env:PRIME_AGENT_DOWNLOAD_BASE_URL
+} elseif ($DownloadBaseUrlDefault) {
+    $DownloadBaseUrlDefault
+} else {
+    $ForkReleaseBaseUrl
+}
 $channelRequested = $env:PRIME_AGENT_RELEASE_CHANNEL
 $channel = if ($channelRequested) { $channelRequested } else { $ReleaseChannelDefault }
 $versionPin = $env:PRIME_AGENT_VERSION
 $prefix = if ($env:PRIME_AGENT_RUST_PREFIX) { $env:PRIME_AGENT_RUST_PREFIX } else { Join-Path $HOME '.local' }
 
-# THE HTTPS RULE: the channel is served over the R2-backed domain, and a
-# plaintext download base would let a network attacker swap the payload
-# the checksum then "verifies" into place. The one escape hatch is the
-# explicitly-named knob for local-channel/e2e use (install-rust.sh carries
+# THE HTTPS RULE: a plaintext download base would let a network attacker
+# swap in a payload the checksum then "verifies". The one escape hatch is
+# the explicitly-named knob for local-channel/e2e use (install-rust.sh carries
 # the same rule + knob); it prints a loud warning when it is active.
 $allowHttp = $env:PRIME_AGENT_ALLOW_HTTP -eq '1'
 if ($baseUrl -notmatch '^https://') {
@@ -204,6 +201,11 @@ if ($baseUrl -notmatch '^https://') {
 }
 $baseUrl = $baseUrl.TrimEnd('/')
 if (@('stable', 'beta') -notcontains $channel) { Fail "unknown release channel: $channel (stable or beta)" }
+$isForkRelease = $baseUrl -eq $ForkReleaseBaseUrl
+if ($isForkRelease -and $channel -eq 'beta') {
+    Fail 'the fork publishes only the stable Windows channel; select stable or set PRIME_AGENT_DOWNLOAD_BASE_URL to a legacy beta channel base'
+}
+$channelBaseUrl = if ($isForkRelease) { "$baseUrl/latest/download" } else { $baseUrl }
 # The prefix does not need to exist (a fresh Windows profile has no
 # $HOME\.local; the share/bin creation below makes it), but it must name
 # a directory path, not an existing FILE.
@@ -224,10 +226,6 @@ if ($env:PRIME_AGENT_UV_BIN_DIR -and (($env:PRIME_AGENT_UV_BIN_DIR -notmatch '^[
 if ($env:PRIME_AGENT_UV_BIN_DIR -and $env:PRIME_AGENT_UV_BIN_DIR.Contains(';')) {
     Fail "PRIME_AGENT_UV_BIN_DIR must not contain a semicolon (the Windows PATH separator): $($env:PRIME_AGENT_UV_BIN_DIR)"
 }
-
-# The channel files: the pointer (<base>/stable or <base>/beta) names the
-# version, the channel manifest (<base>/latest.json or <base>/beta.json)
-# the rows; the version resolution below reads the pair per channel.
 
 # The platform this script serves: the channel manifest's win32-x64 row
 # (the TS NATIVE_PLATFORMS spelling pa-core::update::install reads) — a
@@ -256,11 +254,9 @@ function ExpectedFileName($version, $platform) {
 # historical pin must install from its own versioned prefix — the row is
 # the channel naming contract, and the release prefix's SHA256SUMS verifies
 # the artifact. An unpinned install reads the pointer + the manifest as a
-# PAIR, retrying once on a version mismatch (the publish writes the
-# manifest first and the pointer second: a read between the two writes sees
-# the old pointer with the new manifest — a transient window, not a broken
-# channel — install-rust.sh's consistency retry). Both explicitly selected
-# channels use the same pair reader and retry discipline.
+# PAIR and retries on a version mismatch. This covers the legacy publisher's
+# consistency window (manifest first, pointer second) and a fork read
+# straddling a GitHub release update.
 function Read-ChannelPair($channelName) {
     $pairPointer = $channelName
     $pairManifestName = if ($channelName -eq 'beta') { 'beta.json' } else { 'latest.json' }
@@ -276,13 +272,11 @@ function Read-ChannelPair($channelName) {
     $VerbosePreference = 'SilentlyContinue'
     try {
         while ($true) {
-            # The pointer is published bare ("1.2.3") but a `v`-prefixed
-            # spelling is a valid historical form - normalize it (the manifest's
-            # version is bare; the release prefix and the artifact names carry
-            # no extra `v` - the bots' finding).
-            $pairVersion = (Invoke-RestMethod -Uri "$baseUrl/$pairPointer" -UseBasicParsing).ToString().Trim().TrimStart('v')
-            if (-not $pairVersion) { Fail "could not resolve the latest $channelName version from $baseUrl/$pairPointer" }
-            $pairManifest = Invoke-RestMethod -Uri "$baseUrl/$pairManifestName" -UseBasicParsing
+            # Normalize the pointer's historical `v`-prefixed spelling before
+            # constructing the release URL and artifact name.
+            $pairVersion = (Invoke-RestMethod -Uri "$channelBaseUrl/$pairPointer" -UseBasicParsing).ToString().Trim().TrimStart('v')
+            if (-not $pairVersion) { Fail "could not resolve the latest $channelName version from $channelBaseUrl/$pairPointer" }
+            $pairManifest = Invoke-RestMethod -Uri "$channelBaseUrl/$pairManifestName" -UseBasicParsing
             $pairManifestVersion = ($pairManifest.version).ToString().TrimStart('v')
             if ($pairManifestVersion -eq $pairVersion) { break }
             $attempt += 1
@@ -292,6 +286,11 @@ function Read-ChannelPair($channelName) {
             Write-Host "the $channelName pointer and manifest disagree (a publish's consistency window); re-reading the pair..."
             Start-Sleep -Seconds 1
         }
+    } catch {
+        if ($isForkRelease -and $_.Exception.Response.StatusCode -eq [Net.HttpStatusCode]::NotFound) {
+            Fail "no Windows build has been published on the fork, or the latest release is missing its stable pointer or manifest ($baseUrl/latest). Enable GitHub Actions on the fork and push main from GitHub Desktop, then retry after the Windows publish workflow succeeds."
+        }
+        throw
     } finally {
         $ProgressPreference = $callerProgressPreference
         $VerbosePreference = $callerVerbosePreference
@@ -341,7 +340,7 @@ if ($versionPin) {
 }
 
 # --- the tarball + SHA256SUMS from the versioned release prefix ----------------
-$releasePrefix = "releases/v$version"
+$releasePrefix = if ($isForkRelease) { "download/windows-v$version" } else { "releases/v$version" }
 $download = Join-Path ([IO.Path]::GetTempPath()) ("prime-agent-download-{0}" -f [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $download | Out-Null
 $script:primeAgentInstallScratch = $download

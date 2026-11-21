@@ -721,7 +721,11 @@ async fn run_interactive_surface(
         session.dirty = true;
     }
     // The ban-risk warning on an Anthropic subscription credential at startup.
-    if let Some(provider) = session.current_model_provider().await {
+    let provider = match &view.chrome.model_provider {
+        Some(provider) => Some(provider.clone()),
+        None => session.current_model_provider().await,
+    };
+    if let Some(provider) = provider {
         session
             .maybe_warn_anthropic_subscription_auth_if_subscribed(
                 Some(provider.as_str()),
@@ -1477,6 +1481,19 @@ async fn run_interactive_surface(
             maybe_catalog = catalog_rx.recv() => {
                 if let Some(update) = maybe_catalog {
                     session.apply_model_catalog(update, &mut view);
+                }
+            }
+            daybreak_blue = async {
+                match session.daybreak_blue_refresh.as_mut() {
+                    Some(refresh) => refresh.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                session.daybreak_blue_refresh = None;
+                let enabled = daybreak_blue.unwrap_or(false);
+                if view.chrome.daybreak_blue != enabled {
+                    view.chrome.daybreak_blue = enabled;
+                    session.dirty = true;
                 }
             }
             maybe_auth_panel = auth_panel_rx.recv() => {

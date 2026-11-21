@@ -356,6 +356,46 @@ impl AgentSessionEngine {
         self.resolve_model()
     }
 
+    /// Report the capability of the live provider target using the same
+    /// credential resolution as the stream. The provider owns the catalog
+    /// cache and eligibility policy.
+    pub(crate) async fn daybreak_blue(self: &std::sync::Arc<Self>) -> bool {
+        let Ok(model) = self.session_model() else {
+            return false;
+        };
+        let Some((model, token)) = self.daybreak_login(model).await else {
+            return false;
+        };
+        pa_ai::codex_daybreak_blue(&model, &token).await
+    }
+
+    /// Resolve a first-party Codex provider login. Credentials are provider-scoped,
+    /// so the picker only needs to do this once for each eligible provider.
+    pub(crate) async fn daybreak_login(
+        self: &std::sync::Arc<Self>,
+        model: Model,
+    ) -> Option<(Model, String)> {
+        if !pa_ai::is_codex_daybreak_target(&model) {
+            return None;
+        }
+        let engine = std::sync::Arc::clone(self);
+        let (model, auth) = tokio::task::spawn_blocking(move || {
+            let auth = engine.resolve_request_auth(&model);
+            (model, auth)
+        })
+        .await
+        .ok()?;
+        if !auth.ok {
+            return None;
+        }
+        let model = auth.request_model.unwrap_or(model);
+        let token = auth
+            .api_key
+            .filter(|key| !key.is_empty())
+            .or_else(|| pa_ai::env_api_keys::get_env_api_key(&model.provider))?;
+        Some((model, token))
+    }
+
     /// The effective session thinking level: the create-config flag, then the
     /// settings default, then "medium" — clamped to what the model supports; an
     /// unresolvable model degrades to "off". Resolved once and cached.

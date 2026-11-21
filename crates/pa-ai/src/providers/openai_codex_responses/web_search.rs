@@ -11,7 +11,6 @@ use super::request::{
 use crate::utils_inner::http::{send, HttpResponse, RequestOptions};
 use crate::utils_inner::sse::{ServerSentEvent, SseDecoder};
 
-const MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models?client_version=0.170.0";
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 
 /// Search the live web using a ChatGPT subscription access token. No session
@@ -23,22 +22,13 @@ const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 pub async fn search_chatgpt_web(token: &str, query: &str, num_results: u64) -> Result<String> {
     let account = extract_account_id(token)
         .map_err(|_| anyhow!("ChatGPT web search requires a ChatGPT login"))?;
-    let mut catalog = RequestOptions::new(reqwest::Method::GET, MODELS_URL.to_owned());
-    catalog.headers = build_sse_headers(None, None, &account, token, None);
-    for (name, value) in &mut catalog.headers {
-        if name == "accept" {
-            "application/json".clone_into(value);
-        }
-    }
-    let mut catalog = send_request(catalog).await?;
-    let mut model_json = String::new();
-    while let Some(chunk) = next_chunk(&mut catalog).await? {
-        ensure_size(model_json.len() + chunk.len())?;
-        model_json.push_str(&chunk);
-    }
-    let catalog: Value = serde_json::from_str(&model_json)
-        .map_err(|_| anyhow!("ChatGPT returned an invalid Codex model catalog"))?;
-    let model = select_model(&catalog)
+    let catalog = super::catalog::models(&account, token)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let model = catalog
+        .iter()
+        .filter(|model| model.searchable)
+        .min_by_key(|model| (model.slug != "gpt-6-luna", model.priority))
         .ok_or_else(|| anyhow!("No ChatGPT web search model is available for this login"))?;
 
     let mut options = RequestOptions::new(
@@ -46,7 +36,9 @@ pub async fn search_chatgpt_web(token: &str, query: &str, num_results: u64) -> R
         resolve_codex_url(DEFAULT_CODEX_BASE_URL),
     );
     options.headers = build_sse_headers(None, None, &account, token, None);
-    options.body = Some(search_body(model, query, num_results).to_string());
+    let mut body = search_body(&model.slug, query, num_results);
+    super::catalog::apply_daybreak(&mut body, model.daybreak_blue);
+    options.body = Some(body.to_string());
     let mut response = send_request(options).await?;
     let mut decoder = SseDecoder::new();
     let mut search = SearchResponse::default();
@@ -104,22 +96,6 @@ fn ensure_size(len: usize) -> Result<()> {
         "ChatGPT web search response was too large"
     );
     Ok(())
-}
-
-fn select_model(catalog: &Value) -> Option<&str> {
-    catalog["models"]
-        .as_array()?
-        .iter()
-        .filter(|model| model["visibility"] == "list" && model["supports_search_tool"] == true)
-        .filter_map(|model| {
-            let slug = model["slug"].as_str().filter(|slug| !slug.is_empty())?;
-            let priority = model["priority"].as_u64().unwrap_or(u64::MAX);
-            Some((slug, priority))
-        })
-        // Prefer the low-latency model known to handle live web search when
-        // this login actually offers it; otherwise respect catalog priority.
-        .min_by_key(|&(slug, priority)| (slug != "gpt-6-luna", priority))
-        .map(|(slug, _)| slug)
 }
 
 fn search_body(model: &str, query: &str, num_results: u64) -> Value {

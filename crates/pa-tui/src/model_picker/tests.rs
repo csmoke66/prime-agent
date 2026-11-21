@@ -117,6 +117,7 @@ fn picker_options(catalog: Vec<Model>) -> ModelPickerOptions {
         models: catalog,
         current: Some(current()),
         configured_providers: configured(),
+        daybreak_blue_models: HashMap::new(),
         recent_models: Vec::new(),
         scoped_models: Vec::new(),
         thinking_level: Some(ModelThinkingLevel::Medium),
@@ -136,6 +137,34 @@ fn frame_text(picker: &mut ModelPicker) -> Vec<String> {
         })
         .map(|row| row.trim_end().to_string())
         .collect()
+}
+
+#[test]
+fn daybreak_blue_marks_only_the_matching_provider_row_before_selection() {
+    let catalog = vec![
+        model("openai-codex", "same-id", "Codex Model", false, None),
+        model("other", "same-id", "Other Model", false, None),
+    ];
+    let mut options = picker_options(catalog.clone());
+    options.current = Some(CurrentModel {
+        provider: "other".to_string(),
+        model_id: "same-id".to_string(),
+    });
+    options.configured_providers = ["openai-codex", "other"].map(str::to_string).into();
+    options.daybreak_blue_models =
+        [("openai-codex".to_string(), ["same-id".to_string()].into())].into();
+    let mut picker = ModelPicker::new(options);
+    let rows = frame_text(&mut picker);
+    let codex = rows.iter().find(|row| row.contains("Codex Model")).unwrap();
+    assert!(codex.ends_with("openai-codex · ◆ Blue"));
+    assert!(!codex.starts_with('›'));
+    let other = rows.iter().find(|row| row.contains("Other Model")).unwrap();
+    assert!(other.ends_with("current · other"));
+
+    picker.update_state(None, catalog, HashSet::new(), HashMap::new());
+    assert!(!frame_text(&mut picker)
+        .iter()
+        .any(|row| row.contains("◆ Blue")));
 }
 
 /// The scope view: a session with scoped models opens on the scoped list, the scope row above it;
@@ -231,7 +260,7 @@ fn a_scope_the_catalog_cannot_resolve_still_scopes() {
     );
     let mut refreshed = battery_catalog();
     refreshed.push(model("prime-inference", "mock-9", "Mock 9", false, None));
-    picker.update_state(None, refreshed, configured());
+    picker.update_state(None, refreshed, configured(), HashMap::new());
     assert_eq!(
         picker.filtered_len(),
         1,
@@ -514,7 +543,7 @@ fn update_state_keeps_the_selection_on_the_surviving_model() {
         false,
         None,
     ));
-    picker.update_state(Some(current()), catalog, configured());
+    picker.update_state(Some(current()), catalog, configured(), HashMap::new());
     let selected = picker.selected_model().expect("selection").clone();
     assert_eq!(selected.id, "anthropic/claude-fable-5");
 }

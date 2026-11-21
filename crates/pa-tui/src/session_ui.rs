@@ -53,7 +53,7 @@ use stream::streaming_tray_hint;
 use stream::LoaderTokenTracker;
 use stream::SpeedStats;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
@@ -175,6 +175,7 @@ pub(crate) struct SessionUi {
     /// fallback), replaced by the daemon's `get_model_catalog` response.
     model_catalog: Vec<pa_types::ai::Model>,
     model_configured_providers: std::collections::HashSet<String>,
+    model_daybreak_blue: HashMap<String, HashSet<String>>,
     /// The settings recent-model list (`provider/id` keys, newest first).
     model_recent_models: Vec<String>,
     default_thinking_level: Option<String>,
@@ -237,6 +238,7 @@ pub(crate) struct SessionUi {
     pending_model: Option<String>,
     pending_model_provider: Option<String>,
     pending_thinking_suffix: Option<String>,
+    pub(crate) daybreak_blue_refresh: Option<tokio::task::JoinHandle<bool>>,
     pending_queue: Option<crate::queued::QueuedMessages>,
     queue_selection: crate::queued::QueueSelection,
     context: Option<crate::chrome::ContextUsage>,
@@ -540,7 +542,7 @@ impl SessionUi {
         let state = self
             .bounded_request(
                 Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
-                DaemonCommand::GetState {
+                DaemonCommand::GetConnectionState {
                     id: None,
                     active_session_id: self.active_session_id.clone(),
                     rest: Map::default(),

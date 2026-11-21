@@ -60,6 +60,8 @@ pub struct ModelPickerOptions {
     pub current: Option<CurrentModel>,
     /// Providers with configured auth (`configuredProviders`).
     pub configured_providers: HashSet<String>,
+    /// Eligible model IDs by provider, from the signed-in daemon's catalog.
+    pub daybreak_blue_models: HashMap<String, HashSet<String>>,
     /// The settings recent-model list (`provider/id` keys, newest first).
     pub recent_models: Vec<String>,
     /// The session's scoped models as `provider/id` keys: the picker opens on them when non-empty,
@@ -100,6 +102,7 @@ pub struct ModelPicker {
     all_models: Vec<Model>,
     current: Option<CurrentModel>,
     configured_providers: HashSet<String>,
+    daybreak_blue_models: HashMap<String, HashSet<String>>,
     recent_rank: HashMap<String, usize>,
     /// The effort a fresh selection starts from; `None` resolves to "off" per model.
     initial_thinking_level: Option<ModelThinkingLevel>,
@@ -137,6 +140,7 @@ impl ModelPicker {
             all_models: Vec::new(),
             current: options.current,
             configured_providers: options.configured_providers,
+            daybreak_blue_models: options.daybreak_blue_models,
             recent_rank: options
                 .recent_models
                 .iter()
@@ -184,9 +188,11 @@ impl ModelPicker {
         current: Option<CurrentModel>,
         models: Vec<Model>,
         configured_providers: HashSet<String>,
+        daybreak_blue_models: HashMap<String, HashSet<String>>,
     ) {
         self.current = current;
         self.configured_providers = configured_providers;
+        self.daybreak_blue_models = daybreak_blue_models;
         let selected_key = self
             .selected_model()
             .map(|model| Self::model_key_provider(&model.provider, &model.id));
@@ -703,12 +709,8 @@ impl ModelPicker {
                 continue;
             };
             let segments = self.trailing_segments(model);
-            let refs: Vec<crate::menu_panel::MenuSegment> = segments
-                .iter()
-                .map(|segment| crate::menu_panel::MenuSegment::muted(segment))
-                .collect();
             max_trailing_width =
-                max_trailing_width.max(crate::menu_panel::trailing_width(&refs, width));
+                max_trailing_width.max(crate::menu_panel::trailing_width(&segments, width));
         }
         let available = width.saturating_sub(2 + max_trailing_width + 2).max(1);
 
@@ -774,17 +776,31 @@ impl ModelPicker {
         empty
     }
 
-    /// The trailing segments of one row: `current`, `require sign in`, then the provider.
-    pub(crate) fn trailing_segments(&self, model: &Model) -> Vec<String> {
-        let mut segments: Vec<String> = Vec::new();
-        if self.is_current(model) {
-            segments.push("current".to_string());
-        }
-        if !self.is_configured(model) {
-            segments.push("require sign in".to_string());
-        }
-        segments.push(provider_label(model).to_string());
-        segments
+    /// The trailing segments: status and provider, followed by any Daybreak badge.
+    fn trailing_segments<'a>(&self, model: &'a Model) -> [crate::menu_panel::MenuSegment<'a>; 4] {
+        use crate::menu_panel::MenuSegment;
+
+        let daybreak_blue = self
+            .daybreak_blue_models
+            .get(&model.provider)
+            .is_some_and(|ids| ids.contains(&model.id));
+        [
+            MenuSegment::muted(if self.is_current(model) { "current" } else { "" }),
+            MenuSegment::muted(if self.is_configured(model) {
+                ""
+            } else {
+                "require sign in"
+            }),
+            MenuSegment::muted(provider_label(model)),
+            MenuSegment::themed(
+                crate::chrome::DAYBREAK_BLUE_COLOR,
+                if daybreak_blue {
+                    crate::chrome::DAYBREAK_BLUE_LABEL
+                } else {
+                    ""
+                },
+            ),
+        ]
     }
 }
 

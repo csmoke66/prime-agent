@@ -43,6 +43,7 @@ use crate::utils_inner::json_parse::parse_json_with_repair;
 use crate::utils_inner::sse::SseDecoder;
 use crate::utils_inner::stream_failure::{record_stream_failure, ProviderError};
 
+mod catalog;
 mod errors;
 pub(crate) mod request;
 pub(crate) mod session;
@@ -99,6 +100,52 @@ fn reasoning_summary_value(summary: Option<ReasoningSummary>) -> &'static str {
         Some(ReasoningSummary::Detailed) => "detailed",
         Some(ReasoningSummary::Concise) => "concise",
     }
+}
+
+/// Only probe the first-party endpoint; never send credentials for a custom backend to ChatGPT.
+#[must_use]
+pub fn is_codex_daybreak_target(model: &Model) -> bool {
+    model.api == API_OPENAI_CODEX_RESPONSES
+        && matches!(
+            model.base_url.trim().trim_end_matches('/'),
+            "" | request::DEFAULT_CODEX_BASE_URL
+                | "https://chatgpt.com/backend-api/codex"
+                | "https://chatgpt.com/backend-api/codex/responses"
+        )
+}
+
+/// Whether the signed-in ChatGPT account advertises Daybreak Blue for this request target.
+pub async fn codex_daybreak_blue(model: &Model, token: &str) -> bool {
+    if !is_codex_daybreak_target(model) {
+        return false;
+    }
+    let Ok(account) = extract_account_id(token) else {
+        return false;
+    };
+    advertised_daybreak(&account, token, &model.id).await
+}
+
+/// The model IDs eligible for a badge under this login, independent of the active model.
+pub async fn codex_daybreak_model_ids(token: &str) -> Vec<String> {
+    let Ok(account) = extract_account_id(token) else {
+        return Vec::new();
+    };
+    let Ok(models) = catalog::models(&account, token).await else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter(|m| m.daybreak_blue)
+        .map(|m| m.slug.clone())
+        .collect()
+}
+
+async fn advertised_daybreak(account: &str, token: &str, model_id: &str) -> bool {
+    catalog::models(account, token).await.is_ok_and(|models| {
+        models
+            .iter()
+            .any(|entry| entry.slug == model_id && entry.daybreak_blue)
+    })
 }
 
 pub fn stream_openai_codex_responses(
@@ -197,6 +244,12 @@ async fn run_stream(
     })?;
 
     let mut body = build_request_body(model, context, &options);
+    if is_codex_daybreak_target(model) {
+        catalog::apply_daybreak(
+            &mut body,
+            advertised_daybreak(&account_id, &api_key, &model.id).await,
+        );
+    }
     if let Some(on_payload) = &options.base.on_payload {
         if let Some(next) = on_payload(body.clone(), model) {
             body = next;

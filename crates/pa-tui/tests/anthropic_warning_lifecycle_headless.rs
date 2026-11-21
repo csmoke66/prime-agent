@@ -166,7 +166,7 @@ fn attach_data(id: &str, session: &MockSession) -> Value {
                     "cwd": "/tmp",
                     "sessionId": session.wire,
                     "sessionName": session.name,
-                    "model": null,
+                    "model": { "id": "claude-test", "provider": "anthropic" },
                     "isStreaming": false,
                     "isCompacting": false,
                     "sessionActions": { "queuedCount": 0, "steering": [], "followUps": [] },

@@ -72,17 +72,13 @@ pub(super) fn render(
         let Some(model_index) = picker.filtered_index(index) else {
             continue;
         };
-        let Some(model) = picker.model_at(model_index).cloned() else {
+        let Some(model) = picker.model_at(model_index) else {
             continue;
         };
         let selected = index == picker.selected_index();
-        let primary = row_primary(picker, theme, &model, selected, effort_layout);
-        let trailing = picker.trailing_segments(&model);
-        let trailing_refs: Vec<crate::menu_panel::MenuSegment> = trailing
-            .iter()
-            .map(|segment| crate::menu_panel::MenuSegment::muted(segment))
-            .collect();
-        lines.push(menu_row(theme, width, primary, &trailing_refs, selected));
+        let primary = row_primary(picker, theme, model, selected, effort_layout);
+        let trailing = picker.trailing_segments(model);
+        lines.push(menu_row(theme, width, primary, &trailing, selected));
     }
 
     let filtered_len = picker.filtered_len();

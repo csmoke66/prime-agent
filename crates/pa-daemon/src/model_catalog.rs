@@ -1,7 +1,5 @@
-//! The `/model` picker's catalog surface: serve the current validated
-//! snapshot instantly and refresh in the background (a deliberate
-//! divergence from TS, which awaits the refresh inside the request); a
-//! changed snapshot broadcasts `model_catalog_changed`.
+//! The `/model` picker serves the current registry snapshot and refreshes it in the
+//! background. Its optional Codex badges come from the signed-in account's catalog.
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -21,9 +19,8 @@ pub(crate) struct RefreshGate {
 }
 
 impl Worker {
-    /// `get_model_catalog`: the policy-visible catalog and configured providers
-    /// from the current validated snapshot — never a network request here.
-    pub(crate) fn handle_get_model_catalog(&self) -> DaemonResponse {
+    /// `get_model_catalog`: the picker loads this response off the UI thread.
+    pub(crate) async fn handle_get_model_catalog(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_model_catalog") {
             return response;
         }
@@ -35,7 +32,8 @@ impl Worker {
         );
         let cwd = self.core.lock().unwrap().cwd.clone();
         let allowlist = model_allowlist::load(cwd.as_ref(), &agent_dir);
-        let served = catalog_payload(&registry, registry.get_available(), &allowlist);
+        let available = registry.get_available();
+        let mut served = catalog_payload(&registry, available.iter().copied(), &allowlist);
         // An observed credential-scope change forces the refresh; the
         // observation consumes the scope, so one change forces exactly once.
         let credentials = pa_core::models::prime_credentials_for_dir(&agent_dir);
@@ -45,7 +43,31 @@ impl Worker {
         } else {
             pa_core::models::RefreshTrigger::PickerOpen
         };
-        self.spawn_catalog_refresh(trigger, served.clone(), allowlist);
+        // Capability hydration must not change the registry snapshot used to detect refreshes.
+        self.spawn_catalog_refresh(trigger, served.clone(), allowlist.clone());
+        if let Some(engine) = &self.agent_engine {
+            let mut logins = std::collections::HashMap::new();
+            let mut badges = Vec::new();
+            for model in available {
+                if !pa_ai::is_codex_daybreak_target(model) || !allowlist.allows_model(model) {
+                    continue;
+                }
+                let ids = match logins.entry(model.provider.as_str()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let ids = match engine.daybreak_login(model.clone()).await {
+                            Some((_, token)) => pa_ai::codex_daybreak_model_ids(&token).await,
+                            None => Vec::new(),
+                        };
+                        entry.insert(ids)
+                    }
+                };
+                if ids.contains(&model.id) {
+                    badges.push(format!("{}/{}", model.provider, model.id));
+                }
+            }
+            served["daybreakBlueModels"] = json!(badges);
+        }
         response_success(None, "get_model_catalog", Some(served))
     }
 

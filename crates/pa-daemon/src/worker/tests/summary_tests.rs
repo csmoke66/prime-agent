@@ -314,6 +314,14 @@ async fn a_resumed_sessions_summary_counts_its_persisted_tool_calls() {
     let state = worker.dispatch("get_state", &json!({})).await;
     assert!(state.success, "get_state failed: {state:?}");
     assert_eq!(
+        state
+            .data
+            .as_ref()
+            .and_then(|state| state["daybreakBlue"].as_bool()),
+        Some(false),
+        "a scripted model does not have Daybreak Blue access"
+    );
+    assert_eq!(
         state.data.unwrap_or(Value::Null)["toolUseCount"],
         json!(2),
         "the resumed summary counts the persisted tool calls"

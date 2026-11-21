@@ -66,12 +66,12 @@ impl Worker {
             "wait_for_headless_completion" => {
                 self.handle_wait_for_headless_completion(payload).await
             }
-            "get_state" => self.handle_get_state(),
+            "get_state" => self.handle_get_state().await,
             "get_messages" => self.handle_get_messages(payload),
             "get_session_messages" => self.handle_get_session_messages(payload).await,
             "get_session_header" => self.handle_get_session_header(),
             "get_session_stats" => self.handle_get_session_stats(),
-            "get_model_catalog" => self.handle_get_model_catalog(),
+            "get_model_catalog" => self.handle_get_model_catalog().await,
             "get_queue" => self.handle_get_queue(),
             "clear_queue" => self.handle_clear_queue(),
             "abort_and_clear_queue" => self.handle_abort_and_clear_queue(),
@@ -383,17 +383,23 @@ impl Worker {
         response_success(None, "abort_and_send_queued", None)
     }
 
-    fn handle_get_state(&self) -> DaemonResponse {
+    async fn handle_get_state(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_state") {
             return response;
         }
-        let (core, inputs) = self.summary_inputs();
-        let summary = self.summary_locked(&core, inputs);
-        response_success(
-            None,
-            "get_state",
-            Some(serde_json::to_value(&summary).unwrap_or(Value::Null)),
-        )
+        let mut data = {
+            let (core, inputs) = self.summary_inputs();
+            let summary = self.summary_locked(&core, inputs);
+            serde_json::to_value(&summary).unwrap_or(Value::Null)
+        };
+        let daybreak_blue = match &self.agent_engine {
+            Some(engine) => engine.daybreak_blue().await,
+            None => false,
+        };
+        if let Some(fields) = data.as_object_mut() {
+            fields.insert("daybreakBlue".to_string(), Value::Bool(daybreak_blue));
+        }
+        response_success(None, "get_state", Some(data))
     }
 
     /// `get_session_header`: the persisted session header line (TS wraps it

@@ -69,6 +69,7 @@ impl SessionUi {
             models: options.models.clone(),
             model_catalog: options.model_catalog.clone(),
             model_configured_providers: options.model_configured_providers.clone(),
+            model_daybreak_blue: Default::default(),
             model_recent_models: options.model_recent_models.clone(),
             default_thinking_level: options.default_thinking_level.clone(),
             models_fetched_at: None,
@@ -106,6 +107,7 @@ impl SessionUi {
             pending_model: None,
             pending_model_provider: None,
             pending_thinking_suffix: None,
+            daybreak_blue_refresh: None,
             pending_queue: None,
             queue_selection: crate::queued::QueueSelection::default(),
             context: None,
@@ -645,6 +647,7 @@ impl SessionUi {
                 });
             }
         }
+        let attached = self.pending_snapshot.is_some();
         let snapshot = self.pending_snapshot.take().unwrap_or_default();
         self.replace_transcript(snapshot, view);
         if let Some(message) = self.pending_model_fallback_message.take() {
@@ -657,6 +660,11 @@ impl SessionUi {
         if let Some(model) = self.pending_model.take() {
             view.chrome.model_id = Some(model);
             view.chrome.model_provider = self.pending_model_provider.take();
+            self.refresh_daybreak_blue(view);
+        } else if attached {
+            // An unreadable model must not inherit a badge from the previous attachment.
+            view.chrome.daybreak_blue = false;
+            self.daybreak_blue_refresh = None;
         }
         // The tray badge mirrors the session-scoped tier on every rebuild: an
         // attach that reports no tier clears the previous session's badge.

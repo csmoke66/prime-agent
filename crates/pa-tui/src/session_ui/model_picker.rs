@@ -7,6 +7,7 @@ use super::{
     Result, SessionUi, SetModelOutcome, StatusKind, UI_REQUEST_TIMEOUT_MS,
 };
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
 /// How long a fetched model catalog stays fresh; a `/model` open past it
 /// refreshes again in the background.
@@ -17,6 +18,7 @@ const MODEL_CATALOG_REFRESH_TTL: std::time::Duration = std::time::Duration::from
 pub(crate) struct ModelCatalogUpdate {
     pub models: Vec<pa_types::ai::Model>,
     pub configured_providers: std::collections::HashSet<String>,
+    pub daybreak_blue_models: HashMap<String, HashSet<String>>,
 }
 
 impl SessionUi {
@@ -66,6 +68,7 @@ impl SessionUi {
             models: self.model_catalog.clone(),
             current,
             configured_providers: self.model_configured_providers.clone(),
+            daybreak_blue_models: self.model_daybreak_blue.clone(),
             recent_models: self.model_recent_models.clone(),
             thinking_level,
             scoped_models,
@@ -195,7 +198,7 @@ impl SessionUi {
                 .cloned()
                 .and_then(|models| serde_json::from_value(models).ok())
                 .unwrap_or_default();
-            let configured_providers: std::collections::HashSet<String> = value
+            let configured_providers: HashSet<String> = value
                 .get("configuredProviders")
                 .and_then(Value::as_array)
                 .map(|providers| {
@@ -206,9 +209,23 @@ impl SessionUi {
                         .collect()
                 })
                 .unwrap_or_default();
+            let mut daybreak_blue_models: HashMap<String, HashSet<String>> = HashMap::new();
+            if let Some(entries) = value.get("daybreakBlueModels").and_then(Value::as_array) {
+                for (provider, id) in entries
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(|key| key.split_once('/'))
+                {
+                    daybreak_blue_models
+                        .entry(provider.to_string())
+                        .or_default()
+                        .insert(id.to_string());
+                }
+            }
             let _ = updates.send(ModelCatalogUpdate {
                 models,
                 configured_providers,
+                daybreak_blue_models,
             });
         });
     }
@@ -227,6 +244,7 @@ impl SessionUi {
     pub(crate) fn apply_model_catalog(&mut self, update: ModelCatalogUpdate, view: &mut AgentView) {
         self.model_catalog = update.models;
         self.model_configured_providers = update.configured_providers;
+        self.model_daybreak_blue = update.daybreak_blue_models;
         self.models_fetched_at = Some(std::time::Instant::now());
         let current = self.current_model(view);
         if let Some(picker) = view.model_picker.as_mut() {
@@ -234,6 +252,7 @@ impl SessionUi {
                 current,
                 self.model_catalog.clone(),
                 self.model_configured_providers.clone(),
+                self.model_daybreak_blue.clone(),
             );
         }
         self.update_model_eligibility_filters(view);
@@ -415,7 +434,7 @@ impl SessionUi {
                 let state = self
                     .bounded_request(
                         Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
-                        DaemonCommand::GetState {
+                        DaemonCommand::GetConnectionState {
                             id: None,
                             active_session_id: self.active_session_id.clone(),
                             rest: Map::default(),
@@ -457,7 +476,7 @@ impl SessionUi {
         let state = self
             .bounded_request(
                 Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
-                DaemonCommand::GetState {
+                DaemonCommand::GetConnectionState {
                     id: None,
                     active_session_id: self.active_session_id.clone(),
                     rest: Map::default(),
@@ -484,7 +503,26 @@ impl SessionUi {
             view.chrome.model_provider = Some(picked_provider.to_string());
             view.chrome.thinking_suffix = None;
         }
+        self.refresh_daybreak_blue(view);
         self.dirty = true;
+    }
+
+    /// An attach or model switch supersedes any older lookup. Never await the
+    /// eligibility read on the TUI loop: it may fetch the live provider catalog.
+    pub(super) fn refresh_daybreak_blue(&mut self, view: &mut AgentView) {
+        view.chrome.daybreak_blue = false;
+        let client = self.client.clone();
+        let active_session_id = self.active_session_id.clone();
+        self.daybreak_blue_refresh = Some(tokio::spawn(async move {
+            client
+                .request_ok(DaemonCommand::GetState {
+                    id: None,
+                    active_session_id,
+                    rest: Map::default(),
+                })
+                .await
+                .is_ok_and(|state| state.get("daybreakBlue").and_then(Value::as_bool) == Some(true))
+        }));
     }
 }
 

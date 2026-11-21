@@ -1,0 +1,1 @@
+- `/model` marks models that support Daybreak Blue for your ChatGPT login. Selecting one sends the Blue flag automatically and shows the same badge in the session footer.

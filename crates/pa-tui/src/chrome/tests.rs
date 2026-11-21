@@ -900,6 +900,29 @@ fn tray_service_tier_badge_follows_the_ts_shape() {
     }
 }
 
+#[test]
+fn tray_daybreak_blue_labels_the_active_model_only_when_enabled() {
+    let mut state = ChromeState {
+        model_id: Some("gpt-5.5".to_string()),
+        thinking_suffix: Some("high".to_string()),
+        daybreak_blue: true,
+        ..Default::default()
+    };
+    let theme = theme();
+    let enabled = render_tray(&state, &theme, 120);
+    let text: String = enabled.iter().map(|span| span.content.as_str()).collect();
+    assert!(text.ends_with("gpt-5.5:high · ◆ Blue"));
+    assert_eq!(
+        enabled.last().expect("tray badge").style,
+        theme.fg_style(ThemeColor::MdLink)
+    );
+
+    state.daybreak_blue = false;
+    let disabled = render_tray(&state, &theme, 120);
+    let text: String = disabled.iter().map(|span| span.content.as_str()).collect();
+    assert!(text.ends_with("gpt-5.5:high"));
+}
+
 /// A level on a reasoning model renders; everything else keeps the bare id.
 #[test]
 fn effort_suffix_gates_on_model_reasoning() {

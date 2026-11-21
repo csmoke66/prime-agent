@@ -8,6 +8,10 @@ use serde_json::Value;
 
 use crate::theme::{Theme, ThemeBg, ThemeColor};
 
+// Use the theme's link foreground: blue in each built-in palette, including light.
+pub(crate) const DAYBREAK_BLUE_LABEL: &str = "◆ Blue";
+pub(crate) const DAYBREAK_BLUE_COLOR: ThemeColor = ThemeColor::MdLink;
+
 /// The compact 7-row brand butterfly.
 pub const PRIME_COMPACT_BUTTERFLY_LOGO: &str = concat!(
     "                 \u{2597}\u{2584}\u{2584}\u{2588}\u{2580}\n",
@@ -50,6 +54,8 @@ pub struct ChromeState {
     /// The current model's provider: two providers can carry the same id,
     /// so only the provider disambiguates the picker's match.
     pub model_provider: Option<String>,
+    /// The active session's model is eligible for Daybreak Blue.
+    pub daybreak_blue: bool,
     /// Extra metadata lines under the splash (`label value` each); empty
     /// renders none.
     pub extra_metadata: Vec<(String, String)>,
@@ -549,6 +555,10 @@ pub fn render_tray_with_hint(
             right.push(Span::styled(" \u{00b7} ".to_string(), dim));
         }
         right.push(Span::styled(label, dim));
+        if state.daybreak_blue {
+            right.push(Span::styled(" \u{00b7} ", dim));
+            right.push(theme.fg_span(DAYBREAK_BLUE_COLOR, DAYBREAK_BLUE_LABEL));
+        }
     }
     let tier_badge = match state.service_tier.as_deref() {
         Some("priority") => Some("fast"),

@@ -229,6 +229,8 @@ impl SessionUi {
                 self.note(&message, view);
                 if let Some(pending) = parked {
                     self.finish_model_sign_in(pending, view).await;
+                } else if view.chrome.model_provider.as_deref() == Some(provider) {
+                    self.refresh_daybreak_blue(view);
                 }
                 // A landed login or logout may change the auth scope the daemon's catalog refreshes
                 // under: re-fetch now so the next open serves the new account's view.

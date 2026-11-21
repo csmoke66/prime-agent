@@ -30,6 +30,9 @@ pub mod codex_debug {
     };
 }
 pub use providers::openai_codex_responses::web_search::search_chatgpt_web;
+pub use providers::openai_codex_responses::{
+    codex_daybreak_blue, codex_daybreak_model_ids, is_codex_daybreak_target,
+};
 pub use providers::simple_options::{default_request_max_tokens, effective_request_max_tokens};
 pub use registry::{Provider, ProviderRegistry};
 pub use stream::{complete, complete_simple, stream, stream_simple};

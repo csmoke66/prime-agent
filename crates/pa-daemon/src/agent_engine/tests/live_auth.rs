@@ -92,6 +92,25 @@ fn live_auth_engine_with_oauth(
     engine
 }
 
+#[test]
+fn daybreak_uses_the_live_target_and_skips_auth_for_custom_endpoints() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = live_auth_engine(dir.path(), Some("not-a-codex-token"), "openai-codex", "gpt-5.1");
+    let selected = engine
+        .resolve_model()
+        .expect("the bundled Codex model resolves");
+    let mut custom = selected.clone();
+    custom.base_url = "https://example.invalid/backend-api".to_string();
+    *engine.provider_target.write().unwrap() = Some(engine.restored_primary_target(&custom));
+
+    assert!(!engine.runtime.block_on(engine.daybreak_blue()));
+    assert!(engine.request_auth_registry.lock().unwrap().is_none());
+
+    *engine.provider_target.write().unwrap() = Some(engine.restored_primary_target(&selected));
+    assert!(!engine.runtime.block_on(engine.daybreak_blue()));
+    assert!(engine.request_auth_registry.lock().unwrap().is_some());
+}
+
 /// One registered faux provider serving `api: "faux"`, recording every
 /// request's api key.
 fn register_recording_faux() -> pa_ai::faux::FauxProviderRegistration {

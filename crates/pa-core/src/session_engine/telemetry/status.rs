@@ -83,12 +83,10 @@ fn switch_from(env: impl Fn(&str) -> Option<String>, setting: Option<bool>) -> T
     setting.map_or(TelemetrySwitch::Default, TelemetrySwitch::Settings)
 }
 
-/// Where events go: the platform endpoint in release builds, nowhere in
-/// debug builds (every `cargo test` and dev run), so tests and local
-/// development never reach production analytics.
+/// No build of this application registers a remote analytics destination.
 #[must_use]
 pub fn telemetry_endpoint() -> Option<&'static str> {
-    (!cfg!(debug_assertions)).then_some(pa_telemetry::ANALYTICS_ENDPOINT)
+    None
 }
 
 /// The `status` report: state and why, the endpoint, the installation id.
@@ -96,7 +94,7 @@ pub fn telemetry_endpoint() -> Option<&'static str> {
 pub fn telemetry_status_text(settings: &SettingsManager, agent_dir: &Path) -> String {
     let switch = telemetry_switch(settings);
     let state = if switch.enabled() { "on" } else { "off" };
-    let endpoint = telemetry_endpoint().unwrap_or("nowhere (development build)");
+    let endpoint = telemetry_endpoint().unwrap_or("none");
     let installation_id = pa_telemetry::existing_install_id(agent_dir)
         .unwrap_or_else(|| "not created yet".to_string());
     format!(
@@ -256,6 +254,6 @@ mod tests {
         let id = pa_telemetry::install_id(&agent_dir).unwrap();
         let after = telemetry_status_text(&settings, &agent_dir);
         assert!(after.contains(&format!("Installation id: {id}")));
-        assert!(after.contains("Endpoint: nowhere (development build)"));
+        assert!(telemetry_endpoint().is_none());
     }
 }

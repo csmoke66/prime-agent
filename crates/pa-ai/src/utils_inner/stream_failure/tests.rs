@@ -446,6 +446,57 @@ fn http_error_records_sdk_name() {
         "Provider rejected the request (invalid_request_error, 400): bad"
     );
 }
+#[test]
+fn safety_failure_text_is_replaced_before_persistence() {
+    let rejected = "This content was flagged for possible cybersecurity risk.";
+    let error = ProviderError::Http(ProviderHttpError {
+        message: rejected.to_string(),
+        status: Some(400),
+        body: Some(rejected.to_string()),
+        headers: HashMap::default(),
+        request_id: None,
+        sdk_name: Some("CodexApiError".to_string()),
+        retry_after_ms: None,
+        provider_error_type: Some("safety".to_string()),
+    });
+    let mut output = AssistantMessage {
+        content: Vec::new(),
+        api: "openai-codex-responses".to_string(),
+        provider: "openai-codex".to_string(),
+        model: "gpt-6.2-sol".to_string(),
+        response_model: None,
+        response_id: None,
+        diagnostics: None,
+        usage: Default::default(),
+        stop_reason: crate::types::StopReason::Error,
+        stop_reason_raw: None,
+        error_message: Some(rejected.to_string()),
+        timestamp: 1,
+        rest: Default::default(),
+    };
+    let provider = output.provider.clone();
+    let model = output.model.clone();
+    let api = output.api.clone();
+
+    record_stream_failure((&provider, &model, &api), &mut output, &error);
+
+    assert_eq!(
+        output.error_message.as_deref(),
+        Some(PROVIDER_BLOCKED_MESSAGE)
+    );
+    let diagnostic = &output.diagnostics.as_ref().expect("diagnostic")[0];
+    assert!(diagnostic.error.is_none());
+    assert_eq!(
+        diagnostic
+            .details
+            .as_ref()
+            .and_then(|details| details.get("kind"))
+            .and_then(serde_json::Value::as_str),
+        Some("safety")
+    );
+    let persisted = serde_json::to_string(&output).expect("assistant message serializes");
+    assert!(!persisted.contains(rejected));
+}
 
 /// The stream-drop class: the failure names the class (the telemetry
 /// classifier's `stream_drop` token rides the message) and the detail

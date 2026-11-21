@@ -33,20 +33,29 @@ impl CodexApiError {
         }
     }
 
-    /// The TS provider surfaces `CodexApiError.message` verbatim (the usage-limit friendly text
-    /// included) instead of the classified rewrite.
+    /// The Codex provider surfaces ordinary `CodexApiError.message` values verbatim. Safety
+    /// language overrides a generic wire code so the retry driver treats the rejection as
+    /// terminal instead of reissuing the same blocked request.
     pub fn into_provider_error(self) -> ProviderError {
+        let provider_error_type = if crate::utils_inner::stream_failure::classify_stream_failure(
+            Some(&self.message),
+            self.status,
+        )
+            == crate::utils_inner::stream_failure::StreamFailureKind::Safety
+        {
+            Some("safety".to_string())
+        } else {
+            self.code
+        };
         ProviderError::Http(crate::utils_inner::stream_failure::ProviderHttpError {
             message: self.message,
             status: self.status,
-            // The TS error carries its wire `code` and no body/error field: the classification
-            // reads the code, not a parsed body.
             body: None,
             headers: HashMap::new(),
             request_id: None,
             sdk_name: Some("CodexApiError".to_string()),
             retry_after_ms: self.retry_after_ms,
-            provider_error_type: self.code,
+            provider_error_type,
         })
     }
 }
@@ -750,6 +759,24 @@ mod tests {
             info.kind,
             crate::utils_inner::stream_failure::StreamFailureKind::InvalidRequest
         );
+    }
+
+    #[test]
+    fn cybersecurity_guardrail_with_generic_code_is_terminal_safety() {
+        let error = CodexApiError {
+            message: "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.".to_string(),
+            code: Some("invalid_request_error".to_string()),
+            status: Some(400),
+            retry_after_ms: None,
+            payload: None,
+        }
+        .into_provider_error();
+        let info = crate::utils_inner::stream_failure::extract_stream_failure_info(&error);
+        assert_eq!(
+            info.kind,
+            crate::utils_inner::stream_failure::StreamFailureKind::Safety
+        );
+        assert_eq!(info.provider_error_type.as_deref(), Some("safety"));
     }
 
     /// A flat mid-stream error event keeps its "Codex error: ..." composed message through the

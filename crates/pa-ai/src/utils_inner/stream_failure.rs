@@ -850,10 +850,12 @@ pub(crate) fn diagnostic_error_info(error: &ProviderError) -> DiagnosticErrorInf
         rest: Map::default(),
     }
 }
+const PROVIDER_BLOCKED_MESSAGE: &str = "The provider blocked that approach. Try a different way.";
 
 /// Record a terminal stream failure on the message (structured diagnostic that persists to session
-/// JSONL) and emit one structured log line. Call from the provider's terminal catch after
-/// `stop_reason/error_message` are set; no-op for user-initiated aborts.
+/// JSONL) and emit one structured log line. Safety and refusal failures retain only their
+/// classification: provider-supplied rejection text is replaced before the message can reach chat,
+/// retry events, logs, or the durable transcript.
 pub fn record_stream_failure(
     model: (&str, &str, &str),
     output: &mut AssistantMessage,
@@ -862,13 +864,22 @@ pub fn record_stream_failure(
     if output.stop_reason != crate::types::StopReason::Error {
         return;
     }
-    let info = extract_stream_failure_info(error);
+    let mut info = extract_stream_failure_info(error);
+    let redacted = matches!(
+        info.kind,
+        StreamFailureKind::Refusal | StreamFailureKind::Safety
+    );
+    if redacted {
+        info.raw = None;
+        output.content.clear();
+        output.error_message = Some(PROVIDER_BLOCKED_MESSAGE.to_string());
+    }
     let info_json = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
     append_assistant_message_diagnostic(
         output,
         create_assistant_message_diagnostic(
             "provider_stream_failure",
-            Some(diagnostic_error_info(error)),
+            (!redacted).then(|| diagnostic_error_info(error)),
             Some(info_json),
         ),
     );
@@ -885,7 +896,7 @@ pub fn record_stream_failure(
             "status": info.status,
             "requestId": info.request_id,
             "message": output.error_message,
-            "cause": if raw_message == error_message {
+            "cause": if redacted || raw_message == error_message {
                 serde_json::Value::Null
             } else {
                 serde_json::Value::String(truncate_raw_payload(&raw_message))

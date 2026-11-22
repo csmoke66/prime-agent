@@ -866,25 +866,81 @@ impl AgentSessionEngine {
                             .as_str()
                             .ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
                         let target = request.data["targetSession"].as_str();
+                        let interrupt = request.data["interrupt"].as_bool().unwrap_or(false);
+                        let continue_turn = request.data["continueTurn"].as_bool().unwrap_or(false);
+                        let wait = request.data["wait"].as_bool().unwrap_or(true);
                         let output = match target {
                             None => host.run_workflow(name, input).await?,
                             Some(target) if target == current_session => {
                                 host.run_workflow(name, input).await?
                             }
                             Some(target) => {
-                                link.request_success(
+                                let receipt = link.request_success(
                                     serde_json::json!({
                                         "type": "run_workflow",
                                         "activeSessionId": target,
                                         "name": name,
                                         "input": input,
+                                        "interrupt": interrupt,
+                                        "continueTurn": continue_turn,
                                     }),
                                     std::time::Duration::from_secs(30),
-                                )
-                                .await?
+                                ).await?;
+                                if !wait {
+                                    receipt
+                                } else {
+                                    let run_id = receipt.get("runId").and_then(Value::as_str)
+                                        .ok_or_else(|| anyhow::anyhow!("workflow start returned no run id"))?;
+                                    loop {
+                                        let status = link.request_success(
+                                            serde_json::json!({
+                                                "type": "get_workflow_run",
+                                                "activeSessionId": target,
+                                                "runId": run_id,
+                                            }),
+                                            std::time::Duration::from_secs(30),
+                                        ).await?;
+                                        match status.get("state").and_then(Value::as_str) {
+                                            Some("completed") => break status.get("output").cloned()
+                                                .ok_or_else(|| anyhow::anyhow!("completed workflow returned no output"))?,
+                                            Some("failed") => anyhow::bail!(
+                                                "{}",
+                                                status.get("error").and_then(Value::as_str)
+                                                    .unwrap_or("workflow failed")
+                                            ),
+                                            _ => tokio::time::sleep(
+                                                std::time::Duration::from_millis(500),
+                                            ).await,
+                                        }
+                                    }
+                                }
                             }
                         };
                         Ok(serde_json::json!({"output":output}))
+                    }
+                }),
+            );
+            let status_link = Arc::clone(&self.link);
+            handlers.register(
+                "rlm.workflows.status",
+                host_handler(move |request| {
+                    let link = Arc::clone(&status_link);
+                    async move {
+                        let run_id = request.data["runId"]
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("workflow run id must be a string"))?;
+                        let target = request.data["targetSession"]
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("target session must be a string"))?;
+                        link.request_success(
+                            serde_json::json!({
+                                "type": "get_workflow_run",
+                                "activeSessionId": target,
+                                "runId": run_id,
+                            }),
+                            std::time::Duration::from_secs(30),
+                        )
+                        .await
                     }
                 }),
             );

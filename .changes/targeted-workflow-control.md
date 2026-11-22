@@ -1,0 +1,2 @@
+- Targeted workflows can now interrupt an active turn, queue a continuation after a successful state rewrite, and wait for validated output. Duplicate active runs coalesce by target, workflow, and input.
+- Expired heartbeat catalog entries render as `due` instead of appearing stuck at `1s` while the refreshed schedule is loading.

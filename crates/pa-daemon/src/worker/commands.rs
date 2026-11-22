@@ -40,6 +40,13 @@ impl Worker {
             "detach" => self.handle_detach(payload),
             "prompt" => self.handle_prompt(payload, false).await,
             "run_workflow" => self.start_workflow(payload),
+            "get_workflow_run" => {
+                let id = payload.get("runId").and_then(Value::as_str).unwrap_or_default();
+                match self.workflow_runs.status(id) {
+                    Some(status) => response_success(None, command_type, Some(status)),
+                    None => response_failure(None, command_type, "Unknown workflow run", None),
+                }
+            }
             "list_workflows" => {
                 let cwd = self.core.lock().unwrap().cwd.clone();
                 let agent_dir = self.config.agent_dir.clone();
@@ -264,16 +271,36 @@ impl Worker {
             None => None,
         };
         let applies_state = apply_context_field.is_some() || memory_apply.is_some();
-        let (session, queued_for_idle) = {
+        let interrupt = payload
+            .get("interrupt")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let continue_turn = payload
+            .get("continueTurn")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let (session, queued_for_idle, run_id, deduplicated) = {
             let mut core = self.core.lock().unwrap();
+            let session = core.generation.clone();
             let queued = applies_state && (core.busy || core.compacting);
-            if applies_state && !queued {
+            let (run_id, deduplicated) = self.workflow_runs.begin(&session, name, &input);
+            if applies_state && !queued && !deduplicated {
                 // Reuse the compaction admission gate: no parent turn may start
                 // while an isolated reviewer is preparing a replacement.
                 core.compacting = true;
             }
-            (core.generation.clone(), queued)
+            (session, queued, run_id, deduplicated)
         };
+        if deduplicated {
+            return response_success(
+                None,
+                COMMAND,
+                Some(json!({"started":false,"queued":queued_for_idle,"deduplicated":true,"runId":run_id})),
+            );
+        }
+        if interrupt {
+            self.request_abort();
+        }
         let name = name.to_owned();
         let core = self.core.clone();
         let events = self.events.clone();
@@ -282,6 +309,10 @@ impl Worker {
         let queued_idle_notify = std::sync::Arc::clone(&idle_notify);
         let queued_core = self.core.clone();
         let queued_session = session.clone();
+        let workflow_runs = std::sync::Arc::clone(&self.workflow_runs);
+        let recovery = std::sync::Arc::clone(&self.recovery);
+        let work_notify = std::sync::Arc::clone(&self.work_notify);
+        let task_run_id = run_id.clone();
         tokio::spawn(async move {
             if queued_for_idle {
                 loop {
@@ -291,6 +322,10 @@ impl Worker {
                     let admitted = {
                         let mut core = queued_core.lock().unwrap();
                         if core.generation != queued_session || core.shutdown_requested {
+                            workflow_runs.fail(
+                                &task_run_id,
+                                "target session changed before workflow admission",
+                            );
                             return;
                         }
                         if core.busy || core.compacting {
@@ -306,6 +341,7 @@ impl Worker {
                     idle.await;
                 }
             }
+            workflow_runs.mark_running(&task_run_id);
             let mut result = host.run_workflow(&name, input).await;
             let mut memory_backup = None;
             if let (Ok(output), Some((field, dir, scope))) = (&result, &memory_apply) {
@@ -358,6 +394,11 @@ impl Worker {
             let branch_entries = {
                 let mut core = core.lock().unwrap();
                 if core.generation != session {
+                    drop(core);
+                    workflow_runs.fail(
+                        &task_run_id,
+                        "target session changed while workflow was running",
+                    );
                     return;
                 }
                 persist_custom_row(&mut core, &row);
@@ -392,11 +433,53 @@ impl Worker {
                 }
                 idle_notify.notify_waiters();
             }
+            if continue_turn && result.is_ok() {
+                let queued = {
+                    let mut core = core.lock().unwrap();
+                    if core.generation != session || core.shutdown_requested {
+                        false
+                    } else {
+                        let busy = core.busy;
+                        core.queued_input_suspended = false;
+                        let item = QueuedItem {
+                            priority: super::QueuePriority::Human,
+                            preview: None,
+                            message: "Continue from the updated session state. Resume the interrupted task without repeating completed work.".to_string(),
+                            custom_message: None,
+                            agent_message: None,
+                            queue_key: Some(format!("workflow-continuation:{task_run_id}")),
+                            admission_id: None,
+                            images: Vec::new(),
+                            done: None,
+                            queue_visible: busy,
+                            policy: if busy { super::TurnPolicy::Queued } else { super::TurnPolicy::Direct },
+                            forced_batch: false,
+                        };
+                        if busy {
+                            super::enqueue_priority(&mut core.follow_up, item);
+                        } else {
+                            super::enqueue_priority(&mut core.steering, item);
+                        }
+                        true
+                    }
+                };
+                if queued {
+                    super::checkpoint_queue_recovery(
+                        &recovery,
+                        &core,
+                        QueueCheckpoint::Admitted {
+                            operation: "workflow_continuation",
+                        },
+                    );
+                    work_notify.notify_one();
+                }
+            }
+            workflow_runs.finish(&task_run_id, &result);
         });
         response_success(
             None,
             COMMAND,
-            Some(json!({"started":true,"queued":queued_for_idle})),
+            Some(json!({"started":true,"queued":queued_for_idle,"deduplicated":false,"runId":run_id})),
         )
     }
 

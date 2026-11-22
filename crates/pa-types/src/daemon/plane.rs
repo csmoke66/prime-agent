@@ -47,7 +47,7 @@ pub fn command_plane(command_type: &str) -> DaemonCommandPlane {
         | "get_connection_state"
         | "get_messages"
         | "get_rlm_children"
-        | "run_workflow" | "list_workflows"
+        | "run_workflow" | "get_workflow_run" | "list_workflows"
         | "get_session_stats"
         | "get_context_tree"
         | "get_commands"

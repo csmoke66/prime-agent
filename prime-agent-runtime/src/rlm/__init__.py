@@ -785,9 +785,23 @@ class _WorkflowNamespace:
         input: dict[str, Any],
         *,
         session: str | None = None,
+        interrupt: bool = False,
+        continue_turn: bool = False,
+        wait: bool = True,
     ) -> dict[str, Any]:
-        """Run locally, or start the workflow on another existing session."""
-        payload: dict[str, Any] = {"name": name, "input": input}
+        """Run locally or on another session.
+
+        Targeted runs can interrupt the active turn, queue a continuation after
+        a successful rewrite, and wait for the validated workflow output.
+        With ``wait=False``, return the run receipt (including ``runId``).
+        """
+        payload: dict[str, Any] = {
+            "name": name,
+            "input": input,
+            "interrupt": interrupt,
+            "continueTurn": continue_turn,
+            "wait": wait,
+        }
         if session is not None:
             payload["targetSession"] = session
         reply = await host_request("rlm.workflows.run", payload)
@@ -795,6 +809,16 @@ class _WorkflowNamespace:
         if not isinstance(output, dict):
             raise RuntimeError("Workflow host returned no JSON output object")
         return output
+
+    async def status(self, run_id: str, *, session: str) -> dict[str, Any]:
+        """Return a targeted workflow run's queued/running/completed/failed state."""
+        reply = await host_request(
+            "rlm.workflows.status",
+            {"runId": run_id, "targetSession": session},
+        )
+        if not isinstance(reply, dict):
+            raise RuntimeError("Workflow host returned no run status")
+        return reply
 
 
 class _RLMInboxNamespace:

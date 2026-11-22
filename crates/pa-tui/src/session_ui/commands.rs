@@ -7,27 +7,47 @@ use super::{
     StatusKind, SubmitBehavior, Value, UI_REQUEST_TIMEOUT_MS,
 };
 
-fn workflow_target(args: &str) -> std::result::Result<(Option<String>, &str), String> {
-    let args = args.trim();
-    if args == "--session" {
-        return Err("--session requires a session selector".to_string());
+fn workflow_target(args: &str) -> std::result::Result<(Option<String>, bool, bool, &str), String> {
+    let mut rest = args.trim();
+    let mut target = None;
+    let mut interrupt = false;
+    let mut continue_turn = false;
+    loop {
+        if let Some(after) = rest.strip_prefix("--interrupt") {
+            if after.is_empty() || after.starts_with(char::is_whitespace) {
+                interrupt = true;
+                rest = after.trim_start();
+                continue;
+            }
+        }
+        if let Some(after) = rest.strip_prefix("--continue") {
+            if after.is_empty() || after.starts_with(char::is_whitespace) {
+                continue_turn = true;
+                rest = after.trim_start();
+                continue;
+            }
+        }
+        let after = rest
+            .strip_prefix("--session=")
+            .or_else(|| rest.strip_prefix("--session "));
+        if let Some(after) = after {
+            let after = after.trim_start();
+            if after.is_empty() {
+                return Err("--session requires a session selector".to_string());
+            }
+            let (selector, remaining) = after
+                .split_once(char::is_whitespace)
+                .map_or((after, ""), |(selector, remaining)| (selector, remaining.trim_start()));
+            target = Some(selector.to_owned());
+            rest = remaining;
+            continue;
+        }
+        if rest == "--session" {
+            return Err("--session requires a session selector".to_string());
+        }
+        break;
     }
-    let rest = if let Some(rest) = args.strip_prefix("--session=") {
-        Some(rest)
-    } else {
-        args.strip_prefix("--session ")
-    };
-    let Some(rest) = rest else {
-        return Ok((None, args));
-    };
-    let rest = rest.trim_start();
-    if rest.is_empty() {
-        return Err("--session requires a session selector".to_string());
-    }
-    let (target, remaining) = rest
-        .split_once(char::is_whitespace)
-        .map_or((rest, ""), |(target, remaining)| (target, remaining.trim_start()));
-    Ok((Some(target.to_owned()), remaining))
+    Ok((target, interrupt, continue_turn, rest))
 }
 
 #[cfg(test)]
@@ -37,15 +57,17 @@ mod workflow_target_tests {
     #[test]
     fn parses_targeted_and_local_workflow_arguments() {
         assert_eq!(
-            workflow_target("--session target-id review {\"scope\":\"local\"}").unwrap(),
+            workflow_target("--interrupt --session target-id --continue review {\"scope\":\"local\"}").unwrap(),
             (
                 Some("target-id".to_string()),
+                true,
+                true,
                 "review {\"scope\":\"local\"}"
             )
         );
         assert_eq!(
             workflow_target("review {\"scope\":\"local\"}").unwrap(),
-            (None, "review {\"scope\":\"local\"}")
+            (None, false, false, "review {\"scope\":\"local\"}")
         );
         assert!(workflow_target("--session ").is_err());
     }
@@ -57,6 +79,8 @@ impl SessionUi {
         name: String,
         input: Value,
         target_session: Option<String>,
+        interrupt: bool,
+        continue_turn: bool,
         view: &mut AgentView,
     ) -> Result<()> {
         let active_session_id = target_session
@@ -67,13 +91,19 @@ impl SessionUi {
             active_session_id,
             name: name.clone(),
             input,
+            interrupt,
+            continue_turn,
         };
         match self.bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command).await {
-            Ok(_) => {
+            Ok(receipt) => {
                 let suffix = target_session
                     .as_deref()
                     .map_or_else(String::new, |target| format!(" on {target}"));
-                self.note(&format!("Workflow {name} started{suffix}."), view)
+                if receipt.get("deduplicated").and_then(Value::as_bool) == Some(true) {
+                    self.note(&format!("Workflow {name} is already queued or running{suffix}."), view)
+                } else {
+                    self.note(&format!("Workflow {name} started{suffix}."), view)
+                }
             }
             Err(e) => self.error_row(&format!("Cannot start workflow: {e:#}"), view),
         }
@@ -110,7 +140,7 @@ impl SessionUi {
         match name.as_str() {
             "help" => {
                 self.note(
-                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/run [name]     choose a workflow or open its input form\n/run name JSON  run with a JSON object of input values\n/settings       configure models, sub-agents, and preferences\n/exit           detach and exit",
+                    "/help           this list\n/list           live sessions\n/switch <n|id>  switch to a session from /list\n/new            start a new session\n/harness        browse local and global harness entries\n/run [--session ID] [--interrupt] [--continue] [name]  run a workflow\n/settings       configure models, sub-agents, and preferences\n/exit           detach and exit",
                     view,
                 );
                 return Ok(());
@@ -365,7 +395,7 @@ impl SessionUi {
             "mcp" => self.handle_mcp_command(resolved, view).await?,
             "run" => {
                 let parsed = workflow_target(resolved.args.trim());
-                let (target_session, args) = match parsed {
+                let (target_session, interrupt, continue_turn, args) = match parsed {
                     Ok(parsed) => parsed,
                     Err(error) => {
                         view.editor.set_text(text);
@@ -380,6 +410,8 @@ impl SessionUi {
                                 name.to_owned(),
                                 Value::Object(input),
                                 target_session,
+                                interrupt,
+                                continue_turn,
                                 view,
                             )
                             .await?;
@@ -400,10 +432,12 @@ impl SessionUi {
                         .bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command)
                         .await
                     {
-                        Ok(result) => crate::workflow_form::WorkflowForm::open_for_target(
+                        Ok(result) => crate::workflow_form::WorkflowForm::open_for_invocation(
                             args,
                             result,
                             target_session,
+                            interrupt,
+                            continue_turn,
                         ),
                         Err(error) => Err(format!("Cannot list workflows: {error:#}")),
                     };

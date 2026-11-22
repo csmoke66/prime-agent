@@ -715,6 +715,7 @@ pub fn command_active_session_id(command: &DaemonCommand) -> Option<&str> {
             active_session_id, ..
         }
         | DaemonCommand::RunWorkflow { active_session_id, .. }
+        | DaemonCommand::GetWorkflowRun { active_session_id, .. }
         | DaemonCommand::ListWorkflows { active_session_id, .. }
         | DaemonCommand::GetRlmChildren {
             active_session_id, ..
@@ -1008,6 +1009,7 @@ pub fn command_type_name(command: &DaemonCommand) -> &'static str {
         DaemonCommand::GetSessionMessages { .. } => "get_session_messages",
         DaemonCommand::GetRlmChildren { .. } => "get_rlm_children",
         DaemonCommand::RunWorkflow { .. } => "run_workflow",
+        DaemonCommand::GetWorkflowRun { .. } => "get_workflow_run",
         DaemonCommand::ListWorkflows { .. } => "list_workflows",
         DaemonCommand::GetSessionStats { .. } => "get_session_stats",
         DaemonCommand::GetContextTree { .. } => "get_context_tree",

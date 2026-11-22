@@ -367,9 +367,19 @@ impl SessionUi {
                         name,
                         input,
                         target_session,
+                        interrupt,
+                        continue_turn,
                     } => {
                         view.workflow_form = None;
-                        self.submit_workflow(name, input, target_session, view).await?;
+                        self.submit_workflow(
+                            name,
+                            input,
+                            target_session,
+                            interrupt,
+                            continue_turn,
+                            view,
+                        )
+                        .await?;
                     }
                 }
             }

@@ -52,15 +52,16 @@ A workflow is a reusable job with its own model and child settings. Save a proje
 }
 ```
 
-`/run review` opens a form built from `inputFields`. Enter the values and select **Run workflow**, or press **Esc** to cancel. To run against another existing session, use its active or durable session ID: `/run --session SESSION_ID review`. The form and workflow execute on that target session, so state-rewrite workflows are applied there. You do not redefine the prompt or result when you run it. From the REPL:
+`/run review` opens a form built from `inputFields`. Enter the values and select **Run workflow**, or press **Esc** to cancel. To run against another existing session, use `/run --session SESSION_ID review`. Add `--interrupt` to stop that session's active turn before the workflow and `--continue` to queue a fresh continuation after a successful rewrite; options may appear in any order before the workflow name. Identical queued or active runs against one target coalesce.
 
 ```python
 names = await rlm.workflows.list()
 definition = await rlm.workflows.describe("review")
 result = await rlm.workflows.run("review", {"files": ["src/parser.rs"], "focus": "error handling"})
-receipt = await rlm.workflows.run("review", {"files": ["src/parser.rs"]}, session="SESSION_ID")
+result = await rlm.workflows.run("review", {"files": ["src/parser.rs"]}, session="SESSION_ID", interrupt=True, continue_turn=True)
 print(result["summary"])
 ```
+Targeted REPL runs wait for validated output by default. Pass `wait=False` to return immediately with a receipt containing `runId`.
 
 Both field maps are required; use `{}` if there are no fields. Types are `string`, `integer`, `number`, `boolean`, `object`, `array`, and `null`. Optional means the key may be absent, not that a value of the wrong type is accepted. Missing required fields, undeclared keys and mistyped values are errors on input and output. The caller's model and session settings are unchanged. A workflow cannot expand the caller's allowed models.
 

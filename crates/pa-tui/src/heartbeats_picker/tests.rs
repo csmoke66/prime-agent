@@ -118,13 +118,13 @@ fn the_list_renders_columned_rows_and_one_hint() {
         .expect("a column header row");
     assert!(header.contains("Label"));
     assert!(header.contains("Status"));
-    // The fixture's next run is long past, so the one-second floor renders ("1s").
+    // The fixture's next run is long past, so stale data says it is due.
     let row = text
         .iter()
         .find(|row| row.contains("every 10m"))
         .expect("a columned row");
     assert!(row.contains("tick user-1"));
-    assert!(row.contains("1s"));
+    assert!(row.contains("due"));
     assert!(row.contains("paused"));
     assert!(!text.iter().any(|row| row.starts_with("  created")));
     assert_eq!(
@@ -274,7 +274,7 @@ fn the_next_run_label_is_natural_language() {
     assert_eq!(label("2026-06-01T13:00:00.000Z"), "1h");
     assert_eq!(label("2026-06-02T12:00:00.000Z"), "1d");
     assert_eq!(label("2026-06-03T12:00:00.000Z"), "2d");
-    assert_eq!(label("2026-06-01T11:59:30.000Z"), "1s");
+    assert_eq!(label("2026-06-01T11:59:30.000Z"), "due");
     assert_eq!(next_run_label(None, now), "\u{2014}");
     assert_eq!(label("soon-ish"), "soon-ish");
 }

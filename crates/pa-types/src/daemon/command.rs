@@ -707,6 +707,16 @@ pub enum DaemonCommand {
         active_session_id: String,
         name: String,
         input: Value,
+        #[serde(default)]
+        interrupt: bool,
+        #[serde(default)]
+        continue_turn: bool,
+    },
+    GetWorkflowRun {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        run_id: String,
     },
     GetRlmChildren {
         #[serde(default, skip_serializing_if = "Option::is_none")]

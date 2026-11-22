@@ -123,6 +123,8 @@ enum Stage {
 pub(crate) struct WorkflowForm {
     stage: Stage,
     target_session: Option<String>,
+    interrupt: bool,
+    continue_turn: bool,
     focus: usize,
     error: Option<String>,
 }
@@ -134,6 +136,8 @@ pub(crate) enum WorkflowFormAction {
         name: String,
         input: Value,
         target_session: Option<String>,
+        interrupt: bool,
+        continue_turn: bool,
     },
 }
 
@@ -143,10 +147,21 @@ impl WorkflowForm {
         Self::open_for_target(name, catalog, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn open_for_target(
         name: &str,
         catalog: Value,
         target_session: Option<String>,
+    ) -> Result<Self, String> {
+        Self::open_for_invocation(name, catalog, target_session, false, false)
+    }
+
+    pub(crate) fn open_for_invocation(
+        name: &str,
+        catalog: Value,
+        target_session: Option<String>,
+        interrupt: bool,
+        continue_turn: bool,
     ) -> Result<Self, String> {
         let WorkflowCatalog {
             names,
@@ -156,7 +171,7 @@ impl WorkflowForm {
             .map_err(|err| format!("Cannot read workflow list: {err}"))?;
         if !name.is_empty() {
             return if let Some(definition) = definitions.remove(name) {
-                Ok(Self::edit(name.to_owned(), definition, target_session))
+                Ok(Self::edit(name.to_owned(), definition, target_session, interrupt, continue_turn))
             } else if let Some(error) = errors.get(name) {
                 Err(format!("Cannot load workflow {name:?}: {error}"))
             } else if names.iter().any(|listed| listed == name) {
@@ -193,12 +208,20 @@ impl WorkflowForm {
                 invalid: errors.len(),
             },
             target_session,
+            interrupt,
+            continue_turn,
             focus: 0,
             error: None,
         })
     }
 
-    fn edit(name: String, definition: Definition, target_session: Option<String>) -> Self {
+    fn edit(
+        name: String,
+        definition: Definition,
+        target_session: Option<String>,
+        interrupt: bool,
+        continue_turn: bool,
+    ) -> Self {
         Self {
             stage: Stage::Edit {
                 name,
@@ -220,6 +243,8 @@ impl WorkflowForm {
                     .collect(),
             },
             target_session,
+            interrupt,
+            continue_turn,
             focus: 0,
             error: None,
         }
@@ -301,7 +326,15 @@ impl WorkflowForm {
                     "enter" | "space" => {
                         let (name, definition) = choices.swap_remove(self.focus);
                         let target_session = self.target_session.clone();
-                        *self = Self::edit(name, definition, target_session);
+                        let interrupt = self.interrupt;
+                        let continue_turn = self.continue_turn;
+                        *self = Self::edit(
+                            name,
+                            definition,
+                            target_session,
+                            interrupt,
+                            continue_turn,
+                        );
                     }
                     _ => {}
                 },
@@ -332,6 +365,8 @@ impl WorkflowForm {
                                     name: name.clone(),
                                     input,
                                     target_session: self.target_session.clone(),
+                                    interrupt: self.interrupt,
+                                    continue_turn: self.continue_turn,
                                 };
                             }
                             Err((index, error)) => {
@@ -600,20 +635,29 @@ mod tests {
     }
 
     #[test]
-    fn target_session_survives_picker_and_submission() {
-        let mut form = WorkflowForm::open_for_target(
+    fn target_options_survive_picker_and_submission() {
+        let mut form = WorkflowForm::open_for_invocation(
             "",
             catalog(json!({})),
             Some("hr-target".to_string()),
+            true,
+            true,
         )
         .unwrap();
         let kb = KeybindingsManager::new();
         form.handle_key("enter", &kb);
-        let WorkflowFormAction::Submit { target_session, .. } = form.handle_key("enter", &kb)
+        let WorkflowFormAction::Submit {
+            target_session,
+            interrupt,
+            continue_turn,
+            ..
+        } = form.handle_key("enter", &kb)
         else {
             panic!("form did not submit: {form:?}")
         };
         assert_eq!(target_session.as_deref(), Some("hr-target"));
+        assert!(interrupt);
+        assert!(continue_turn);
     }
 
     #[test]

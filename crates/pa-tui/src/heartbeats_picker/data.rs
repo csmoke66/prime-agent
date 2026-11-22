@@ -264,10 +264,9 @@ pub fn format_timestamp(value: &str) -> String {
     }
 }
 
-/// The next-run label as a bare countdown ("45s", "5m", "10h"):
-/// rounded seconds under a minute, then rounded minutes, hours, and days,
-/// with a one-second floor. Bare countdown, no `in ` prefix (operator
-/// directive 2026-10-17, reversing the 2026-09-26 wording; matches TS).
+/// The next-run label as a bare countdown ("45s", "5m", "10h").
+/// An expired cached timestamp renders `due` instead of appearing permanently
+/// stuck at `1s` while the catalog refresh is in flight.
 /// A missing next run keeps the `—` placeholder; an unparseable
 /// value renders raw.
 #[must_use]
@@ -278,7 +277,11 @@ pub fn next_run_label(next_run_at: Option<&str>, now_ms: u64) -> String {
     let Some(at) = crate::agents_view_state::iso_to_unix_ms(value) else {
         return value.to_string();
     };
-    let delta = ((at - now_ms as i64).max(0) as f64) / 1000.0;
+    let remaining_ms = at - now_ms as i64;
+    if remaining_ms <= 0 {
+        return "due".to_string();
+    }
+    let delta = remaining_ms as f64 / 1000.0;
     let seconds = (delta.round() as i64).max(1);
     if seconds < 60 {
         return format!("{seconds}s");

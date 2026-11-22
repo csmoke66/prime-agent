@@ -15,6 +15,7 @@ mod input;
 mod lifecycle;
 mod refinement;
 mod summary;
+mod workflow_runs;
 
 mod connection;
 
@@ -188,6 +189,8 @@ pub struct Worker {
     /// The inbox arrival batch the queued short notice covers: shared by
     /// the kernel-notice sink and the agent-message delivery route.
     pub(crate) inbox_arrivals: pa_core::session_engine::inbox::InboxArrivals,
+    /// Targeted workflow operations, including active-run deduplication and results.
+    pub(crate) workflow_runs: std::sync::Arc<workflow_runs::WorkflowRunRegistry>,
     /// Session navigation: `new_session` / `switch_session` / `import_jsonl`,
     /// the shared replacement flow.
     pub(crate) navigation: crate::session_navigation::SessionNavigation,
@@ -902,6 +905,7 @@ impl Worker {
             agent_messages: crate::agent_message_ingest::AgentMessageIngest::new(),
             input_pauses,
             inbox_arrivals,
+            workflow_runs: std::sync::Arc::new(workflow_runs::WorkflowRunRegistry::default()),
             navigation,
             prompt_admissions,
             scheduled,

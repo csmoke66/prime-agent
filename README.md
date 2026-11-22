@@ -77,6 +77,17 @@ At 20 unread agent-to-agent messages, the worker bypasses the reminder setting a
 
 In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
 
+### Railguard handling
+
+Specific handling for railguards instead of the typical fully blocking failures:
+1. The default is a sanitized normal message about potential false positives
+2. A secondary option to not deliver a message at all, but to re-try the turn once
+3. A tertiary option that will delivery information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
+
+Default workflows are provided with the repository to help handle false positive railguards:
+1. `railguard-context-repair.json` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
+2. `railguard-memory-repair.json` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
+
 ## Install
 
 Install the latest stable version with the one-command installer:

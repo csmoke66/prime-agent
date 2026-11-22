@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "description": "Review and clean every harness memory in either this session or the global store, then apply the replacement with an automatic backup.",
+  "model": "openai-codex/gpt-5.6-sol",
+  "subagents": {
+    "allowedModels": [
+      "openai-codex/gpt-5.6-sol"
+    ]
+  },
+  "harnessMemory": {
+    "scopeInputField": "scope",
+    "interactiveApplyOutputField": "cleanedMemories"
+  },
+  "prompt": "You are reviewing persistent harness memories that may have accumulated false inferences, repeated provider-failure noise, or instructions derived from opaque safety interruptions. The harnessMemory object is captured automatically from the selected live store and contains every memory in that scope. Do not ask the user to reconstruct an unknown provider reason. Evaluate the actual software-engineering facts and preserve useful project knowledge, verified constraints, user preferences, saved findings, and actionable recovery state. Remove only contamination: unsupported allegations, conclusions inferred solely from a provider refusal, repeated retry/error prose, derailment instructions, and stale claims contradicted by stronger recorded facts. Do not add evasion advice, conceal disallowed intent, invent facts, or weaken legitimate safety boundaries. Return one cleaned record for every supplied memory, in the same order. Preserve each record's scope, id, and version exactly. You may rewrite title, content, and path for clarity and factual accuracy, but none may be blank. Do not add or remove records. Return only the declared JSON object.",
+  "inputFields": {
+    "scope": {
+      "type": "string",
+      "required": true,
+      "description": "Choose this session's local memories or the global memories shared by every session.",
+      "choices": [
+        "local",
+        "global"
+      ]
+    }
+  },
+  "outputFields": {
+    "assessment": {
+      "type": "string",
+      "required": true,
+      "description": "Short assessment of whether the selected memories contained contamination."
+    },
+    "changes": {
+      "type": "array",
+      "required": true,
+      "description": "Concise descriptions of substantive cleanup performed."
+    },
+    "cleanedMemories": {
+      "type": "array",
+      "required": true,
+      "description": "Every selected memory as {scope,id,version,title,content,path}, preserving identity and version exactly."
+    }
+  }
+}

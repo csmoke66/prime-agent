@@ -13,7 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::models::resolver::is_valid_thinking_level;
-use crate::workflow_io::Fields;
+use crate::workflow_io::{FieldType, Fields};
 
 #[cfg(unix)]
 #[path = "unix.rs"]
@@ -38,6 +38,10 @@ pub struct Workflow {
     pub effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagents: Option<WorkflowSubagents>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<WorkflowContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interactive_apply_context_field: Option<String>,
     pub prompt: String,
     pub input_fields: Fields,
     pub output_fields: Fields,
@@ -50,6 +54,14 @@ pub struct WorkflowSubagents {
     pub allowed_models: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowContext {
+    pub include_parent_session: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_characters: Option<usize>,
 }
 
 impl Workflow {
@@ -66,6 +78,21 @@ impl Workflow {
                 validate_model(model, "subagents.allowedModels")?;
             }
             validate_effort(subagents.effort.as_deref(), "subagents.effort")?;
+        }
+        if let Some(context) = &self.context {
+            ensure!(
+                context.max_characters.is_none_or(|limit| (4_096..=1_000_000).contains(&limit)),
+                "context.maxCharacters must be between 4096 and 1000000"
+            );
+        }
+        if let Some(field) = &self.interactive_apply_context_field {
+            let output = self.output_fields.get(field).with_context(|| {
+                format!("interactiveApplyContextField names unknown output field {field:?}")
+            })?;
+            ensure!(
+                output.required && output.kind == FieldType::String,
+                "interactiveApplyContextField must name a required string output field"
+            );
         }
         ensure!(
             !self.prompt.trim().is_empty(),

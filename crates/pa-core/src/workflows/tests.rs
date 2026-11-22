@@ -16,6 +16,8 @@ fn workflow(instructions: &str) -> Workflow {
             allowed_models: Some(vec!["openai-codex/gpt-6.2-sol".into()]),
             effort: Some("medium".into()),
         }),
+        context: None,
+        interactive_apply_context_field: None,
         prompt: instructions.into(),
         input_fields: Fields::new(),
         output_fields: Fields::new(),
@@ -112,6 +114,8 @@ fn validates_create_and_disk_schema() {
         ("effort", json!("invalid")),
         ("subagents", json!({"effort":"invalid"})),
         ("subagents", json!({"allowedModels":["provider/*"]})),
+        ("context", json!({"includeParentSession":true,"maxCharacters":1})),
+        ("interactiveApplyContextField", json!("missing")),
     ] {
         let previous = valid.as_object_mut().unwrap().insert(field.into(), value);
         cases.push(valid.clone());

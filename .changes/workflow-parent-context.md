@@ -1,0 +1,1 @@
+- Workflows can now request the calling session's active context automatically and, when launched interactively with `/run`, replace the next model context with a validated string output while retaining the original transcript as recovery history.

@@ -11,6 +11,8 @@ pub type Fields = BTreeMap<String, Field>;
 pub struct WorkflowInput<'a> {
     pub data: Map<String, Value>,
     pub output_fields: &'a Fields,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_context: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -44,6 +46,7 @@ impl<'a> WorkflowInput<'a> {
         Ok(Self {
             data,
             output_fields: &workflow.output_fields,
+            parent_context: None,
         })
     }
 }

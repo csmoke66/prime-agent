@@ -1,5 +1,6 @@
 //! Synchronous workflow invocations use private worker sessions, not RLM spawn notices or roster slots.
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -16,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::{
-    Arc, ChildCloseReason, DaemonCommand, Map, ParentIdentity, Path, PromptInput,
+    json, Arc, ChildCloseReason, DaemonCommand, Map, ParentIdentity, Path, PromptInput,
     SupervisorChildSessions, SupervisorChildSessionsInner, Value,
 };
 use crate::model_allowlist::{self, DaemonAllowlist};
@@ -278,7 +279,17 @@ fn prepare(
             .context("workflow requires a project directory")?,
     );
     let workflow = workflows::load(cwd, name)?;
-    let input = WorkflowInput::parse(&workflow, data)?;
+    let mut input = WorkflowInput::parse(&workflow, data)?;
+    if let Some(context) = workflow
+        .context
+        .as_ref()
+        .filter(|context| context.include_parent_session)
+    {
+        input.parent_context = Some(parent_context(
+            Path::new(parent),
+            context.max_characters.unwrap_or(120_000),
+        )?);
+    }
     let input_json = serde_json::to_string(&input)?;
     let Workflow {
         model,
@@ -341,6 +352,52 @@ fn prepare(
         prompt,
         output_fields,
     })
+}
+
+struct CountingWriter(usize);
+
+impl Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.saturating_add(buf.len());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn parent_context(path: &Path, max_characters: usize) -> Result<Value> {
+    let context = if let Some(window) =
+        pa_core::session::window::WindowedSessionStore::open(path)
+            .with_context(|| format!("read parent session context {}", path.display()))?
+    {
+        window.context()
+    } else {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("read parent session {}", path.display()))?;
+        let entries = pa_core::session::parse_session_entries(&content);
+        pa_core::session::build_session_context(&entries, None)
+    };
+    let mut messages = Vec::new();
+    let mut characters = 0usize;
+    let mut truncated = false;
+    for message in context.messages.into_iter().rev() {
+        let mut counter = CountingWriter(0);
+        serde_json::to_writer(&mut counter, &message)?;
+        if characters.saturating_add(counter.0) > max_characters {
+            truncated = true;
+            break;
+        }
+        characters += counter.0;
+        messages.push(serde_json::to_value(message)?);
+    }
+    messages.reverse();
+    Ok(json!({
+        "source": "calling-session-active-context",
+        "truncated": truncated,
+        "messages": messages,
+    }))
 }
 
 fn workflow_effort(
@@ -464,6 +521,7 @@ mod tests {
             "subagents": {"allowedModels": ["workflow-test/child"], "effort": "off"},
             "prompt": "Run the configured operation.",
             "inputFields": {"query": {"type": "string", "required": true}},
+            "context": {"includeParentSession": true, "maxCharacters": 4096},
             "outputFields": {"ok": {"type": "boolean", "required": true}},
         })
     }
@@ -483,7 +541,11 @@ mod tests {
         let sessions = agent_dir.join("sessions");
         std::fs::create_dir_all(&sessions).unwrap();
         let parent = sessions.join("root.jsonl");
-        let parent_bytes = b"{\"type\":\"session\",\"id\":\"root\"}\n";
+        let parent_bytes = concat!(
+            "{\"type\":\"session\",\"version\":3,\"id\":\"root\",\"timestamp\":\"2026-11-22T00:00:00.000Z\",\"cwd\":\"/tmp\"}\n",
+            "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"timestamp\":\"2026-11-22T00:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"captured parent context\"}],\"timestamp\":1}}\n"
+        )
+        .as_bytes();
         std::fs::write(&parent, parent_bytes).unwrap();
         std::fs::write(
             agent_dir.join("models.json"),
@@ -555,6 +617,8 @@ mod tests {
                         let prompt = command["message"].as_str().unwrap();
                         assert!(prompt.contains("Run the configured operation."));
                         assert!(prompt.contains(r#""query":"hello""#));
+                        assert!(prompt.contains(r#""parentContext":"#));
+                        assert!(prompt.contains("captured parent context"));
                         None
                     }
                     "wait_for_idle" => {

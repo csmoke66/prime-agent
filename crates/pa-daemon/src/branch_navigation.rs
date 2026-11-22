@@ -524,7 +524,7 @@ impl TreeNavigation {
 /// Rebuild the engine's live context onto the moved branch. The engine method
 /// is synchronous and may ride its own runtime, so it runs on a blocking thread
 /// — never on the worker's async dispatcher (a `block_on` there panics).
-async fn rebuild_engine_context(
+pub(crate) async fn rebuild_engine_context(
     engine: &std::sync::Arc<dyn crate::engine::SessionEngine>,
     branch_entries: Vec<pa_types::session::FileEntry>,
     goal_reload: pa_core::session_engine::goal_driver::GoalBranchReload,

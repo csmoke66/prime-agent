@@ -207,29 +207,98 @@ impl Worker {
             Ok(host) => host,
             Err(e) => return response_failure(None, COMMAND, &e.to_string(), None),
         };
+        let cwd = self.core.lock().unwrap().cwd.clone();
+        let definition = match pa_core::workflows::load(std::path::Path::new(&cwd), name) {
+            Ok(definition) => definition,
+            Err(error) => {
+                return response_failure(None, COMMAND, &format!("{error:#}"), None);
+            }
+        };
+        let apply_context_field = definition.interactive_apply_context_field;
+        if apply_context_field.is_some() {
+            let mut core = self.core.lock().unwrap();
+            if core.busy || core.compacting {
+                return response_failure(
+                    None,
+                    COMMAND,
+                    "Wait for the session to become idle before running a context-rewrite workflow",
+                    None,
+                );
+            }
+            // Reuse the compaction admission gate while the isolated reviewer runs:
+            // no parent turn may start against the context that is being replaced.
+            core.compacting = true;
+        }
         let (name, input) = (name.to_owned(), payload["input"].clone());
         let core = self.core.clone();
         let events = self.events.clone();
+        let engine = std::sync::Arc::clone(&self.engine);
+        let idle_notify = std::sync::Arc::clone(&self.idle_notify);
         let session = core.lock().unwrap().generation.clone();
         tokio::spawn(async move {
-            let (text, details) = match host.run_workflow(&name, input).await {
+            let result = host.run_workflow(&name, input).await;
+            let (mut text, mut details) = match &result {
                 Ok(output) => (
                     format!("Workflow {name}\n{output:#}"),
-                    json!({"workflow":name, "severity":"info", "output":output}),
+                    json!({"workflow":name,"severity":"info","output":output}),
                 ),
-                Err(e) => (
-                    format!("Workflow {name} failed: {e:#}"),
-                    json!({"workflow":name, "severity":"error", "error":format!("{e:#}")}),
+                Err(error) => (
+                    format!("Workflow {name} failed: {error:#}"),
+                    json!({"workflow":name,"severity":"error","error":format!("{error:#}")}),
                 ),
             };
-            let mut core = core.lock().unwrap();
-            if core.generation != session {
-                return;
+            let summary = result.as_ref().ok().and_then(|output| {
+                apply_context_field
+                    .as_deref()
+                    .and_then(|field| output.get(field))
+                    .and_then(Value::as_str)
+                    .filter(|summary| !summary.trim().is_empty())
+                    .map(str::to_owned)
+            });
+            if apply_context_field.is_some() && summary.is_none() && result.is_ok() {
+                text.push_str("\nContext rewrite failed: the configured output field was empty.");
+                details["severity"] = json!("error");
+                details["contextApplied"] = json!(false);
             }
             let row = json!({"role":"custom","customType":pa_types::slash_commands::SESSION_SLASH_COMMAND_RESULT_CUSTOM_TYPE,
                 "content":text,"display":true,"timestamp":crate::util::now_ms(),"details":details});
-            persist_custom_row(&mut core, &row);
-            super::broadcast_custom_row_locked(&mut core, &events, &row);
+            let branch_entries = {
+                let mut core = core.lock().unwrap();
+                if core.generation != session {
+                    return;
+                }
+                persist_custom_row(&mut core, &row);
+                let branch_entries = summary.as_ref().and_then(|summary| {
+                    let store = core.store.as_mut()?;
+                    store
+                        .persist_entry(
+                            "compaction",
+                            workflow_context_compaction(summary, &name),
+                        )
+                        .ok()?;
+                    Some(store.branch_file_entries())
+                });
+                super::broadcast_custom_row_locked(&mut core, &events, &row);
+                branch_entries
+            };
+            if let Some(branch_entries) = branch_entries {
+                if let Err(error) = crate::branch_navigation::rebuild_engine_context(
+                    &engine,
+                    branch_entries,
+                    pa_core::session_engine::goal_driver::GoalBranchReload::SameTimeline,
+                )
+                .await
+                {
+                    eprintln!("pa-daemon: workflow context rebuild failed: {error}");
+                }
+            }
+            if apply_context_field.is_some() {
+                let mut core = core.lock().unwrap();
+                if core.generation == session {
+                    core.compacting = false;
+                }
+                idle_notify.notify_waiters();
+            }
         });
         response_success(None, COMMAND, Some(json!({"started":true})))
     }
@@ -1001,6 +1070,75 @@ fn cleared_agent_message_bounce_text(receiver: &str, message: &str) -> String {
     let budget = limit.saturating_sub(prefix.chars().count());
     let body: String = message.chars().take(budget).collect();
     format!("{prefix}{body}")
+}
+
+/// Durable compaction fields that make the reviewed summary the next model context.
+fn workflow_context_compaction(summary: &str, name: &str) -> Value {
+    json!({
+        "summary": summary,
+        "firstKeptEntryId": "",
+        "tokensBefore": 0,
+        "details": {
+            "readFiles": [],
+            "modifiedFiles": [],
+        },
+        "fromHook": false,
+        "customInstructions": format!("Context rewritten by workflow {name}"),
+    })
+}
+
+#[cfg(test)]
+mod workflow_context_tests {
+    use super::workflow_context_compaction;
+
+    #[test]
+    fn workflow_compaction_replaces_prior_model_context_without_deleting_history() {
+        let mut compaction = serde_json::json!({
+            "type": "compaction",
+            "id": "c1",
+            "parentId": "u1",
+            "timestamp": "2026-11-22T00:00:01.000Z",
+        });
+        compaction
+            .as_object_mut()
+            .unwrap()
+            .extend(
+                workflow_context_compaction("clean context", "repair")
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+        let file = format!(
+            "{}\n{}\n{compaction}\n",
+            serde_json::json!({
+                "type": "session",
+                "version": 3,
+                "id": "s1",
+                "timestamp": "2026-11-22T00:00:00.000Z",
+                "cwd": "/tmp",
+            }),
+            serde_json::json!({
+                "type": "message",
+                "id": "u1",
+                "parentId": null,
+                "timestamp": "2026-11-22T00:00:00.500Z",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "contaminated context"}],
+                    "timestamp": 1,
+                },
+            }),
+        );
+        let entries = pa_core::session::parse_session_entries(&file);
+        let context = pa_core::session::build_session_context(&entries, None);
+        assert_eq!(context.messages.len(), 1);
+        assert!(matches!(
+            &context.messages[0],
+            pa_types::session::AgentMessage::CompactionSummary(summary)
+                if summary.summary == "clean context"
+        ));
+        assert_eq!(entries.len(), 3, "the original rows remain durable");
+    }
 }
 
 /// The display-transcript page a `get_messages` payload asks for, if any.

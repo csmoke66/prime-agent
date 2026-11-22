@@ -23,6 +23,23 @@ impl SettingsManager {
         self.global_mut().harness_refinements = Some(enabled);
         self.save_global_scope(&["harnessRefinements"])
     }
+    /// Whether sanitized provider-block recovery rows appear in chat (default on).
+    /// Recovery still runs when this is disabled.
+    #[must_use]
+    pub fn get_show_provider_block_messages(&self) -> bool {
+        self.global_settings()
+            .show_provider_block_messages
+            .unwrap_or(true)
+    }
+
+    /// Persist provider-block notice visibility to the global settings scope.
+    ///
+    /// # Errors
+    /// Returns an error when the global scope cannot be saved.
+    pub fn set_show_provider_block_messages(&mut self, show: bool) -> Result<()> {
+        self.global_mut().show_provider_block_messages = Some(show);
+        self.save_global_scope(&["showProviderBlockMessages"])
+    }
 
     /// The service the bundled websearch skill queries (default Serper). Global only, like the
     /// stored keys it selects between: project settings cannot switch it.

@@ -1,0 +1,1 @@
+- Added a `/settings` toggle that either shows sanitized provider-block notices and recovery guidance or keeps both out of session chat and transcripts while preserving one alternative-approach continuation.

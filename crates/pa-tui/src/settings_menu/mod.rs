@@ -206,6 +206,12 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             values: None, submenu: None,
         },
         toggle("trace-sharing", "Trace sharing", "Automatically upload session traces", current.trace_sharing),
+        toggle(
+            "provider-block-messages",
+            "Provider block notices",
+            "Show the sanitized false-positive notice and recovery steer; disable to keep both out of chat",
+            Some(current.show_provider_block_messages),
+        ),
         SettingsMenuRow {
             id: "update-channel", label: "Update channel", description: "Stable releases or nightly pre-releases",
             current: current.update_channel.clone().unwrap_or_else(|| "Unavailable".into()),
@@ -526,6 +532,7 @@ pub struct SettingsCurrentValues {
     pub skill_commands: bool,
     pub builtin_skills: bool,
     pub harness_refinements: bool,
+    pub show_provider_block_messages: bool,
     pub web_search_provider: String,
     pub hardware_cursor: bool,
     pub emoji_shortcodes: bool,

@@ -303,6 +303,7 @@ impl SessionUi {
             values.skill_commands = settings.enable_skill_commands();
             values.builtin_skills = settings.enable_builtin_skills();
             values.harness_refinements = settings.harness_refinements();
+            values.show_provider_block_messages = settings.show_provider_block_messages();
             values.web_search_provider = settings.web_search_provider();
             values.hardware_cursor = settings.show_hardware_cursor();
             values.emoji_shortcodes = settings.emoji_shortcodes();
@@ -324,6 +325,7 @@ impl SessionUi {
             values.skill_commands = true;
             values.builtin_skills = true;
             values.harness_refinements = true;
+            values.show_provider_block_messages = true;
             values.emoji_shortcodes = true;
             values.web_search_provider = "serper".to_string();
             values.idle_eviction_minutes = "90".to_string();
@@ -543,6 +545,13 @@ impl SessionUi {
                 }
                 self.show_images = value == "true";
                 view.show_images = value == "true";
+            }
+            "provider-block-messages" => {
+                self.persist_bool_setting(
+                    |settings, show| settings.set_show_provider_block_messages(show),
+                    value,
+                    view,
+                );
             }
             "auto-resize-images" => {
                 self.persist_bool_setting(

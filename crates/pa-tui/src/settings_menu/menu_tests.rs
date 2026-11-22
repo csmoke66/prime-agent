@@ -71,6 +71,30 @@ fn confirm_cycles_values_and_reports_the_change() {
 }
 
 #[test]
+fn provider_block_notices_cycle_between_visible_and_silent() {
+    let values = SettingsCurrentValues {
+        show_provider_block_messages: true,
+        ..Default::default()
+    };
+    let mut menu = SettingsMenu::new(settings_menu_rows(&values));
+    menu.paste("provider");
+    assert_eq!(
+        menu.handle_key("enter", &kb()),
+        SettingsMenuAction::Change {
+            id: "provider-block-messages",
+            value: "false".to_string()
+        }
+    );
+    assert_eq!(
+        menu.handle_key("enter", &kb()),
+        SettingsMenuAction::Change {
+            id: "provider-block-messages",
+            value: "true".to_string()
+        }
+    );
+}
+
+#[test]
 fn enter_opens_the_thinking_submenu_and_selection_applies() {
     let mut menu = menu();
     // 2 jumps to the Models tab (thinking lives there).

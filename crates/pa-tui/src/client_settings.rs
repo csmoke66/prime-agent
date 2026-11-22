@@ -74,6 +74,17 @@ pub trait ClientSettings: Send + Sync {
     fn set_harness_refinements(&self, _enabled: bool) -> Result<()> {
         anyhow::bail!("Harness refinement settings are unavailable")
     }
+    /// Show sanitized provider-block notices and recovery steers in chat.
+    fn show_provider_block_messages(&self) -> bool {
+        true
+    }
+    /// Persist provider-block notice visibility.
+    ///
+    /// # Errors
+    /// Returns an error if the settings store fails or is unavailable.
+    fn set_show_provider_block_messages(&self, _show: bool) -> Result<()> {
+        anyhow::bail!("Provider-block notice settings are unavailable")
+    }
 
     /// Read the non-consuming inbox reminder mode for the attached session.
     ///

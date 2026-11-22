@@ -23,6 +23,7 @@ const TAB_LAYOUT: &[TabLayout] = &[
             "follow-up-mode",
             "quiet-startup",
             "warnings",
+            "provider-block-messages",
             "autocompact-threshold",
             "update-channel",
             "telemetry",

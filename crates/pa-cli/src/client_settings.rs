@@ -239,6 +239,13 @@ impl ClientSettings for CliClientSettings {
         bool
     );
     setting!(
+        show_provider_block_messages,
+        set_show_provider_block_messages,
+        get_show_provider_block_messages,
+        set_show_provider_block_messages,
+        bool
+    );
+    setting!(
         clear_on_shrink,
         set_clear_on_shrink,
         get_clear_on_shrink,
@@ -646,6 +653,7 @@ mod tests {
         let settings = CliClientSettings::new(dir.path().to_path_buf(), agent_dir.clone());
 
         assert!(settings.show_images());
+        assert!(settings.show_provider_block_messages());
         assert!(!settings.quiet_startup());
         assert_eq!(settings.idle_eviction_minutes(), "90");
         assert_eq!(settings.mermaid_rendering_mode(), "streaming");
@@ -656,11 +664,15 @@ mod tests {
         settings.set_idle_eviction_minutes("off").expect("idle");
         settings.set_tree_filter_mode("all").expect("tree filter");
         settings.set_show_images(false).expect("show images");
+        settings
+            .set_show_provider_block_messages(false)
+            .expect("provider block messages");
 
         assert_eq!(settings.theme().as_deref(), Some("dark"));
         assert_eq!(settings.idle_eviction_minutes(), "off");
         assert_eq!(settings.tree_filter_mode(), "all");
         assert!(!settings.show_images());
+        assert!(!settings.show_provider_block_messages());
 
         let content =
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
@@ -668,6 +680,7 @@ mod tests {
         assert_eq!(value["theme"], "dark");
         assert_eq!(value["idleEvictionMinutes"], "off");
         assert_eq!(value["treeFilterMode"], "all");
+        assert_eq!(value["showProviderBlockMessages"], false);
 
         // The web search provider defaults to Serper and persists the choice.
         assert_eq!(settings.web_search_provider(), "serper");

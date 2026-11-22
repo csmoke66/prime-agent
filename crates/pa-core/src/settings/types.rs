@@ -391,6 +391,9 @@ pub struct Settings {
     pub emoji_shortcodes: Option<bool>,
     pub markdown: Option<MarkdownSettings>,
     pub warnings: Option<WarningSettings>,
+    /// Show the sanitized provider-block notice and its recovery steer in chat.
+    /// Unset preserves the visible behavior; false keeps recovery internal.
+    pub show_provider_block_messages: Option<bool>,
     /// Session storage can restore executable kernel state, so only global
     /// settings (or an explicit CLI/environment override) may select it.
     pub session_dir: Option<String>,

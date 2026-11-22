@@ -33,6 +33,7 @@ impl Supervisor {
             message,
             from_active_session_id,
             delivery_mode,
+            priority,
             ..
         } = command
         else {
@@ -117,6 +118,7 @@ impl Supervisor {
             message: message.clone(),
             sender,
             delivery_mode: delivery_mode.clone(),
+            priority: priority.clone(),
             rest: Map::default(),
         };
         let payload = match serde_json::to_value(&delivery) {
@@ -594,6 +596,7 @@ mod tests {
             from_active_session_id: from.map(str::to_string),
             agent_origin: None,
             delivery_mode: None,
+            priority: None,
             rest: Map::default(),
         }
     }

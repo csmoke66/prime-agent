@@ -1232,6 +1232,32 @@ fn agent_messages_route_into_the_inbox_and_targeted_reads_pull_them_back() {
         "the disabled inbox never journals the legacy delivery: {journal}"
     );
 
+    std::fs::write(agent_dir.join("settings.json"), "{}").unwrap();
+    let low_body = "BACKGROUND_ONLY_MARKER";
+    let low = client.request(
+        "background",
+        &json!({
+            "type": "send_message", "targetActiveSessionId": active_id,
+            "priority": "low", "message": low_body,
+        }),
+    );
+    assert_eq!(low["success"], true, "{low}");
+    let urgent_body = format!("{}urgent-tail-marker", "important detail ".repeat(32));
+    let urgent = client.request(
+        "urgent",
+        &json!({
+            "type": "send_message", "targetActiveSessionId": active_id,
+            "priority": "high", "message": urgent_body,
+        }),
+    );
+    assert_eq!(urgent["success"], true, "{urgent}");
+    wait_until(Duration::from_secs(120), || {
+        let rows = delivered_rows(&client.messages(&active_id));
+        let (forced, _) = rows.iter().find(|(text, _)| text.contains(&urgent_body))?;
+        assert!(!forced.contains(low_body), "high priority flushed unrelated mail");
+        Some(())
+    });
+
     // Teardown: stop the session through the live supervisor so the
     // worker (and its kernel + sleepers) do not leak past the test.
     client.request(

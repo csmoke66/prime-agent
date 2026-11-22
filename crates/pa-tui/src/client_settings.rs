@@ -97,22 +97,6 @@ pub trait ClientSettings: Send + Sync {
         anyhow::bail!("Provider-rejection target settings are unavailable")
     }
 
-    /// Read the non-consuming inbox reminder mode for the attached session.
-    ///
-    /// # Errors
-    /// Returns an error if session settings are unavailable or cannot be read.
-    fn inbox_reminder_mode(&self, _session_file: &str) -> Result<String> {
-        anyhow::bail!("Session inbox reminder settings are unavailable")
-    }
-
-    /// Write the non-consuming inbox reminder mode for the attached session.
-    ///
-    /// # Errors
-    /// Returns an error for an invalid mode or a failed settings write.
-    fn set_inbox_reminder_mode(&self, _session_file: &str, _mode: &str) -> Result<()> {
-        anyhow::bail!("Session inbox reminder settings are unavailable")
-    }
-
     /// Load raw harness entries from the global and active session's local stores.
     ///
     /// # Errors

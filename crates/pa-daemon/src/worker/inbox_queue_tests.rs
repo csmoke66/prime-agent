@@ -35,6 +35,15 @@ fn inbox_notice(class: &'static str, text: &str) -> pa_core::session_engine::inb
     }
 }
 
+fn priority_notice(priority: &str, text: &str) -> pa_core::session_engine::inbox::InboxNotice {
+    pa_core::session_engine::inbox::InboxNotice {
+        class: pa_core::session_engine::inbox::INBOX_CLASS_AGENT_MESSAGE,
+        sender: Some("peer".to_string()),
+        text: text.to_string(),
+        meta: serde_json::json!({ "priority": priority }),
+    }
+}
+
 /// One bash-done arrival with the meta the withdrawal matches (the
 /// command's pid and command disambiguate the completion).
 fn bash_done_notice(pid: u32, command: &str) -> pa_core::session_engine::inbox::InboxNotice {
@@ -170,6 +179,217 @@ async fn an_idle_arrival_queues_one_short_notice_and_keeps_the_message() {
         WorkerRecoveryJournal::read_interrupted(&worker.config.recovery_journal_path),
         "the notice admission is live work"
     );
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+/// Low agent traffic is durable but silent. A later ordinary notice is the
+/// unrelated wake that coalesces the held message into its count.
+#[tokio::test]
+async fn low_waits_silently_until_an_unrelated_wake() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    let admitted = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("low", "background result"),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    assert!(admitted.is_ok());
+    assert_eq!(inbox.count().0, 1, "the low message is durable");
+    assert!(steering_rows(&worker).is_empty(), "low queues no wake");
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(1), notify.notified())
+            .await
+            .is_err(),
+        "low does not notify the parked runner"
+    );
+    admit_inbox_reminder(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        || false,
+        None,
+    );
+    assert!(steering_rows(&worker).is_empty(), "low-only reminders stay silent");
+
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        inbox_notice(
+            pa_core::session_engine::inbox::INBOX_CLASS_BASH_DONE,
+            "job finished",
+        ),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    let rows = steering_rows(&worker);
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].0.contains("2 new messages")
+            && rows[0].0.contains("1 agent-message, 1 bash-done"),
+        "the unrelated wake covers the held low message: {rows:?}"
+    );
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+/// A low-only batch can be attached to already-admitted ordinary turns
+/// without waking the runner or consuming the unread inbox records.
+#[tokio::test]
+async fn unrelated_turns_carry_the_held_low_notice_while_it_is_unread() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("low", "background result"),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    let notice =
+        take_held_low_notice(&inbox, TurnPolicy::Queued).expect("the unrelated turn takes low mail");
+    assert!(notice.message.contains("1 new message (agent-message)"));
+    assert_eq!(
+        notice.custom_message.as_ref().unwrap()["details"]["class"],
+        pa_types::inbox_notice::INBOX_NOTICE_CLASS_ARRIVAL
+    );
+    assert_eq!(inbox.count().0, 1, "delivery is non-consuming");
+    assert!(
+        take_held_low_notice(&inbox, TurnPolicy::Queued).is_some(),
+        "another unrelated turn may carry the unread low notice"
+    );
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+
+/// Mixed priorities render only their own bodies. A durable high handoff
+/// selectively removes high mail and preserves the lower-priority inbox and
+/// its coalesced wake.
+#[tokio::test]
+async fn mixed_priorities_preview_and_force_only_their_own_bodies() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    let low_body = "LOW-BODY";
+    let default_body = "DEFAULT-BODY";
+    let medium_body = format!("{}MEDIUM-TAIL", "m".repeat(240));
+    for notice in [
+        priority_notice("low", low_body),
+        priority_notice("default", default_body),
+        priority_notice("medium", &medium_body),
+    ] {
+        let _ = admit_inbox_notice(
+            &worker.recovery,
+            &worker.core,
+            &notify,
+            &inbox,
+            &arrivals,
+            notice,
+            Lane::Steering,
+            || false,
+            |_, _| None,
+            None,
+        );
+    }
+    let rows = steering_rows(&worker);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].0.contains("peer: m"));
+    assert!(rows[0].0.contains('…') && !rows[0].0.contains("MEDIUM-TAIL"));
+    assert!(!rows[0].0.contains(low_body) && !rows[0].0.contains(default_body));
+
+    let high_body = format!("{}URGENT-END", "h".repeat(260));
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("high", &high_body),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    assert_eq!(inbox.count().0, 3, "only high mail leaves the inbox");
+    let rows = steering_rows(&worker);
+    assert_eq!(rows.len(), 2, "the lower-priority wake is preserved");
+    assert!(rows[0].0.contains(&high_body));
+    assert!(
+        !rows[0].0.contains(low_body)
+            && !rows[0].0.contains(default_body)
+            && !rows[0].0.contains(&medium_body),
+        "the forced row contains only high bodies: {rows:?}"
+    );
+    assert!(
+        rows[1].0.contains("peer: m")
+            && !rows[1].0.contains(low_body)
+            && !rows[1].0.contains(default_body)
+            && !rows[1].0.contains("URGENT-END"),
+        "the surviving wake keeps only the medium preview: {rows:?}"
+    );
+    let (durable, _, _) = super::queue::restore_queue_snapshot(
+        worker.recovery.lock().unwrap().as_ref().unwrap(),
+        "target-session",
+    );
+    assert_eq!(durable.len(), 2);
+    assert!(durable[0].message.contains("URGENT-END"));
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+/// A failed durable high handoff leaves every inbox record and the existing
+/// coalesced wake intact; the high body falls back into that wake without
+/// exposing lower-priority bodies.
+#[tokio::test]
+async fn a_failed_high_checkpoint_preserves_pending_mail_and_wakes() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("default", "DEFAULT-PRIVATE"),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    std::fs::remove_file(&worker.config.recovery_journal_path).unwrap();
+    std::fs::create_dir(&worker.config.recovery_journal_path).unwrap();
+
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("high", "HIGH-VISIBLE"),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    assert_eq!(inbox.count().0, 2, "checkpoint failure drains nothing");
+    let rows = steering_rows(&worker);
+    assert_eq!(rows.len(), 1, "the existing wake remains coalesced");
+    assert!(rows[0].0.contains("HIGH-VISIBLE"));
+    assert!(!rows[0].0.contains("DEFAULT-PRIVATE"));
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 
@@ -355,12 +575,11 @@ async fn the_reminder_repeats_while_the_inbox_stays_unread() {
         .as_ref()
         .expect("the reminder row carries its custom twin");
     assert!(
-        message.contains(": waiting"),
-        "the unread body reaches the model"
+        !message.contains(": waiting"),
+        "default priority is a count-only reminder"
     );
     assert_eq!(row["content"], message.as_str());
     assert_eq!(row["details"]["class"], "reminder");
-    assert_eq!(row["details"]["reminderMode"], "preview");
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 
@@ -570,8 +789,8 @@ async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
                 .starts_with("[inbox reminder] 1 message still waiting"),
             "the reminder re-rendered over the live count: {reminder:?}"
         );
-        // Re-render the remaining unread body, not withdrawn or previously read bodies.
-        assert!(reminder.message.contains("job three: [bash-done pid:4323"));
+        // The remaining machine notice keeps the default count-only mode.
+        assert!(!reminder.message.contains("job three"));
         assert!(!reminder.message.contains("job one") && !reminder.message.contains("job two"));
         let row = reminder
             .custom_message
@@ -580,7 +799,6 @@ async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
         assert_eq!(row["content"], reminder.message);
         assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
         assert_eq!(row["details"]["class"], "reminder");
-        assert_eq!(row["details"]["reminderMode"], "preview");
         assert_eq!(
             core.steering
                 .iter()
@@ -963,8 +1181,7 @@ async fn a_withdrawal_inside_a_covered_batch_rerenders_the_queued_rows() {
             assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
             assert_eq!(row["content"], item.message);
             if key == INBOX_REMINDER_QUEUE_KEY {
-                assert!(item.message.contains("sender-factory-progress: second"));
-                assert_eq!(row["details"]["reminderMode"], "preview");
+                assert!(!item.message.contains("sender-factory-progress: second"));
             }
         }
     }

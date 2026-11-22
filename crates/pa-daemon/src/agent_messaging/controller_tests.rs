@@ -214,6 +214,7 @@ fn input() -> AgentMessageSendInput {
         target: "bbb222".to_string(),
         message: "hello there".to_string(),
         receiver_role: Some(AgentFamilyRelationship::Sibling),
+        priority: "medium".to_string(),
     }
 }
 
@@ -390,6 +391,7 @@ async fn self_target_is_refused() {
             target: "aaa111".to_string(),
             message: "note to self".to_string(),
             receiver_role: None,
+            priority: "default".to_string(),
         })
         .await
         .unwrap_err();
@@ -525,6 +527,7 @@ async fn direct_ticket_delivers_to_the_target_worker_socket() {
     let delivery = &received[1].1;
     assert_eq!(delivery["targetActiveSessionId"], "bbb222");
     assert_eq!(delivery["message"], "hello there");
+    assert_eq!(delivery["priority"], "medium");
     // TS sender identity block: endpoint fields plus the agent client id.
     assert_eq!(delivery["sender"]["activeSessionId"], "aaa111");
     assert_eq!(delivery["sender"]["sessionId"], "sess-a");

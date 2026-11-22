@@ -361,6 +361,23 @@ impl Worker {
                 );
             }
         }
+        let priority = match payload.get("priority") {
+            None => "default",
+            Some(Value::String(value))
+                if pa_core::session_engine::agent_messaging::AGENT_MESSAGE_PRIORITIES
+                    .contains(&value.as_str()) =>
+            {
+                value.as_str()
+            }
+            _ => {
+                return response_failure(
+                    None,
+                    "worker_deliver_message",
+                    "priority must be \"low\", \"default\", \"medium\", or \"high\"",
+                    None,
+                );
+            }
+        };
         let sender = payload.get("sender").cloned().unwrap_or(Value::Null);
         // A delivery from one of this session's RLM children counts as the
         // child's reply: the settle watcher withholds the no-reply notice.
@@ -441,7 +458,7 @@ impl Worker {
             };
             // The provenance the targeted reads filter on: the sender
             // name, the message id, and the family relationship.
-            let mut meta = json!({ "id": &id, "from": &sender });
+            let mut meta = json!({ "id": &id, "from": &sender, "priority": priority });
             if let Some(relationship) = from_relationship {
                 meta["relationship"] = json!(relationship.as_str());
             }

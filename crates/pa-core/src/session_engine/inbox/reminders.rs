@@ -1,67 +1,18 @@
-//! Non-consuming previews of waiting messages in a periodic wake. The mode is
-//! local to the recipient session, not the entire session family.
+//! Priority-derived inbox notices and the durable full-mailbox handoff.
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use super::{reminder_notice, SessionInbox};
-use crate::session_engine::harness_digest::session_artifact_dir_for_log;
-use crate::settings::storage::{atomic_write_with, AtomicWriteOptions};
-use anyhow::{bail, Context, Result};
+use super::{arrival_notice, reminder_notice, InboxMessage, InboxPriority, SessionInbox};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ReminderMode {
-    Count,
-    #[default]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DetailMode {
     Preview,
     Full,
 }
 
-impl ReminderMode {
-    pub fn parse(text: &str) -> Result<Self> {
-        match text {
-            "count" => Ok(Self::Count),
-            "preview" => Ok(Self::Preview),
-            "full" => Ok(Self::Full),
-            _ => bail!("Inbox reminder mode must be count, preview, or full"),
-        }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Count => "count",
-            Self::Preview => "preview",
-            Self::Full => "full",
-        }
-    }
-    fn file(log: &Path) -> Result<PathBuf> {
-        Ok(session_artifact_dir_for_log(log)
-            .context("no artifact directory for inbox settings")?
-            .join("inbox-reminder-mode"))
-    }
-    pub fn load(log: &Path) -> Result<Self> {
-        let file = Self::file(log)?;
-        match std::fs::read_to_string(&file) {
-            Ok(text) => Self::parse(text.trim()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(error) => Err(error).with_context(|| format!("read {}", file.display())),
-        }
-    }
-    pub fn save(self, log: &Path) -> Result<()> {
-        let file = Self::file(log)?;
-        std::fs::create_dir_all(file.parent().context("no inbox settings directory")?)?;
-        let _guard = crate::platform::lock_dir::LockDir::acquire_owned_retrying(
-            &file,
-            Duration::from_secs(30),
-            50,
-            Duration::from_millis(10),
-        )?;
-        atomic_write_with(&file, self.name(), AtomicWriteOptions { fsync: true })
-    }
-}
-
 impl SessionInbox {
-    /// Transfer a full mailbox under the same lock as kernel reads. The consumer
-    /// must durably accept the batch before we acknowledge the inbox journal.
+    /// Transfer an overflowing mailbox under the same lock as kernel reads.
+    /// The consumer must durably accept the complete batch before we
+    /// acknowledge the inbox journal.
     pub fn deliver_full_mailbox(&self, accept: impl FnOnce(String) -> bool) -> bool {
         use super::{InboxRecord, INBOX_CLASS_AGENT_MESSAGE};
         use crate::session_engine::agent_messaging::DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION;
@@ -72,7 +23,7 @@ impl SessionInbox {
         if state
             .messages
             .iter()
-            .filter(|m| m.class == INBOX_CLASS_AGENT_MESSAGE)
+            .filter(|message| message.class == INBOX_CLASS_AGENT_MESSAGE)
             .nth(DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION - 1)
             .is_none()
         {
@@ -82,7 +33,7 @@ impl SessionInbox {
             "[inbox full] Delivering all {} waiting messages directly:",
             state.messages.len()
         );
-        append_messages(&mut text, &state.messages, ReminderMode::Full);
+        append_messages(&mut text, &state.messages, DetailMode::Full);
         if !accept(text) {
             return false;
         }
@@ -93,46 +44,152 @@ impl SessionInbox {
         true
     }
 
-    pub fn unread_reminder(&self, mode: ReminderMode) -> String {
+    /// Transfer only high-priority messages. Unrelated pending mail remains in
+    /// both memory and the durable journal; a rejected queue checkpoint leaves
+    /// the entire inbox untouched.
+    pub fn deliver_high_messages(&self, accept: impl FnOnce(String) -> bool) -> bool {
+        use super::InboxRecord;
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let count = state
+            .messages
+            .iter()
+            .filter(|message| message.priority() == InboxPriority::High)
+            .count();
+        if count == 0 {
+            return false;
+        }
+        let mut text =
+            format!("[inbox high] Delivering {count} high-priority messages directly:");
+        for message in state
+            .messages
+            .iter()
+            .filter(|message| message.priority() == InboxPriority::High)
+        {
+            append_message(&mut text, message, DetailMode::Full);
+        }
+        if !accept(text) {
+            return false;
+        }
+        let ids = state
+            .messages
+            .iter()
+            .filter(|message| message.priority() == InboxPriority::High)
+            .map(|message| message.id.clone())
+            .collect();
+        self.append_journal(
+            &serde_json::to_value(InboxRecord::Read { ids }).expect("read journal record"),
+        );
+        state
+            .messages
+            .retain(|message| message.priority() != InboxPriority::High);
+        true
+    }
+
+    /// Render one coalesced arrival batch per message: default and low
+    /// contribute only to the count, medium contributes a bounded preview,
+    /// and high contributes its complete body.
+    #[must_use]
+    pub fn arrival_notification(
+        &self,
+        batch: &[InboxMessage],
+        total_waiting: usize,
+    ) -> (String, String) {
+        let (preview, mut text) = arrival_notice(batch, total_waiting);
+        append_priority_details(&mut text, batch);
+        (preview, text)
+    }
+
+    /// Render unread low-priority mail for an unrelated turn directly under
+    /// the store lock. Low messages remain unread and therefore may accompany
+    /// later unrelated wakes until the recipient reads them.
+    #[must_use]
+    pub fn held_low_notification(&self) -> Option<(String, String)> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.messages.is_empty()
+            || state
+                .messages
+                .iter()
+                .any(|message| message.priority() != InboxPriority::Low)
+        {
+            return None;
+        }
+        Some(self.arrival_notification(&state.messages, state.messages.len()))
+    }
+
+    /// The periodic reminder selected by the strongest waiting message.
+    /// A low-only mailbox is silent; machine notices and missing priorities
+    /// retain the historical count reminder.
+    #[must_use]
+    pub fn unread_reminder(&self) -> Option<(InboxPriority, String)> {
         let state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let messages = &state.messages;
+        let priority = effective_priority(messages);
+        if messages.is_empty() || priority == InboxPriority::Low {
+            return None;
+        }
         let mut text = reminder_notice(messages.len());
-        if mode == ReminderMode::Count {
-            return text;
-        }
-        let visible = if mode == ReminderMode::Preview {
-            messages.len().min(5)
-        } else {
-            messages.len()
-        };
-        append_messages(&mut text, &messages[..visible], mode);
-        if visible < messages.len() {
-            let _ = write!(text, "\n … {} more unread", messages.len() - visible);
-        }
-        text
+        append_priority_details(&mut text, messages);
+        Some((priority, text))
     }
 }
 
-fn append_messages(text: &mut String, messages: &[super::InboxMessage], mode: ReminderMode) {
+fn effective_priority(messages: &[InboxMessage]) -> InboxPriority {
+    messages
+        .iter()
+        .map(InboxMessage::priority)
+        .max()
+        .unwrap_or(InboxPriority::Low)
+}
+
+fn append_priority_details(text: &mut String, messages: &[InboxMessage]) {
+    let mut shown_medium = 0usize;
+    let mut omitted_medium = 0usize;
     for message in messages {
-        text.push_str("\n • ");
-        // Escape terminal controls, even for full bodies; untrusted message text
-        // must not alter the terminal or impersonate a second reminder row.
-        append_field(
-            text,
-            message.sender.as_deref().unwrap_or(&message.class),
-            Some(64),
-        );
-        text.push_str(": ");
-        append_field(
-            text,
-            &message.text,
-            (mode == ReminderMode::Preview).then_some(200),
-        );
+        match message.priority() {
+            InboxPriority::Medium if shown_medium < 5 => {
+                append_message(text, message, DetailMode::Preview);
+                shown_medium += 1;
+            }
+            InboxPriority::Medium => omitted_medium += 1,
+            InboxPriority::High => append_message(text, message, DetailMode::Full),
+            InboxPriority::Low | InboxPriority::Default => {}
+        }
     }
+    if omitted_medium > 0 {
+        let _ = write!(text, "\n … {omitted_medium} more medium-priority unread");
+    }
+}
+
+fn append_messages(text: &mut String, messages: &[InboxMessage], mode: DetailMode) {
+    for message in messages {
+        append_message(text, message, mode);
+    }
+}
+
+fn append_message(text: &mut String, message: &InboxMessage, mode: DetailMode) {
+    text.push_str("\n • ");
+    // Escape terminal controls, even for full bodies; untrusted message text
+    // must not alter the terminal or impersonate a second reminder row.
+    append_field(
+        text,
+        message.sender.as_deref().unwrap_or(&message.class),
+        Some(64),
+    );
+    text.push_str(": ");
+    append_field(
+        text,
+        &message.text,
+        (mode == DetailMode::Preview).then_some(200),
+    );
 }
 
 fn append_field(out: &mut String, field: &str, limit: Option<usize>) {
@@ -189,5 +246,35 @@ mod tests {
         }));
         drop(inbox);
         assert_eq!(SessionInbox::open(Some(dir.path())).count().0, 0);
+    }
+
+    #[test]
+    fn high_handoff_journals_a_selective_read_and_keeps_other_mail() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = SessionInbox::open(Some(dir.path()));
+        for (priority, text) in [("low", "background"), ("high", "urgent")] {
+            inbox.push(
+                InboxNotice {
+                    class: INBOX_CLASS_AGENT_MESSAGE,
+                    sender: Some("peer".to_string()),
+                    text: text.to_string(),
+                    meta: serde_json::json!({ "priority": priority }),
+                },
+                1,
+            );
+        }
+        assert!(!inbox.deliver_high_messages(|_| false));
+        assert_eq!(inbox.count().0, 2, "rejection changes nothing");
+        assert!(inbox.deliver_high_messages(|text| {
+            assert!(text.contains("urgent"));
+            assert!(!text.contains("background"));
+            true
+        }));
+        assert_eq!(inbox.count().0, 1);
+        drop(inbox);
+        let reopened = SessionInbox::open(Some(dir.path()));
+        let waiting = reopened.waiting_messages();
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].text, "background");
     }
 }

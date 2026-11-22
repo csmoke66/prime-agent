@@ -20,6 +20,7 @@ if child is not None:
         "Please inspect the latest result.",
         receiver_role="child",
         receiver_name=child.session_name,
+        priority="medium",
     )
     # Keep the child until this follow-up finishes so its result remains observable.
 ```
@@ -30,23 +31,28 @@ if child is not None:
   lists the parent, siblings, and children this skill can reach, active or not,
   with the `relationship` and `sessionName` that `send` takes as
   `receiver_role` and `receiver_name`.
-- `await agent_message.send(message, receiver_role="parent" | "sibling" | "child", receiver_name=None)` — sends one direct
-  text message to one family member. Sending to an inactive or idle completed
-  subagent wakes it and starts an ordinary follow-up turn in that same session
-  and context.
+- `await agent_message.send(message, receiver_role="parent" | "sibling" | "child", receiver_name=None, priority="default")` — sends one direct
+  text message to one family member. `priority` is `"low"`, `"default"`,
+  `"medium"`, or `"high"`; it is preserved in the receiver's inbox metadata.
+  Low priority is silent, default uses the normal bounded notice, medium includes
+  a bounded preview, and high forces the full message into the wake notice.
+  `await agent_message.reply(message, priority="default")` is the parent-reply
+  convenience form and accepts the same priorities.
+  Sending to an inactive or idle completed subagent normally wakes it and starts
+  an ordinary follow-up turn in that same session and context.
   The child remains available only until its parent session closes. The daemon
   resolves `receiver_role` within the current agent family; `receiver_name` is
   required for siblings and children and omitted for the unique parent.
-  `send("all", message)` broadcasts only to the family roster and returns
-  `{receipts: [...]}` in roster order; successful entries are ordinary receipts
-  and failed entries contain the target id and a short `error`. One failed delivery
-  does not reject successful deliveries. Messages always use steering delivery so
-  a busy target sees them during its active run. Returns a receipt with a
-  `deliveryStatus` field: `"delivered"` means the message reached an idle target's
-  context; `"queued"` means a steering message was accepted and will deliver when
-  the target's current work allows (`send` does not block waiting for that).
-  Delivered receipts carry `deliveredAt`, queued receipts carry `queuedAt`.
-
+  `send("all", message, priority=...)` broadcasts only to the family roster and
+  returns `{receipts: [...]}` in roster order; successful entries are ordinary
+  receipts and failed entries contain the target id and a short `error`. One
+  failed delivery does not reject successful deliveries. Messages use steering
+  delivery so a busy target sees them during its active run. Returns a receipt
+  with a `deliveryStatus` field: `"delivered"` means the message reached an idle
+  target's context; `"queued"` means a steering message was accepted and will
+  deliver when the target's current work allows (`send` does not block waiting
+  for that). Delivered receipts carry `deliveredAt`, queued receipts carry
+  `queuedAt`.
 ## Safety
 
 - Do not delete a child immediately after `send`: delivered follow-ups may still

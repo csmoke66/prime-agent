@@ -436,6 +436,8 @@ pub enum DaemonCommand {
         agent_origin: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         delivery_mode: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        priority: Option<String>,
         #[serde(flatten)]
         rest: JsonMap,
     },

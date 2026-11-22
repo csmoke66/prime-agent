@@ -133,8 +133,8 @@ class RLMInboxMessage:
     an agent message, the child's session name for a child lifecycle
     notice, or the job id for a heartbeat fire; `meta` carries the
     notice's metadata (pid/command/exitCode/exitClass, the run's
-    fields, the message id, sender and family relationship, the child's
-    status and ids, or the fired heartbeat's job fields).
+    fields, the message id, sender, family relationship and sender-selected
+    priority, the child's status and ids, or the fired heartbeat's job fields).
     """
 
     id: str

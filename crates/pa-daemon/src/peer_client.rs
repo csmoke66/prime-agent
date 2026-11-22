@@ -43,8 +43,9 @@ pub(crate) async fn deliver_message_over_peer_transport(
     message: &str,
     sender: &Value,
     delivery_mode: Option<&str>,
+    priority: &str,
 ) -> PeerDeliveryOutcome {
-    let future = deliver_once(ticket, message, sender, delivery_mode);
+    let future = deliver_once(ticket, message, sender, delivery_mode, priority);
     match tokio::time::timeout(
         std::time::Duration::from_millis(DELIVERY_TIMEOUT_MS),
         future,
@@ -61,6 +62,7 @@ async fn deliver_once(
     message: &str,
     sender: &Value,
     delivery_mode: Option<&str>,
+    priority: &str,
 ) -> PeerDeliveryOutcome {
     // Link establishment: connect, hello, and the grant burn. Any failure
     // here means nothing was delivered.
@@ -99,6 +101,7 @@ async fn deliver_once(
         "targetActiveSessionId": ticket.active_session_id,
         "message": message,
         "sender": sender,
+        "priority": priority,
     });
     if let Some(mode) = delivery_mode {
         payload["deliveryMode"] = json!(mode);

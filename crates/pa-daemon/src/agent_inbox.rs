@@ -147,12 +147,12 @@ pub(crate) fn reminder_interval_ms(cwd: &Path, agent_dir: &Path) -> u64 {
         .get_agent_inbox_reminder_interval_ms()
 }
 
-/// The periodic unread reminder: while the session's inbox stays
-/// non-empty, one steering row repeats the waiting count every
-/// `reminderIntervalMs`; the interval re-reads each cycle — including
-/// after the wait, so a flip to `0` never admits — and an empty inbox,
-/// a `0` interval, a closed session, or `agentInbox.enabled: false`
-/// skips the cycle (the period resets when it drains; a closed session
+/// The periodic unread reminder: while the session has non-low unread
+/// messages, one steering row repeats the sender-selected count/preview/full
+/// rendering every `reminderIntervalMs`; a low-only or empty inbox admits
+/// nothing. The interval re-reads each cycle — including after the wait, so a
+/// flip to `0` never admits — and a closed session or `agentInbox.enabled:
+/// false` skips the cycle (the period resets when it drains; a closed session
 /// keeps polling so a later session on the worker re-arms the loop).
 pub(crate) fn spawn_inbox_reminder(
     engine: Weak<AgentSessionEngine>,

@@ -142,16 +142,6 @@ impl ClientSettings for CliClientSettings {
             .set_provider_block_target_session(target.to_owned())
     }
 
-    fn inbox_reminder_mode(&self, session_file: &str) -> Result<String> {
-        use pa_core::session_engine::inbox::reminders::ReminderMode;
-        Ok(ReminderMode::load(Path::new(session_file))?.name().to_owned())
-    }
-
-    fn set_inbox_reminder_mode(&self, session_file: &str, mode: &str) -> Result<()> {
-        use pa_core::session_engine::inbox::reminders::ReminderMode;
-        ReminderMode::parse(mode)?.save(Path::new(session_file))
-    }
-
     fn harness_entries(&self, session_file: Option<&str>) -> Result<Vec<Value>> {
         let mut rows = refinement::read_harness_entries(
             &refinement::get_global_harness_state_dir(&self.agent_dir),

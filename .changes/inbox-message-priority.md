@@ -1,0 +1,1 @@
+- Agent messages now choose inbox behavior per send with `priority="low"`, `"default"` (count), `"medium"` (preview), or `"high"` (full delivery). This replaces the recipient's reminder detail setting. Full-mailbox delivery still applies to all priorities.

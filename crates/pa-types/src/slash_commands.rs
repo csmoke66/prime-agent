@@ -42,9 +42,8 @@ pub struct BuiltinSlashCommand {
 pub fn moved_to_settings(name: &str) -> bool {
     matches!(
         name,
-        "model" | "effort" | "thinking" | "subagent-settings" | "inbox-reminders"
-            | "fast" | "tier" | "nightly" | "factory" | "telemetry" | "rlm-max-depth"
-            | "speed" | "autonomous"
+        "model" | "effort" | "thinking" | "subagent-settings" | "fast" | "tier" | "nightly"
+            | "factory" | "telemetry" | "rlm-max-depth" | "speed" | "autonomous"
     )
 }
 

@@ -68,7 +68,8 @@ The following programmatic tools are available in the REPL for subagent manageme
 
 The following programmatic tools are available in the REPL for a2a communication:
 
-- `agent_message.send(message: str, *, receiver_role: Literal["parent", "sibling", "child"], receiver_name: str | None) -> dict`: send a message to the receiver; returns a receipt with the message id and a delivery status (delivered or queued); all root sessions are siblings; `send("all", broadcast_message)` broadcasts to the family roster and returns `{receipts: [...]}`
+- `agent_message.send(message, *, receiver_role="parent" | "sibling" | "child", receiver_name=None, priority="default")`: sends a message and returns a delivery receipt. All root sessions are siblings. `send("all", message, priority=...)` broadcasts and returns `{receipts: [...]}`.
+- Choose priority per message: `low` for FYIs that can wait until another wake or a full inbox; omit priority for a count alert; `medium` to show a short preview; `high` for an urgent blocker that needs the full text delivered without an inbox read. `await agent_message.reply(message, priority=...)` sends to the parent.
 - `agent_observe.list_agents() -> dict`: list nuclear family
 - `agent_observe.get_agent(target: str) -> dict`: one agent's status detail
 - `agent_observe.recent_messages(target: str, limit: int = 8, max_chars: int = 800) -> dict`: transcript preview; `limit` errors outside [1-50], `max_chars` outside [80-2000]

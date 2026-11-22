@@ -162,7 +162,6 @@ pub struct SettingsMenu {
     sub: Option<SubmenuState>,
     depth_edit: Option<DepthEdit>,
     autonomous_edit: Option<SearchInput>,
-    pub(crate) inbox_session_file: Option<String>,
     child_models: Option<ChildModelPicker>,
     pub(crate) child_session_file: Option<String>,
     max_visible: usize,
@@ -489,22 +488,6 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             submenu: None,
         },
         SettingsMenuRow {
-            id: "inbox-reminders",
-            label: "Inbox reminders",
-            description: "Include only a count, message previews, or full unread messages",
-            current: current
-                .inbox_reminders
-                .clone()
-                .unwrap_or_else(|| "Unavailable".into()),
-            values: current.inbox_reminders.as_ref().map(|_| {
-                ["count", "preview", "full"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect()
-            }),
-            submenu: None,
-        },
-        SettingsMenuRow {
             id: "rlm-max-depth",
             label: "RLM max depth",
             description: "Set the maximum child nesting depth for this session",
@@ -585,7 +568,6 @@ pub struct SettingsCurrentValues {
     pub session_service_tier: String,
     pub available_service_tiers: Vec<&'static str>,
     pub fast_mode_available: bool,
-    pub inbox_reminders: Option<String>,
     pub rlm_depth: String,
     pub mermaid: String,
     pub quiet_startup: bool,
@@ -617,7 +599,6 @@ impl SettingsMenu {
             sub: None,
             depth_edit: None,
             autonomous_edit: None,
-            inbox_session_file: None,
             child_models: None,
             child_session_file: None,
             max_visible: 10,
@@ -939,9 +920,7 @@ impl SettingsMenu {
                 (index as isize + delta).rem_euclid(count as isize) as usize
             });
         let value = values[index].clone();
-        if row.id != "inbox-reminders" {
-            row.current.clone_from(&value);
-        }
+        row.current.clone_from(&value);
         SettingsMenuAction::Change { id: row.id, value }
     }
 

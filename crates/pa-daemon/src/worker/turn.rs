@@ -3,10 +3,10 @@
 use super::{
     checkpoint_queue_recovery, compact_action_label, create_daemon_event_meta,
     emit_refinement_event_for_session, emit_refinement_row, gather_delivery_batch, json, oneshot,
-    persist_custom_row, session_snapshot, AssistantSnapshot, DaemonOutbound, EngineEvent, EventPump,
-    Lane, Map, Notify, OutboundFrame, PromptRequest, QueueCheckpoint, QueuedItem, Result,
-    SessionActionSnapshot, SessionCore, SessionEngine, TurnSettle, Value, WorkerRecoveryJournal,
-    ABORTED_TURN_SETTLE_ERROR,
+    persist_custom_row, session_snapshot, take_held_low_notice, AssistantSnapshot, DaemonOutbound,
+    EngineEvent, EventPump, Lane, Map, Notify, OutboundFrame, PromptRequest, QueueCheckpoint,
+    QueuedItem, Result, SessionActionSnapshot, SessionCore, SessionEngine, TurnSettle, Value,
+    WorkerRecoveryJournal, ABORTED_TURN_SETTLE_ERROR, INBOX_LOW_PIGGYBACK_QUEUE_KEY,
 };
 
 use std::sync::{Arc, Mutex};
@@ -21,6 +21,10 @@ pub(super) struct TurnRunner {
     pub(super) idle_notify: Arc<Notify>,
     pub(crate) events: Arc<EventPump>,
     pub(super) engine: std::sync::Arc<dyn SessionEngine>,
+    /// The concrete engine exposes the current session's inbox slot. Scripted
+    /// workers have no inbox and skip low-priority turn-boundary delivery.
+    pub(super) agent_engine:
+        Option<std::sync::Arc<crate::agent_engine::AgentSessionEngine>>,
     pub(super) recovery: Arc<Mutex<Option<WorkerRecoveryJournal>>>,
     pub(super) active_session_id: String,
     pub(super) roster_pushes: crate::roster_activity::RosterPushQueue,
@@ -42,6 +46,31 @@ pub(super) struct PassivationContext {
 }
 
 impl TurnRunner {
+    fn attach_held_low_notice(&self, items: &mut Vec<QueuedItem>) {
+        let Some(first) = items.first() else {
+            return;
+        };
+        let Some(inbox) = self
+            .agent_engine
+            .as_ref()
+            .and_then(|engine| engine.inbox())
+        else {
+            return;
+        };
+        let first_is_custom = first.custom_message.is_some();
+        let policy = first.policy;
+        let Some(notice) = take_held_low_notice(&inbox, policy) else {
+            return;
+        };
+        items.push(notice);
+        // An ordinary prompt follows the attributed inbox row. A custom wake
+        // (including heartbeat) must remain the primary custom row, so the low
+        // count rides as its trailing batch text instead.
+        if !first_is_custom {
+            items.rotate_right(1);
+        }
+    }
+
     pub(super) async fn run(self) {
         loop {
             let engine = self.engine.clone();
@@ -60,7 +89,8 @@ impl TurnRunner {
                     core.busy = false;
                     None
                 } else if core.steering.front().is_some() {
-                    let items = gather_delivery_batch(&mut core, Lane::Steering);
+                    let mut items = gather_delivery_batch(&mut core, Lane::Steering);
+                    self.attach_held_low_notice(&mut items);
                     core.running_admission_ids = items
                         .iter()
                         .filter_map(|item| item.admission_id.clone())
@@ -71,7 +101,8 @@ impl TurnRunner {
                     core.running_tool_calls.clear();
                     Some((Lane::Steering, items))
                 } else if core.follow_up.front().is_some() {
-                    let items = gather_delivery_batch(&mut core, Lane::FollowUp);
+                    let mut items = gather_delivery_batch(&mut core, Lane::FollowUp);
+                    self.attach_held_low_notice(&mut items);
                     core.running_admission_ids = items
                         .iter()
                         .filter_map(|item| item.admission_id.clone())
@@ -1138,7 +1169,14 @@ impl TurnRunner {
                     Lane::Steering => &mut core.steering,
                     Lane::FollowUp => &mut core.follow_up,
                 };
-                for item in items.into_iter().skip(accepted_rows).rev() {
+                for item in items
+                    .into_iter()
+                    .skip(accepted_rows)
+                    .rev()
+                    .filter(|item| {
+                        item.queue_key.as_deref() != Some(INBOX_LOW_PIGGYBACK_QUEUE_KEY)
+                    })
+                {
                     lane_items.push_front(item);
                 }
             }

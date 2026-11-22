@@ -77,7 +77,6 @@ const TAB_LAYOUT: &[TabLayout] = &[
             "web-search-provider",
             "child-models",
             "child-effort",
-            "inbox-reminders",
             "rlm-max-depth",
             "rlm-max-depth-global",
             "factory",

@@ -66,6 +66,7 @@ fn burst_runner(engine: Arc<dyn SessionEngine>) -> TurnRunner {
         idle_notify: Arc::new(Notify::new()),
         events: Arc::new(EventPump::new()),
         engine,
+        agent_engine: None,
         recovery: Arc::new(Mutex::new(None)),
         active_session_id: "burst-session".to_string(),
         roster_pushes: crate::roster_activity::RosterPushQueue::disabled(),

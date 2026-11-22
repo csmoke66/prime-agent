@@ -78,6 +78,7 @@ fn live_feed_runner(engine: Arc<dyn SessionEngine>, socket: std::path::PathBuf) 
         idle_notify: Arc::new(Notify::new()),
         events,
         engine,
+        agent_engine: None,
         active_session_id: "feed-session".to_string(),
         roster_pushes,
         user_bash: std::sync::Arc::new(crate::user_bash::UserBash::new()),

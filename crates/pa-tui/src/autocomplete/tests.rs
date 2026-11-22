@@ -123,7 +123,6 @@ fn settings_only_commands_are_not_suggested() {
         "tier",
         "fast",
         "subagent-settings",
-        "inbox-reminders",
         "rlm-max-depth",
         "factory",
         "telemetry",

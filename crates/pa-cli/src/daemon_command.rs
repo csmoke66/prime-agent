@@ -447,6 +447,7 @@ fn parse_send_args(args: &[String]) -> Result<DaemonCommand> {
         from_active_session_id,
         agent_origin: None,
         delivery_mode: delivery_mode.map(Value::from),
+        priority: None,
         rest: serde_json::Map::new(),
     })
 }

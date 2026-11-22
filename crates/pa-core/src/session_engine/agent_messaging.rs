@@ -20,6 +20,10 @@ pub const DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION: usize = 20;
 pub const DEFAULT_AGENT_MESSAGE_RATE_LIMIT_CAPACITY: usize = 3;
 /// One rate-limit token per sender per this window.
 pub const DEFAULT_AGENT_MESSAGE_RATE_LIMIT_REFILL_MS: u64 = 1_000;
+/// Sender-controlled delivery urgency. Missing priority preserves the historical
+/// default behavior.
+pub const AGENT_MESSAGE_PRIORITIES: [&str; 4] = ["low", "default", "medium", "high"];
+
 
 pub const AGENT_OBSERVE_PREVIEW_MAX_CHARS: usize = 240;
 pub const AGENT_OBSERVE_IMPORT_NAME: &str = "agent_observe";
@@ -80,6 +84,7 @@ pub struct AgentMessageSendInput {
     pub target: String,
     pub message: String,
     pub receiver_role: Option<AgentFamilyRelationship>,
+    pub priority: String,
 }
 
 #[derive(Debug, Clone)]
@@ -410,6 +415,20 @@ pub fn register_agent_message_host_handlers<C: AgentMessageController + 'static>
                 // TS normalizes inside every send (broadcast included), so
                 // normalizing up front is behaviorally identical.
                 let message = normalize_agent_session_message(message)?;
+                let priority = match data.get("priority") {
+                    None => "default",
+                    Some(Value::String(value))
+                        if AGENT_MESSAGE_PRIORITIES.contains(&value.as_str()) =>
+                    {
+                        value.as_str()
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "agent_message.send priority must be \"low\", \"default\", \"medium\", or \"high\""
+                        ))
+                    }
+                }
+                .to_string();
                 // Broadcast form (`target: "all"`): one send per family
                 // member, all-settled into a receipts array.
                 if let Some(target) = data.get("target").and_then(Value::as_str) {
@@ -431,6 +450,7 @@ pub fn register_agent_message_host_handlers<C: AgentMessageController + 'static>
                                 target: member.id.clone(),
                                 message: message.clone(),
                                 receiver_role: Some(member.relationship),
+                                priority: priority.clone(),
                             })
                             .await;
                         receipts.push(match result {
@@ -518,6 +538,7 @@ pub fn register_agent_message_host_handlers<C: AgentMessageController + 'static>
                         target: member.id.clone(),
                         message: message.clone(),
                         receiver_role: Some(role),
+                        priority,
                     })
                     .await?;
                 Ok(receipt_value(&receipt))

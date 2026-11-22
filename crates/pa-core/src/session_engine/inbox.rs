@@ -91,6 +91,62 @@ pub struct InboxNotice {
     pub meta: Value,
 }
 
+/// Sender-selected urgency for an agent-message inbox entry. Other notice
+/// classes always use `Default`, even when their class-specific metadata
+/// happens to contain a `priority` field.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InboxPriority {
+    Low,
+    #[default]
+    Default,
+    Medium,
+    High,
+}
+
+impl InboxPriority {
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "low" => Some(Self::Low),
+            "default" => Some(Self::Default),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+}
+
+impl InboxNotice {
+    /// The effective recipient-side priority. Missing or malformed metadata
+    /// keeps the historical count-notice behavior.
+    #[must_use]
+    pub fn priority(&self) -> InboxPriority {
+        if self.class != INBOX_CLASS_AGENT_MESSAGE {
+            return InboxPriority::Default;
+        }
+        self.meta
+            .get("priority")
+            .and_then(Value::as_str)
+            .and_then(InboxPriority::parse)
+            .unwrap_or_default()
+    }
+}
+
+impl InboxMessage {
+    /// The journaled message's effective recipient-side priority.
+    #[must_use]
+    pub fn priority(&self) -> InboxPriority {
+        if self.class != INBOX_CLASS_AGENT_MESSAGE {
+            return InboxPriority::Default;
+        }
+        self.meta
+            .get("priority")
+            .and_then(Value::as_str)
+            .and_then(InboxPriority::parse)
+            .unwrap_or_default()
+    }
+}
+
 /// The targeted-read filter for `rlm.inbox.read` (`rlm.inbox.read()` in
 /// Python): every set field narrows the read (`ANDed`), an all-`None`
 /// filter reads everything. The wire shape is camelCase, like the
@@ -586,6 +642,7 @@ impl SessionInbox {
         state.messages.clone()
     }
 
+
     /// The waiting message ids: the wake-row refresh trims its covered
     /// batches against the live set.
     #[must_use]
@@ -973,8 +1030,7 @@ mod tests {
     }
 
     #[test]
-    fn reminder_modes_show_only_waiting_bodies_without_consuming_them() {
-        use super::reminders::ReminderMode;
+    fn reminders_follow_message_priority_without_consuming_waiters() {
         let inbox = SessionInbox::in_memory();
         let long = format!("{}tail", "λ".repeat(200));
         for i in 0..6 {
@@ -983,23 +1039,47 @@ mod tests {
                     "child",
                     INBOX_CLASS_AGENT_MESSAGE,
                     if i == 0 { &long } else { "short" },
-                    Value::Null,
+                    json!({ "priority": "medium" }),
                 ),
                 i,
             );
         }
-        assert_eq!(
-            inbox.unread_reminder(ReminderMode::Count),
-            reminder_notice(6)
+        let (priority, preview) = inbox.unread_reminder().expect("medium wakes");
+        assert_eq!(priority, InboxPriority::Medium);
+        assert!(
+            preview.contains("child: λ")
+                && preview.contains("1 more medium-priority unread")
         );
-        let preview = inbox.unread_reminder(ReminderMode::Preview);
-        assert!(preview.contains("child: λ") && preview.contains("1 more unread"));
         assert!(!preview.contains("tail"));
-        let full = inbox.unread_reminder(ReminderMode::Full);
-        assert!(full.contains(&long));
-        assert_eq!(full.matches("child: short").count(), 5);
-        assert_eq!(inbox.drain().len(), 6);
-        assert!(!inbox.unread_reminder(ReminderMode::Full).contains("short"));
+        assert_eq!(inbox.count().0, 6, "a reminder never consumes messages");
+
+        let low = SessionInbox::in_memory();
+        low.push(
+            notice(
+                "child",
+                INBOX_CLASS_AGENT_MESSAGE,
+                "background",
+                json!({ "priority": "low" }),
+            ),
+            1,
+        );
+        assert!(low.unread_reminder().is_none(), "a low-only inbox is silent");
+
+        let machine = SessionInbox::in_memory();
+        machine.push(
+            notice(
+                "job",
+                INBOX_CLASS_BASH_DONE,
+                "done",
+                json!({ "priority": "low" }),
+            ),
+            1,
+        );
+        assert_eq!(
+            machine.unread_reminder().map(|(priority, _)| priority),
+            Some(InboxPriority::Default),
+            "machine metadata never suppresses its historical notice"
+        );
     }
 
     /// Push, drain, and count round-trip through the store's in-memory

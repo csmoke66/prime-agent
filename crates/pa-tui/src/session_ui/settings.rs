@@ -196,22 +196,6 @@ impl SessionUi {
             return;
         };
         let settings = self.client_settings.clone();
-        let inbox_session_file = state
-            .get("sessionFile")
-            .and_then(Value::as_str)
-            .filter(|file| !file.is_empty())
-            .or(self.session_file.as_deref())
-            .map(str::to_owned);
-        let inbox_reminders = match (&settings, inbox_session_file.as_deref()) {
-            (Some(settings), Some(file)) => match settings.inbox_reminder_mode(file) {
-                Ok(mode) => Some(mode),
-                Err(error) => {
-                    self.error_row(&format!("Cannot read inbox reminder mode: {error:#}"), view);
-                    None
-                }
-            },
-            _ => None,
-        };
         let model = state.get("model");
         let model_id = model
             .and_then(|model| model.get("id"))
@@ -357,7 +341,6 @@ impl SessionUi {
             fast_mode_available: self
                 .current_model_entry(view)
                 .is_some_and(pa_types::ai::supports_fast_mode),
-            inbox_reminders,
             rlm_depth: rlm_depth.unwrap_or_else(|| "Unavailable".into()),
             provider_block_targets,
             ..Default::default()
@@ -420,9 +403,6 @@ impl SessionUi {
             .collect();
         let rows = crate::settings_menu::settings_menu_rows(&values);
         let mut menu = crate::settings_menu::SettingsMenu::new(rows);
-        if values.inbox_reminders.is_some() {
-            menu.inbox_session_file = inbox_session_file;
-        }
         if let (Some(settings), Some(file)) = (
             &settings,
             state.get("sessionFile").and_then(Value::as_str).filter(|file| !file.is_empty()),
@@ -846,22 +826,6 @@ impl SessionUi {
                 if let Some(applied) = self.set_session_service_tier(value, view).await {
                     let status = if applied == "priority" { "on" } else { "off" };
                     self.note(&format!("Fast mode: {status}"), view);
-                }
-            }
-            "inbox-reminders" => {
-                let (Some(settings), Some(menu)) =
-                    (&self.client_settings, view.settings_menu.as_mut())
-                else {
-                    return;
-                };
-                let Some(file) = menu.inbox_session_file.as_deref() else {
-                    return;
-                };
-                match settings.set_inbox_reminder_mode(file, value) {
-                    Ok(()) => menu.set_row_value(id, value),
-                    Err(error) => {
-                        self.error_row(&format!("Cannot save inbox reminder mode: {error:#}"), view);
-                    }
                 }
             }
 

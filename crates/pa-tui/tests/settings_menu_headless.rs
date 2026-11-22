@@ -148,16 +148,6 @@ impl RecordingSettings {
 }
 
 impl pa_tui::client_settings::ClientSettings for RecordingSettings {
-    fn inbox_reminder_mode(&self, session_file: &str) -> Result<String> {
-        assert_eq!(session_file, SESSION_FILE);
-        Ok("count".into())
-    }
-
-    fn set_inbox_reminder_mode(&self, session_file: &str, mode: &str) -> Result<()> {
-        assert_eq!(session_file, SESSION_FILE);
-        self.record(&format!("inbox-reminders={mode}"))
-    }
-
     fn child_policy(&self, session_file: &str) -> Result<ChildPolicy> {
         assert_eq!(session_file, SESSION_FILE);
         Ok(ChildPolicy {
@@ -397,24 +387,6 @@ fn open_settings() -> Vec<HeadlessStep> {
             timeout_ms: 5000,
         },
     ]
-}
-
-#[test]
-fn inbox_reminder_row_writes_session_modes_in_order() {
-    let mut steps = open_settings();
-    steps.extend([
-        HeadlessStep::Key(key(KeyCode::Char('5'))),
-        HeadlessStep::Paste("inbox".into()),
-        HeadlessStep::Key(key(KeyCode::Right)),
-        HeadlessStep::Key(key(KeyCode::Enter)),
-        HeadlessStep::Key(key(KeyCode::Right)),
-    ]);
-    let (_, settings) = run_plan(steps);
-    assert_eq!(settings.log(), [
-        "inbox-reminders=preview",
-        "inbox-reminders=full",
-        "inbox-reminders=count",
-    ]);
 }
 
 #[test]

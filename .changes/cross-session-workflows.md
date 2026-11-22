@@ -1,0 +1,1 @@
+- Workflows can now run on another existing session. Agents pass `session="SESSION_ID"` to `rlm.workflows.run`; TUI users pass `--session SESSION_ID` to `/run`. The target worker loads and applies the workflow in its own session.

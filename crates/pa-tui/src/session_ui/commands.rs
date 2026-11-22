@@ -7,21 +7,74 @@ use super::{
     StatusKind, SubmitBehavior, Value, UI_REQUEST_TIMEOUT_MS,
 };
 
+fn workflow_target(args: &str) -> std::result::Result<(Option<String>, &str), String> {
+    let args = args.trim();
+    if args == "--session" {
+        return Err("--session requires a session selector".to_string());
+    }
+    let rest = if let Some(rest) = args.strip_prefix("--session=") {
+        Some(rest)
+    } else {
+        args.strip_prefix("--session ")
+    };
+    let Some(rest) = rest else {
+        return Ok((None, args));
+    };
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Err("--session requires a session selector".to_string());
+    }
+    let (target, remaining) = rest
+        .split_once(char::is_whitespace)
+        .map_or((rest, ""), |(target, remaining)| (target, remaining.trim_start()));
+    Ok((Some(target.to_owned()), remaining))
+}
+
+#[cfg(test)]
+mod workflow_target_tests {
+    use super::workflow_target;
+
+    #[test]
+    fn parses_targeted_and_local_workflow_arguments() {
+        assert_eq!(
+            workflow_target("--session target-id review {\"scope\":\"local\"}").unwrap(),
+            (
+                Some("target-id".to_string()),
+                "review {\"scope\":\"local\"}"
+            )
+        );
+        assert_eq!(
+            workflow_target("review {\"scope\":\"local\"}").unwrap(),
+            (None, "review {\"scope\":\"local\"}")
+        );
+        assert!(workflow_target("--session ").is_err());
+    }
+}
+
 impl SessionUi {
     pub(super) async fn submit_workflow(
         &mut self,
         name: String,
         input: Value,
+        target_session: Option<String>,
         view: &mut AgentView,
     ) -> Result<()> {
+        let active_session_id = target_session
+            .clone()
+            .unwrap_or_else(|| self.active_session_id.clone());
         let command = DaemonCommand::RunWorkflow {
             id: None,
-            active_session_id: self.active_session_id.clone(),
+            active_session_id,
             name: name.clone(),
             input,
         };
         match self.bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command).await {
-            Ok(_) => self.note(&format!("Workflow {name} started."), view),
+            Ok(_) => {
+                let suffix = target_session
+                    .as_deref()
+                    .map_or_else(String::new, |target| format!(" on {target}"));
+                self.note(&format!("Workflow {name} started{suffix}."), view)
+            }
             Err(e) => self.error_row(&format!("Cannot start workflow: {e:#}"), view),
         }
         Ok(())
@@ -311,12 +364,25 @@ impl SessionUi {
             // surface through the `mcp` CLI command instead of the TUI.
             "mcp" => self.handle_mcp_command(resolved, view).await?,
             "run" => {
-                let args = resolved.args.trim();
+                let parsed = workflow_target(resolved.args.trim());
+                let (target_session, args) = match parsed {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        view.editor.set_text(text);
+                        self.error_row(&error, view);
+                        return Ok(());
+                    }
+                };
                 if let Some((name, raw)) = args.split_once(char::is_whitespace) {
                     match serde_json::from_str::<Map<String, Value>>(raw.trim()) {
                         Ok(input) => {
-                            self.submit_workflow(name.to_owned(), Value::Object(input), view)
-                                .await?;
+                            self.submit_workflow(
+                                name.to_owned(),
+                                Value::Object(input),
+                                target_session,
+                                view,
+                            )
+                            .await?;
                         }
                         Err(error) => {
                             view.editor.set_text(text);
@@ -326,13 +392,19 @@ impl SessionUi {
                 } else {
                     let command = DaemonCommand::ListWorkflows {
                         id: None,
-                        active_session_id: self.active_session_id.clone(),
+                        active_session_id: target_session
+                            .clone()
+                            .unwrap_or_else(|| self.active_session_id.clone()),
                     };
                     let form = match self
                         .bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command)
                         .await
                     {
-                        Ok(result) => crate::workflow_form::WorkflowForm::open(args, result),
+                        Ok(result) => crate::workflow_form::WorkflowForm::open_for_target(
+                            args,
+                            result,
+                            target_session,
+                        ),
                         Err(error) => Err(format!("Cannot list workflows: {error:#}")),
                     };
                     match form {

@@ -852,16 +852,39 @@ impl AgentSessionEngine {
         if let Some(host) = &self.children {
             use pa_core::kernel::shared::host_handler;
             let host = Arc::clone(host);
+            let workflow_link = Arc::clone(&self.link);
+            let workflow_session = config.active_session_id.clone();
             handlers.register(
                 "rlm.workflows.run",
                 host_handler(move |mut request| {
                     let host = Arc::clone(&host);
+                    let link = Arc::clone(&workflow_link);
+                    let current_session = workflow_session.clone();
                     async move {
                         let input = request.data["input"].take();
                         let name = request.data["name"]
                             .as_str()
                             .ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
-                        Ok(serde_json::json!({"output":host.run_workflow(name, input).await?}))
+                        let target = request.data["targetSession"].as_str();
+                        let output = match target {
+                            None => host.run_workflow(name, input).await?,
+                            Some(target) if target == current_session => {
+                                host.run_workflow(name, input).await?
+                            }
+                            Some(target) => {
+                                link.request_success(
+                                    serde_json::json!({
+                                        "type": "run_workflow",
+                                        "activeSessionId": target,
+                                        "name": name,
+                                        "input": input,
+                                    }),
+                                    std::time::Duration::from_secs(30),
+                                )
+                                .await?
+                            }
+                        };
+                        Ok(serde_json::json!({"output":output}))
                     }
                 }),
             );

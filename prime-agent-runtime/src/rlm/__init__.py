@@ -779,9 +779,18 @@ class _WorkflowNamespace:
         """Create a new project definition; never replace an existing workflow."""
         await host_request("rlm.workflows.create", {"name": name, "definition": definition})
 
-    async def run(self, name: str, input: dict[str, Any]) -> dict[str, Any]:
-        """Supply input values; return the output validated against the named definition."""
-        reply = await host_request("rlm.workflows.run", {"name": name, "input": input})
+    async def run(
+        self,
+        name: str,
+        input: dict[str, Any],
+        *,
+        session: str | None = None,
+    ) -> dict[str, Any]:
+        """Run locally, or start the workflow on another existing session."""
+        payload: dict[str, Any] = {"name": name, "input": input}
+        if session is not None:
+            payload["targetSession"] = session
+        reply = await host_request("rlm.workflows.run", payload)
         output = reply.get("output")
         if not isinstance(output, dict):
             raise RuntimeError("Workflow host returned no JSON output object")

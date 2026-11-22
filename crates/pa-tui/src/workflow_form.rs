@@ -122,6 +122,7 @@ enum Stage {
 #[derive(Debug)]
 pub(crate) struct WorkflowForm {
     stage: Stage,
+    target_session: Option<String>,
     focus: usize,
     error: Option<String>,
 }
@@ -129,11 +130,24 @@ pub(crate) struct WorkflowForm {
 pub(crate) enum WorkflowFormAction {
     None,
     Cancel,
-    Submit { name: String, input: Value },
+    Submit {
+        name: String,
+        input: Value,
+        target_session: Option<String>,
+    },
 }
 
 impl WorkflowForm {
+    #[cfg(test)]
     pub(crate) fn open(name: &str, catalog: Value) -> Result<Self, String> {
+        Self::open_for_target(name, catalog, None)
+    }
+
+    pub(crate) fn open_for_target(
+        name: &str,
+        catalog: Value,
+        target_session: Option<String>,
+    ) -> Result<Self, String> {
         let WorkflowCatalog {
             names,
             mut definitions,
@@ -142,7 +156,7 @@ impl WorkflowForm {
             .map_err(|err| format!("Cannot read workflow list: {err}"))?;
         if !name.is_empty() {
             return if let Some(definition) = definitions.remove(name) {
-                Ok(Self::edit(name.to_owned(), definition))
+                Ok(Self::edit(name.to_owned(), definition, target_session))
             } else if let Some(error) = errors.get(name) {
                 Err(format!("Cannot load workflow {name:?}: {error}"))
             } else if names.iter().any(|listed| listed == name) {
@@ -178,12 +192,13 @@ impl WorkflowForm {
                 choices,
                 invalid: errors.len(),
             },
+            target_session,
             focus: 0,
             error: None,
         })
     }
 
-    fn edit(name: String, definition: Definition) -> Self {
+    fn edit(name: String, definition: Definition, target_session: Option<String>) -> Self {
         Self {
             stage: Stage::Edit {
                 name,
@@ -204,6 +219,7 @@ impl WorkflowForm {
                     })
                     .collect(),
             },
+            target_session,
             focus: 0,
             error: None,
         }
@@ -284,7 +300,8 @@ impl WorkflowForm {
                     "ctrl+n" => self.focus = (self.focus + 1) % count,
                     "enter" | "space" => {
                         let (name, definition) = choices.swap_remove(self.focus);
-                        *self = Self::edit(name, definition);
+                        let target_session = self.target_session.clone();
+                        *self = Self::edit(name, definition, target_session);
                     }
                     _ => {}
                 },
@@ -314,6 +331,7 @@ impl WorkflowForm {
                                 return WorkflowFormAction::Submit {
                                     name: name.clone(),
                                     input,
+                                    target_session: self.target_session.clone(),
                                 };
                             }
                             Err((index, error)) => {
@@ -335,7 +353,11 @@ impl WorkflowForm {
         let mut lines = Vec::new();
         match &self.stage {
             Stage::Select { choices, invalid } => {
-                lines.push(hint_row(theme, width, "Choose a workflow"));
+                let title = self.target_session.as_deref().map_or_else(
+                    || "Choose a workflow".to_string(),
+                    |target| format!("Choose a workflow for {target}"),
+                );
+                lines.push(hint_row(theme, width, &title));
                 for (n, (name, _)) in choices.iter().enumerate().skip(start).take(8) {
                     lines.push(menu_row(
                         theme,
@@ -369,7 +391,11 @@ impl WorkflowForm {
                 description,
                 inputs,
             } => {
-                lines.push(hint_row(theme, width, &format!("Run workflow · {name}")));
+                let title = self.target_session.as_deref().map_or_else(
+                    || format!("Run workflow · {name}"),
+                    |target| format!("Run workflow · {name} → {target}"),
+                );
+                lines.push(hint_row(theme, width, &title));
                 push_description(&mut lines, theme, width, description.as_deref());
                 for n in visible {
                     let focused = n == self.focus;
@@ -485,7 +511,7 @@ mod tests {
             form.paste(text);
             form.handle_key("enter", &kb);
         }
-        let WorkflowFormAction::Submit { name, input } = form.handle_key("enter", &kb) else {
+        let WorkflowFormAction::Submit { name, input, .. } = form.handle_key("enter", &kb) else {
             panic!("form did not submit: {form:?}")
         };
         assert_eq!(name, "review");
@@ -539,7 +565,7 @@ mod tests {
         form.handle_key("enter", &kb);
         form.paste("line one\nline two");
         form.handle_key("tab", &kb);
-        let WorkflowFormAction::Submit { name, input } = form.handle_key("enter", &kb) else {
+        let WorkflowFormAction::Submit { name, input, .. } = form.handle_key("enter", &kb) else {
             panic!("form did not submit: {form:?}")
         };
         assert_eq!(name, "report");
@@ -571,6 +597,23 @@ mod tests {
             panic!("form did not submit: {form:?}")
         };
         assert_eq!(input, json!({"scope": "global"}));
+    }
+
+    #[test]
+    fn target_session_survives_picker_and_submission() {
+        let mut form = WorkflowForm::open_for_target(
+            "",
+            catalog(json!({})),
+            Some("hr-target".to_string()),
+        )
+        .unwrap();
+        let kb = KeybindingsManager::new();
+        form.handle_key("enter", &kb);
+        let WorkflowFormAction::Submit { target_session, .. } = form.handle_key("enter", &kb)
+        else {
+            panic!("form did not submit: {form:?}")
+        };
+        assert_eq!(target_session.as_deref(), Some("hr-target"));
     }
 
     #[test]

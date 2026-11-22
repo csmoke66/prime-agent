@@ -363,9 +363,13 @@ impl SessionUi {
                 match form.handle_key(&id, view.editor.keybindings()) {
                     WorkflowFormAction::None => {}
                     WorkflowFormAction::Cancel => view.workflow_form = None,
-                    WorkflowFormAction::Submit { name, input } => {
+                    WorkflowFormAction::Submit {
+                        name,
+                        input,
+                        target_session,
+                    } => {
                         view.workflow_form = None;
-                        self.submit_workflow(name, input, view).await?;
+                        self.submit_workflow(name, input, target_session, view).await?;
                     }
                 }
             }

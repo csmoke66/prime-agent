@@ -53,12 +53,13 @@ A workflow is a reusable job with its own model and child settings. Save a proje
 }
 ```
 
-`/run review` opens a form built from `inputFields`. Enter the values and select **Run workflow**, or press **Esc** to cancel. You do not redefine the prompt or the result when you run it. From the REPL:
+`/run review` opens a form built from `inputFields`. Enter the values and select **Run workflow**, or press **Esc** to cancel. To run against another existing session, use its active or durable session ID: `/run --session SESSION_ID review`. The form and workflow execute on that target session, so state-rewrite workflows are applied there. You do not redefine the prompt or result when you run it. From the REPL:
 
 ```python
 names = await rlm.workflows.list()
 definition = await rlm.workflows.describe("review")
 result = await rlm.workflows.run("review", {"files": ["src/parser.rs"], "focus": "error handling"})
+receipt = await rlm.workflows.run("review", {"files": ["src/parser.rs"]}, session="SESSION_ID")
 print(result["summary"])
 ```
 

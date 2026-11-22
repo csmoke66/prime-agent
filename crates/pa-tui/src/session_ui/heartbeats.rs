@@ -17,6 +17,55 @@ pub(crate) struct HeartbeatsUpdate {
 }
 
 impl SessionUi {
+    pub(super) async fn handle_heartbeat_command(&mut self, text: &str, view: &mut AgentView) {
+        use pa_core::cron::{parse_heartbeat_command, ParsedHeartbeatCommand as Heartbeat};
+        let active_session_id = self.active_session_id.clone();
+        let command = match parse_heartbeat_command(text) {
+            Ok(Heartbeat::Status) => DaemonCommand::HeartbeatGet {
+                id: None, active_session_id, rest: Map::new(),
+            },
+            Ok(Heartbeat::Set { schedule, instruction, delivery_mode }) => DaemonCommand::HeartbeatSet {
+                id: None, active_session_id, schedule, prompt: instruction,
+                delivery_mode: delivery_mode.map(|mode| serde_json::json!(mode)),
+                promote_owned_session: None, rest: Map::new(),
+            },
+            Ok(action) => DaemonCommand::HeartbeatUpdate {
+                id: None, active_session_id,
+                action: Value::from(match action {
+                    Heartbeat::Pause => "pause",
+                    Heartbeat::Resume => "resume",
+                    Heartbeat::Clear => "clear",
+                    _ => unreachable!(),
+                }),
+                rest: Map::new(),
+            },
+            Err(error) => {
+                view.editor.set_text(text);
+                self.error_row(&error.to_string(), view);
+                return;
+            }
+        };
+        match self.bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), command).await {
+            Ok(data) => {
+                if data["heartbeats"].as_array().is_some_and(|jobs| jobs.len() > 1) {
+                    self.open_heartbeats_view(view);
+                    return;
+                }
+                let status = data.get("heartbeat").and_then(crate::heartbeats_picker::parse_heartbeat_job)
+                    .map_or_else(|| "No heartbeat set for this session.".to_owned(), |job| {
+                        format!("Heartbeat {} · {} · {} · {}", job.status, job.schedule_expression,
+                            job.delivery_mode.as_deref().unwrap_or("steer"), job.prompt)
+                    });
+                self.note(&status, view);
+                self.spawn_heartbeat_refresh();
+            }
+            Err(error) => {
+                view.editor.set_text(text);
+                self.error_row(&format!("Heartbeat: {error:#}"), view);
+            }
+        }
+    }
+
     /// One key press while the `/heartbeats` view is open.
     pub(crate) async fn handle_heartbeats_picker_key(
         &mut self,

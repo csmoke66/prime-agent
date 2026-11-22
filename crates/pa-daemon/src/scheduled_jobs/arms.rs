@@ -255,20 +255,16 @@ impl Worker {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.bind_store_artifact(&core);
         }
-        let heartbeat = self
-            .scheduled
-            .store()
-            .get_heartbeat(&active_session_id)
-            .and_then(|job| serde_json::to_value(&job).ok());
+        let heartbeats: Vec<_> = self.scheduled.store().session_heartbeats(&active_session_id).collect();
+        let heartbeat = heartbeats.iter().max_by_key(|job| &job.updated_at);
         response_success(
             None,
             "heartbeat_get",
-            Some(json!({ "heartbeat": heartbeat.unwrap_or(Value::Null) })),
+            Some(json!({ "heartbeat": heartbeat, "heartbeats": heartbeats })),
         )
     }
 
-    /// `heartbeat_set` (TS daemon-mode case over `createHeartbeatForState`): replace the
-    /// session's heartbeat.
+    /// Add a recurring user heartbeat without affecting existing jobs.
     pub(crate) async fn handle_heartbeat_set(&self, payload: &Value) -> DaemonResponse {
         if let Err(response) = self.require_created("heartbeat_set") {
             return response;
@@ -279,7 +275,7 @@ impl Worker {
             Ok(mode) => mode,
             Err(error) => return response_failure(None, "heartbeat_set", &error.to_string(), None),
         };
-        let (previous, input) = {
+        let input = {
             let core = self
                 .core
                 .lock()
@@ -296,16 +292,6 @@ impl Worker {
                     )
                 }
             };
-            let previous = self
-                .scheduled
-                .store()
-                .get_heartbeat(&core.active_session_id);
-            // A replacement keeps the previous delivery mode unless the
-            // command carries one (TS `createHeartbeatForState`).
-            let delivery_mode =
-                delivery_mode.or(previous.as_ref().and_then(|job| job.delivery_mode));
-            (
-                previous,
                 CreateAgentCronJobInput {
                     active_session_id: core.active_session_id.clone(),
                     session_id: store.session_id().to_string(),
@@ -325,14 +311,10 @@ impl Worker {
                         .unwrap_or_default()
                         .to_string(),
                     ..Default::default()
-                },
-            )
+                }
         };
         match self.scheduled.store().create_heartbeat(&input) {
             Ok(job) => {
-                if let Some(previous) = previous {
-                    self.scheduled.remove_queued_heartbeat_follow_up(&previous);
-                }
                 self.scheduled.wake().await;
                 response_success(
                     None,

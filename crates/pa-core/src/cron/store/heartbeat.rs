@@ -14,15 +14,26 @@ use crate::cron::{
 };
 
 impl AgentCronJobStore {
-    pub fn get_heartbeat(&self, active_session_id: &str) -> Option<AgentCronJob> {
+    pub fn session_heartbeats<'a>(&self, active_session_id: &'a str) -> impl Iterator<Item = AgentCronJob> + 'a {
         self.read_jobs()
             .into_iter()
-            .filter(|job| {
+            .filter(move |job| {
                 job.active_session_id == active_session_id
                     && job.source.as_deref() == Some("heartbeat")
                     && matches!(job.status, JobStatus::Active | JobStatus::Paused)
             })
+    }
+
+    pub fn get_heartbeat(&self, active_session_id: &str) -> Option<AgentCronJob> {
+        self.session_heartbeats(active_session_id)
             .max_by_key(|job| parse_iso_millis(&job.updated_at).unwrap_or(0))
+    }
+
+    fn single_heartbeat(&self, session: &str) -> anyhow::Result<Option<AgentCronJob>> {
+        let mut jobs = self.session_heartbeats(session);
+        let first = jobs.next();
+        anyhow::ensure!(jobs.next().is_none(), "Multiple heartbeats: select one in /heartbeats.");
+        Ok(first)
     }
 
     pub fn get_latest_heartbeat(&self, active_session_id: &str) -> Option<AgentCronJob> {
@@ -35,8 +46,7 @@ impl AgentCronJobStore {
             .max_by_key(|job| parse_iso_millis(&job.updated_at).unwrap_or(0))
     }
 
-    /// Create the heartbeat job for a session, cancelling its existing active/paused
-    /// heartbeat first.
+    /// Add an independent recurring heartbeat to a session.
     ///
     /// # Errors
     ///
@@ -55,25 +65,6 @@ impl AgentCronJobStore {
             anyhow::bail!("Heartbeat instruction cannot be empty");
         }
         let now_iso = iso_from_millis(now);
-        let existing: Vec<AgentCronJob> = self
-            .read_jobs()
-            .into_iter()
-            .map(|job| {
-                if job.active_session_id == input.active_session_id
-                    && job.source.as_deref() == Some("heartbeat")
-                    && matches!(job.status, JobStatus::Active | JobStatus::Paused)
-                {
-                    AgentCronJob {
-                        status: JobStatus::Cancelled,
-                        next_run_at: None,
-                        updated_at: now_iso.clone(),
-                        ..job
-                    }
-                } else {
-                    job
-                }
-            })
-            .collect();
         let job = AgentCronJob {
             id: Uuid::new_v4().to_string(),
             status: JobStatus::Active,
@@ -99,7 +90,7 @@ impl AgentCronJobStore {
             last_error: None,
             run_count: 0,
         };
-        let mut jobs = existing;
+        let mut jobs = self.read_jobs();
         jobs.push(job.clone());
         self.write_jobs(&jobs)?;
         Ok(job)
@@ -112,7 +103,7 @@ impl AgentCronJobStore {
         active_session_id: &str,
         now: u64,
     ) -> anyhow::Result<Option<AgentCronJob>> {
-        let Some(current) = self.get_heartbeat(active_session_id) else {
+        let Some(current) = self.single_heartbeat(active_session_id)? else {
             return Ok(None);
         };
         let now_iso = iso_from_millis(now);
@@ -149,7 +140,7 @@ impl AgentCronJobStore {
         active_session_id: &str,
         now: u64,
     ) -> anyhow::Result<Option<AgentCronJob>> {
-        let Some(current) = self.get_heartbeat(active_session_id) else {
+        let Some(current) = self.single_heartbeat(active_session_id)? else {
             return Ok(None);
         };
         let Some(next_run_at) = next_run_at_for_schedule(&current.schedule, now)? else {
@@ -186,7 +177,7 @@ impl AgentCronJobStore {
         active_session_id: &str,
         now: u64,
     ) -> anyhow::Result<Option<AgentCronJob>> {
-        let Some(current) = self.get_heartbeat(active_session_id) else {
+        let Some(current) = self.single_heartbeat(active_session_id)? else {
             return Ok(None);
         };
         let now_iso = iso_from_millis(now);
@@ -334,10 +325,12 @@ mod tests {
         assert_eq!(store.get_heartbeat("live-1").unwrap().id, second.id);
         assert_eq!(store.list().len(), 2);
         let jobs = store.list();
-        let cancelled_first = jobs.iter().find(|job| job.id != second.id).unwrap();
-        assert_eq!(cancelled_first.status, JobStatus::Cancelled);
-        let cleared = store.clear_heartbeat("live-1", now + 4).unwrap().unwrap();
+        let first = jobs.iter().find(|job| job.id == heartbeat.id).unwrap();
+        assert_eq!(first, &resumed);
+        assert!(store.clear_heartbeat("live-1", now + 4).is_err());
+        let cleared = store.manage_heartbeat("live-1", &second.id, HeartbeatManagementAction::Stop, now + 4).unwrap().unwrap();
         assert_eq!(cleared.status, JobStatus::Cancelled);
+        assert_eq!(store.get_heartbeat("live-1"), Some(resumed));
         assert!(store
             .create_heartbeat(&input("nope", "in 10m", now))
             .is_err());

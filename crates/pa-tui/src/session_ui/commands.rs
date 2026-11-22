@@ -681,6 +681,7 @@ impl SessionUi {
                 }
                 self.handle_reload_command(view)?;
             }
+            "heartbeat" => self.handle_heartbeat_command(text, view).await,
             "heartbeats" => {
                 if !resolved.args.is_empty() {
                     view.editor

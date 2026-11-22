@@ -1717,6 +1717,7 @@ dependencies = [
  "fancy-regex",
  "ignore",
  "notify",
+ "pa-core",
  "pa-types",
  "proptest",
  "ratatui",

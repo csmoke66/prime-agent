@@ -1,0 +1,1 @@
+- Use `/heartbeat every 10m check build status` in the attached TUI session to set a persistent heartbeat. `/heartbeat` shows its status; `pause`, `resume`, and `stop` manage it. Use `--follow-up` for queued delivery instead of steering.

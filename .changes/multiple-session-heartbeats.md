@@ -1,0 +1,1 @@
+- Each `/heartbeat` instruction adds its own recurring job without replacing earlier jobs or withdrawing their queued deliveries. With multiple user heartbeats, `/heartbeat status` opens the manager; use `/heartbeats` to pause, resume or stop a specific job.

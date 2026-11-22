@@ -1,30 +1,28 @@
-# Prime Agent
+# Oh-My-Prime
+A self improving RML AI harness that uses a python REPL. The environment is persistent through `skills`, `heartbeats`, `workflows`, and `memory`. 
 
-This is a heavily modified version of [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent). If you would like more information, you should check out their repository.
+This project exists as an experiment into reducing the pain points that exist in most harnesses due to a lack of flexibility, extensibility, and usability. Instead of adding hundreds of settings, we only express core features as part of the harness itself. Everything else is defined in code and data. Your agents should be able to flourish without strict limitations and bad harness design getting in the way.
 
-## Improvements
+![omp](omp.png)
 
-### No Prime Inference
-
-Prime inference login is now _fully optional_.
-
-### No Telemetry
-
-Telemtry is _fully disabled_ at the source. 
-
-### Daybreak
+## Daybreak
 
 Support for OpenAI's [daybreak program](https://openai.com/daybreak/):
 * Sending the daybreak blue flag on requests if supported
 * Blue badges in the model selection list for daybreak blue supported models
 * Blue badges in the TUI for session utilizing daybreak blue
 
-### Railguard handling
+## Railguard handling
+Specific handling settings for railguards instead of the typical fully blocking failures.
 
-Specific handling settings for railguards instead of the typical fully blocking failures:
-1. The default option is a sanitized normal message about potential false positives
-2. A secondary option to not deliver a message at all, but to re-try the turn once
-3. A tertiary option that will deliver information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
+### Sanitization
+Instead of exposing the scary raw blocked message to agents, we provide a sanitized version. This includes the fact that the block may be a false positive.
+
+### Hiding
+We offer the ability to hide the message altogether. You do this at your own risk.
+
+### Routing
+We offer the ability to route the blocked message details to an existing session. This allows you to asynchronously diagnose and decide on a plan of action without getting in the way of the model (such as through our default provided workflows).
 
 Default workflows are provided with the repository to help handle false positive railguard violations:
 1. `railguard-context-repair` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
@@ -32,11 +30,7 @@ Default workflows are provided with the repository to help handle false positive
 
 These features are **not** meant to bypass railguards, and **will not** help with that. Even with the workflows a secondary model is still in the loop for these decisions.
 
-### Improved token usage
-
-Several improvements have been made for efficient token usage, including following OpenAI's new guidelines on how to appropriately use caching.
-
-### Named workflows
+## Named workflows
 
 A workflow is a reusable job with its own model and child settings. Save a project definition such as `.prime/workflows/review.json` in the session's working directory, or put a shared definition in `~/.prime/agent/workflows/` to make it available from every project:
 
@@ -72,28 +66,6 @@ Both field maps are required; use `{}` if there are no fields. Types are `string
 
 `await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. User-global workflows under `~/.prime/agent/workflows/` are the fallback, so a project may override one for its own sessions. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected operator definitions take precedence over project files, and project files take precedence over user-global files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
 
-### Web search
-
-Support for more web search options:
-* ChatGPT
-* Claude
-
-### Allowed models
-
-Open `/settings` → **Models** to choose the main session’s model. Under **Agents**, open **Child allowed models**, type to search, and press **Space** to check or uncheck a model. **Enter** saves the whole selection; **Esc** discards the edits. Set sub-agent effort separately on the same tab. Children can query the effective list; a rejected spawn also lists the allowed choices.
-
-Use inheritance to follow your global policy, or allow all models to remove the session restriction. Session overrides survive reattaching and apply to subsequent spawns in the same session family, not to other sessions.
-
-### Agent message priority
-
-Choose the priority on each send, for example `await agent_message.send("Build failed on Linux", receiver_role="parent", priority="medium")`. Use `low` for background updates that should not wake the recipient; omit priority (or use `default`) for an unread-count alert. Use `medium` for a preview and `high` when the full message needs immediate delivery.
-
-At 20 unread agent-to-agent messages, the full mailbox is delivered regardless of priority. Recipients can still read pending messages with `await rlm.inbox.read()`. There is no recipient-side count/preview/full setting.
-
-### Inspect the harness
-
-In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
-
 ## Install
 
 Install the latest stable version with the one-command installer:
@@ -109,6 +81,10 @@ irm https://raw.githubusercontent.com/csmoke66/prime-agent/main/install.ps1 | ie
 ```
 
 The installer downloads the fork's [published Windows build](https://github.com/csmoke66/prime-agent/releases/latest) and verifies its SHA-256 checksum. To publish the first build, enable [GitHub Actions](https://github.com/csmoke66/prime-agent/actions) on the fork and push `main` from GitHub Desktop. Wait for the Windows publish workflow to finish before running the command. No version bump, manual tag, or R2 account is needed.
+
+## Prime-Agent
+
+This is a heavily modified version of [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent). If you would like more information, you should check out their repository.
 
 ## License
 

@@ -146,12 +146,17 @@ fn capped_name_list(names: &[String]) -> String {
 }
 
 /// The notice text: the `[python-state]` header, the persistence statement, the pruning
-/// disclosure, and the live-names detail. `names` is `None` on a failed listing. Both lists
-/// are capped (see [`NOTICE_MAX_LIST_BYTES`]).
+/// disclosure, and the live-names detail. `names` is `None` on a failed listing.
+/// Large live namespaces are discoverable in the REPL; removed names are not.
 #[must_use]
 pub fn notice_content(pruned: Option<&[String]>, names: Option<&[String]>) -> String {
     let detail = match names {
         None => String::new(),
+        Some(names) if names.len() > 16 || names.iter().map(|n| n.len()).sum::<usize>()
+            + 2 * names.len().saturating_sub(1) > 256 =>
+        {
+            format!(" {} names remain; use dir() to list them.", names.len())
+        }
         Some(names) if !names.is_empty() => {
             format!(
                 " These names are still defined: {}.",
@@ -370,15 +375,10 @@ mod tests {
     /// names, the byte cap for long ones, and both end with the omitted count.
     #[test]
     fn notice_lists_stay_under_the_cap_for_a_huge_name_set() {
-        let header = "[python-state]\n\nYour Python kernel persisted through compaction; its remaining variables, imports, and helpers are still available.";
         let short: Vec<String> = (0..500).map(|index| format!("v{index}")).collect();
-        assert_eq!(
-            notice_content(None, Some(&short)),
-            format!(
-                "{header} These names are still defined: {}, +300 more.",
-                short[..200].join(", ")
-            )
-        );
+        let notice = notice_content(None, Some(&short));
+        assert!(notice.contains("500 names remain") && notice.contains("dir()"));
+        assert!(!notice.contains("v0,"));
         // 40-byte names: 97 of them take 97 * 42 - 2 = 4072 bytes, a 98th would pass 4096.
         let long: Vec<String> = (0..14_300)
             .map(|index| format!("column_{index:033}"))
@@ -386,12 +386,11 @@ mod tests {
         assert!(long.iter().all(|name| name.len() == 40));
         let content = notice_content(Some(&long), Some(&long));
         let list = format!("{}, +14203 more", long[..97].join(", "));
-        assert_eq!(
-            content,
-            format!(
-                "{header} Variables above the per-variable snapshot limit were removed: {list}. These names are still defined: {list}."
-            )
-        );
+        assert!(content.contains(&list), "removed names must still be disclosed");
+        assert!(content.contains("14300 names remain"));
+        assert_eq!(content.matches(&long[0]).count(), 1);
+        let huge = ["x".repeat(300)];
+        assert!(!notice_content(None, Some(&huge)).contains(&huge[0]));
     }
 
     #[test]

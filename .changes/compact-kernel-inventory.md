@@ -1,0 +1,1 @@
+- After compaction, large live Python namespaces are reported as a count rather than a partial alphabetical inventory. Agents can inspect names with `dir()`; notices about removed variables are unchanged.

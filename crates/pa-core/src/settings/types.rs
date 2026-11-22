@@ -90,6 +90,16 @@ fn deserialize_threshold_percent<'de, D: serde::Deserializer<'de>>(
         .filter(|percent| pa_types::compaction::is_valid_threshold_percent(*percent)))
 }
 
+fn deserialize_tool_output_reminder_percent<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u8>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .filter(|percent| *percent <= 100)
+        .and_then(|percent| u8::try_from(percent).ok()))
+}
+
 /// `number | "unlimited"` autonomous limit.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -105,6 +115,13 @@ pub struct CompactionSettings {
     /// Percentage ceiling for automatic compaction; invalid values behave as unset.
     #[serde(default, deserialize_with = "deserialize_threshold_percent")]
     pub threshold_percent: Option<f64>,
+    /// Percentage of the model window occupied by live tool results before an advisory reminder;
+    /// zero disables it and invalid values behave as unset.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_tool_output_reminder_percent"
+    )]
+    pub tool_output_reminder_percent: Option<u8>,
     pub reserve_tokens: Option<u64>,
     pub keep_recent_tokens: Option<u64>,
     pub agent_callable: Option<bool>,

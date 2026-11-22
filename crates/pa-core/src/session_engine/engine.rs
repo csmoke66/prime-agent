@@ -249,6 +249,9 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
     );
 
     let refinement_settings = settings.reopen();
+    let reminder_percent = Arc::new(std::sync::atomic::AtomicU8::new(
+        settings.get_tool_output_reminder_percent(),
+    ));
     let service_tier_preference = settings.get_default_service_tier();
     // Captured before `settings` moves into the resource loader: the
     // compaction budget and the auto-refine gates.
@@ -733,12 +736,13 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             messages: initial_messages,
         },
         stream_fn: Some(agent_stream_fn),
+        tool_result_landing: Some(super::tool_output_reminder::landing(Arc::clone(&reminder_percent))),
         // The session conversion rules apply at the loop's LLM boundary
         // (TS `convertToLlm`): bookkeeping custom rows drop, everything
         // else (the harness digest included) becomes a user turn.
         convert_to_llm: Some(super::request_timing::instrument_convert_to_llm(
             std::sync::Arc::clone(&request_timing_wiring),
-            super::refinement_gate::convert_to_llm(refinement_settings.reopen()),
+            super::refinement_gate::convert_to_llm(refinement_settings.reopen(), reminder_percent),
         )),
         // The Rust engine wires no transform, so the instrumented seam
         // wraps a pass-through that marks the turn's dispatch moment.

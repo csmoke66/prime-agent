@@ -79,6 +79,47 @@ class RLMSubagent:
     activity_stale_ms: float | None = None
 
 
+class RLMSubagentRoster(list[RLMSubagent]):
+    """A full child registry with a compact default REPL rendering."""
+
+    def __init__(self, entries: list[RLMSubagent], *, full: bool = False) -> None:
+        super().__init__(entries)
+        self._full = full
+
+    def __repr__(self) -> str:
+        if self._full:
+            return list.__repr__(self)
+
+        lines = ["Subagents:"]
+        visible = False
+        for entry in self:
+            if entry.status not in {"running", "error"}:
+                continue
+            visible = True
+            details = [f"{entry.status} {entry.session_name} [{entry.rlm_child_id}]"]
+            if entry.activity is not None:
+                activity = entry.activity.kind
+                if entry.activity.tool_name is not None:
+                    activity += f":{entry.activity.tool_name}"
+                details.append(f"activity={activity}")
+            if entry.duration_ms is not None:
+                details.append(f"duration_ms={entry.duration_ms}")
+            if entry.tool_use_count is not None:
+                details.append(f"tool_uses={entry.tool_use_count}")
+            lines.append("  " + " ".join(details))
+
+        for status in ("completed", "cancelled"):
+            count = sum(entry.status == status for entry in self)
+            if count:
+                lines.append(f"  {status}: {count}")
+                visible = True
+        if not visible:
+            lines.append("  (none)")
+        return "\n".join(lines)
+
+    __str__ = __repr__
+
+
 @dataclass(frozen=True)
 class RLMProgressNoteResult:
     accepted: bool
@@ -224,6 +265,19 @@ def emit(data: dict[str, Any]) -> None:
     from . import repl
 
     repl.emit(data)
+
+
+def release(target: str | list[str] | tuple[str, ...] = "last", *, batches: int = 1) -> None:
+    """Omit output from model requests, never the saved transcript. Applied on cell success.
+
+    "current" hides this cell's own output before its first send. "tail" trims up
+    to `batches` complete tool exchanges from the end of the previous input.
+    "last" (the default), a list of tool call IDs, and "all" hide prior result
+    bodies only. Except with "current", this cell can print a checkpoint.
+    """
+    from .repl import request_output_release
+
+    request_output_release(target, batches)
 
 
 async def end_turn() -> dict[str, Any]:
@@ -424,13 +478,21 @@ def _subagent_from_payload(payload: Any, operation: str = "rlm.list_subagents") 
     )
 
 
-async def list_subagents() -> list[RLMSubagent]:
-    """List direct RLM children retained by the current parent session."""
+async def list_subagents(*, full: bool = False) -> RLMSubagentRoster:
+    """List direct RLM children retained by the current parent session.
+
+    The returned object is a normal list for indexing and iteration. Its
+    default rendering shows rows for ``running`` and ``error`` children and
+    counts ``completed`` and ``cancelled`` children. Pass ``full=True`` to
+    render every row with all fields.
+    """
+    if not isinstance(full, bool):
+        raise TypeError(f"full must be bool, got {type(full).__name__}")
     payload = await host_request("rlm.list_subagents")
     entries = payload.get("subagents")
     if not isinstance(entries, list):
         raise RuntimeError("rlm.list_subagents returned an invalid subagents registry")
-    return [_subagent_from_payload(entry) for entry in entries]
+    return RLMSubagentRoster([_subagent_from_payload(entry) for entry in entries], full=full)
 
 
 def _collect_target_selector(target: Any, what: str = "collect target") -> str:
@@ -1004,6 +1066,7 @@ class _RLMNamespace:
     harness = _harness_state
     session = _RLMSessionNamespace()
     get_harness_state = staticmethod(get_harness_state)
+    release = staticmethod(release)
 
     async def spawn(
         self,
@@ -1029,8 +1092,8 @@ class _RLMNamespace:
     async def find_models(self, query: str = "", limit: int = 8) -> list[RLMModel]:
         return await find_models(query, limit)
 
-    async def list_subagents(self) -> list[RLMSubagent]:
-        return await list_subagents()
+    async def list_subagents(self, *, full: bool = False) -> RLMSubagentRoster:
+        return await list_subagents(full=full)
 
     async def progress_note(self, message: str) -> RLMProgressNoteResult:
         return await progress_note(message)
@@ -1096,6 +1159,7 @@ __all__ = [
     "RLMProgressNoteResult",
     "RLMSpawnHandle",
     "RLMSubagent",
+    "RLMSubagentRoster",
     "RLMSubagentActivity",
     "create_session",
     "RefinementEvent",
@@ -1112,6 +1176,7 @@ __all__ = [
     "list_subagents",
     "persistent_shells",
     "progress_note",
+    "release",
     "rename",
     "rlm",
     "spawn",

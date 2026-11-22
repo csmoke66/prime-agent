@@ -122,6 +122,35 @@ impl SettingsManager {
         self.save_global_scope(&["compaction.thresholdPercent"])
     }
 
+    /// Percentage of the model context window that live tool results may occupy before the agent
+    /// receives an advisory reminder (default 30%; zero disables the reminder).
+    #[must_use]
+    pub fn get_tool_output_reminder_percent(&self) -> u8 {
+        self.settings()
+            .compaction
+            .as_ref()
+            .and_then(|settings| settings.tool_output_reminder_percent)
+            .filter(|percent| *percent <= 100)
+            .unwrap_or(30)
+    }
+
+    /// Persist the advisory tool-result reminder percentage without changing compaction settings.
+    ///
+    /// # Errors
+    /// Returns an error for values above 100% or a failed save.
+    pub fn set_tool_output_reminder_percent(&mut self, percent: u8) -> Result<()> {
+        if percent > 100 {
+            return Err(anyhow!(
+                "Tool-result reminder must be a whole number from 0 to 100 percent"
+            ));
+        }
+        self.global_mut()
+            .compaction
+            .get_or_insert_with(Default::default)
+            .tool_output_reminder_percent = Some(percent);
+        self.save_global_scope(&["compaction.toolOutputReminderPercent"])
+    }
+
     /// # Errors
     ///
     /// Returns an error when the global settings scope cannot be saved.

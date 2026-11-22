@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use crate::kernel::shared::{host_handler, HostRequestHandlers};
 use crate::session::manager::SessionManager;
 
-use pa_types::usage::{calculate_context_tokens, estimate_tokens, valid_assistant_usage};
+use pa_types::usage::{calculate_context_tokens, valid_assistant_usage};
 
 use super::compact_session::{prepare_compaction, CompactSkip};
 use super::engine::SessionEngine;
@@ -500,24 +500,14 @@ pub fn context_usage(entries: &[FileEntry], context_window: Option<u64>) -> Opti
         }
     }
 
-    let messages: Vec<Value> = entries.iter().filter_map(message_value).collect();
-    let mut tokens = 0u64;
-    match messages
+    let messages: Vec<pa_types::session::AgentMessage> = entries
         .iter()
-        .rposition(|message| valid_assistant_usage(message).is_some())
-    {
-        Some(last_usage_index) => {
-            let usage = valid_assistant_usage(&messages[last_usage_index]).expect("checked");
-            tokens += calculate_context_tokens(&usage);
-            tokens += messages[last_usage_index + 1..]
-                .iter()
-                .map(estimate_tokens)
-                .sum::<u64>();
-        }
-        None => {
-            tokens += messages.iter().map(estimate_tokens).sum::<u64>();
-        }
-    }
+        .filter_map(|entry| match entry {
+            FileEntry::Message { message, .. } => Some(message.clone()),
+            _ => None,
+        })
+        .collect();
+    let tokens = super::compaction::estimate_context_tokens(&messages).tokens;
     let percent = tokens as f64 / context_window as f64 * 100.0;
     Some(ContextUsage {
         tokens: Some(tokens),

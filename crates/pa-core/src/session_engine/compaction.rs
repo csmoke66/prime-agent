@@ -2,6 +2,7 @@
 //! points, summarization prompts. The LLM summarizer call and file-op
 //! details land with the provider integration slice.
 
+use super::tool_output_release::{effect, entry_release_mask, session_release_mask, ReleaseEffect};
 use pa_types::session::{AgentMessage, FileEntry};
 use std::fmt::Write as _;
 
@@ -158,6 +159,14 @@ fn div4(chars: u64) -> u64 {
     chars.div_ceil(4)
 }
 
+fn estimate_projected_tokens(message: &AgentMessage, action: ReleaseEffect) -> u64 {
+    match action {
+        ReleaseEffect::Omit => 0,
+        ReleaseEffect::Keep => estimate_tokens(message),
+        ReleaseEffect::Body => div4(super::messages::RELEASED_TOOL_OUTPUT_PLACEHOLDER.len() as u64),
+    }
+}
+
 /// The effective compaction threshold: a retention-floored percentage capped by model safety.
 /// PERCENTAGE: `context_window * threshold_percent / 100` (estimate drift on
 /// large windows). COMBINED-LIMIT: `context_window - max_output_tokens -
@@ -244,20 +253,49 @@ pub struct ContextTokensEstimate {
 /// The `expect` cannot fire: the index comes from an `rposition` over
 /// messages with usage present.
 pub fn estimate_context_tokens(messages: &[AgentMessage]) -> ContextTokensEstimate {
+    let release_mask = session_release_mask(messages);
+    let projected_tokens = |index: usize, message: &AgentMessage| {
+        estimate_projected_tokens(message, effect(&release_mask, index))
+    };
     match messages
         .iter()
         .rposition(|message| assistant_usage(message).is_some())
     {
         Some(index) => {
             let usage = assistant_usage(&messages[index]).expect("index from rposition");
-            let trailing: u64 = messages[index + 1..].iter().map(estimate_tokens).sum();
+            // The measured input at the anchor still included any result
+            // released later. Remove its estimated body delta; results after
+            // the anchor are already covered by the projected trailing sum.
+            let released_before_anchor = release_mask.as_ref().map_or(0, |released| {
+                // The provider already priced the projection that existed before
+                // this assistant response. Never subtract those same bytes again.
+                let prior = session_release_mask(&messages[..index]);
+                (0..index)
+                    .filter(|&i| released[i] != effect(&prior, i))
+                    .map(|i| {
+                        estimate_projected_tokens(&messages[i], effect(&prior, i))
+                            .saturating_sub(estimate_projected_tokens(&messages[i], released[i]))
+                    })
+                    .sum()
+            });
+            let trailing: u64 = messages[index + 1..]
+                .iter()
+                .enumerate()
+                .map(|(offset, message)| projected_tokens(index + 1 + offset, message))
+                .sum();
             ContextTokensEstimate {
-                tokens: calculate_context_tokens(&usage) + trailing,
+                tokens: calculate_context_tokens(&usage)
+                    .saturating_sub(released_before_anchor)
+                    .saturating_add(trailing),
                 last_usage_index: Some(index),
             }
         }
         None => ContextTokensEstimate {
-            tokens: messages.iter().map(estimate_tokens).sum(),
+            tokens: messages
+                .iter()
+                .enumerate()
+                .map(|(index, message)| projected_tokens(index, message))
+                .sum(),
             last_usage_index: None,
         },
     }
@@ -401,6 +439,7 @@ pub fn find_cut_point(
     end_index: usize,
     keep_recent_tokens: u64,
 ) -> CutPointResult {
+    let release_mask = entry_release_mask(entries);
     let cut_points = find_valid_cut_points(entries, start_index, end_index);
     if cut_points.is_empty() {
         return CutPointResult {
@@ -423,7 +462,10 @@ pub fn find_cut_point(
         let FileEntry::Message { message, .. } = entry else {
             continue;
         };
-        accumulated = accumulated.saturating_add(estimate_tokens(message));
+        accumulated = accumulated.saturating_add(estimate_projected_tokens(
+            message,
+            effect(&release_mask, i),
+        ));
         if accumulated >= keep_recent_tokens {
             cut_index = *cut_points.last().unwrap();
             for &point in &cut_points {
@@ -650,6 +692,56 @@ mod tests {
         let estimate = estimate_context_tokens(&messages);
         assert_eq!(estimate.last_usage_index, None);
         assert_eq!(estimate.tokens, 2);
+    }
+
+    #[test]
+    fn released_result_bytes_are_removed_from_measured_and_unmeasured_estimates() {
+        let tool_result = |id: &str,
+                           name: &str,
+                           output: &str,
+                           details: Option<serde_json::Value>| {
+            AgentMessage::ToolResult(pa_types::ai::ToolResultMessage {
+                tool_call_id: id.to_string(),
+                tool_name: name.to_string(),
+                content: vec![pa_types::ai::UserContentBlock::Text(
+                    pa_types::ai::TextContent {
+                        text: output.to_string(),
+                        text_signature: None,
+                        rest: serde_json::Map::default(),
+                    },
+                )],
+                details,
+                is_error: false,
+                timestamp: 0,
+                rest: serde_json::Map::default(),
+            })
+        };
+        let released = tool_result("old", "bash", &"x".repeat(400), None);
+        let directive = tool_result(
+            "directive",
+            pa_types::ai::PYTHON_TOOL_NAME,
+            "ok",
+            Some(serde_json::json!({"releaseToolOutputs": "all"})),
+        );
+        let placeholder_tokens = div4(
+            crate::session_engine::messages::RELEASED_TOOL_OUTPUT_PLACEHOLDER
+                .chars()
+                .count() as u64,
+        );
+
+        let unmeasured = estimate_context_tokens(&[released.clone(), directive.clone()]);
+        assert_eq!(unmeasured.tokens, placeholder_tokens + 1);
+
+        // The assistant's measured usage predates the directive and therefore
+        // still includes the old body. The next request does not.
+        let mut messages = vec![released, assistant_message(1_000, 1), directive];
+        let measured = estimate_context_tokens(&messages);
+        assert_eq!(
+            measured.tokens,
+            1_000u64.saturating_sub(100 - placeholder_tokens) + 1
+        );
+        messages.push(assistant_message(940, 2));
+        assert_eq!(estimate_context_tokens(&messages).tokens, 940);
     }
 
     #[test]

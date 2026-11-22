@@ -190,6 +190,14 @@ impl pa_tui::client_settings::ClientSettings for RecordingSettings {
         self.record(&format!("threshold={percent}"))
     }
 
+    fn tool_output_reminder_percent(&self) -> u8 {
+        30
+    }
+
+    fn set_tool_output_reminder_percent(&self, percent: u8) -> Result<()> {
+        self.record(&format!("tool-output-reminder={percent}"))
+    }
+
     fn theme(&self) -> Option<String> {
         None
     }
@@ -697,6 +705,28 @@ fn threshold_percentage_cycles_through_the_persistence_seam() {
     assert!(rows
         .iter()
         .any(|row| row.contains("Auto-compact threshold (%)") && row.contains("100")));
+}
+
+#[test]
+fn tool_result_reminder_cycles_through_the_persistence_seam() {
+    let mut steps = open_settings();
+    for character in "tool-result reminder".chars() {
+        steps.push(HeadlessStep::Key(key(KeyCode::Char(character))));
+    }
+    steps.push(HeadlessStep::Key(key(KeyCode::Right)));
+    steps.push(HeadlessStep::WaitRender {
+        needle: "› Tool-result reminder (%)".into(),
+        timeout_ms: 5000,
+    });
+    let (frames, settings) = run_plan(steps);
+    assert_eq!(settings.log(), vec!["tool-output-reminder=35"]);
+    let rows = frame_with(&frames, "› Tool-result reminder (%)");
+    assert!(rows.iter().any(|row| {
+        row.contains("Tool-result reminder (%)") && row.contains("35")
+    }));
+    assert!(rows.iter().any(|row| {
+        row.contains("model window") && row.contains("advisory only") && row.contains("0 disables")
+    }));
 }
 
 #[test]

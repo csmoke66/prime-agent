@@ -473,8 +473,9 @@ pub(crate) async fn prepare_refinement(
     };
     let baseline_state = load_harness_state(&baseline_dir, baseline_scope);
 
+    let projected_messages = super::messages::project_tool_output_releases(messages);
     let mut plan = plan_refinement(
-        messages,
+        projected_messages.as_ref(),
         &planning_state,
         &history,
         model,
@@ -852,8 +853,9 @@ async fn review_compact_refinement(
         refinement_history: session_history,
     } = parts.await?;
     let history = crate::refinement::merge_refinement_history(&history, &session_history);
+    let projected_messages = super::messages::project_tool_output_releases(&messages);
     let review = review_auto_refine(
-        &messages,
+        projected_messages.as_ref(),
         &merged_state,
         &history,
         model,

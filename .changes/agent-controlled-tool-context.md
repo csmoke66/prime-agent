@@ -1,0 +1,1 @@
+- Agents can keep fresh output out of model input, trim whole recent tool exchanges, or release selected or all prior result bodies. The transcript stays intact. A configurable reminder warns at 30% tool-output pressure without clearing anything. Sub-agent rosters now display concisely and support a full listing.

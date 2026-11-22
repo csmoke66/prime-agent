@@ -1133,6 +1133,28 @@ class ReplTest(unittest.TestCase):
             self.assertEqual(display["data"]["text/plain"], "label")
             self.assertEqual(display["id"], f"emit{i}")
 
+    def test_only_a_successful_foreground_cell_can_release_output(self):
+        failed = self.repl.execute("failed", "from rlm import rlm\nrlm.release('all')\nraise ValueError()")
+        self.assertEqual(failed[-1], {"event": "done", "id": "failed", "status": "error"})
+        detached = self.repl.execute("background", (
+            "import asyncio\n"
+            "async def detached():\n    rlm.release('all')\n"
+            "await asyncio.create_task(detached())"
+        ))
+        self.assertEqual(one(detached, "error")["ename"], "RuntimeError")
+        self.assertNotIn("releaseToolOutputs", detached[-1])
+        selected = self.repl.execute("selected", "ids = ['call-1']; rlm.release(ids); ids.append('call-2')")
+        self.assertEqual(selected[-1], {
+            "event": "done", "id": "selected", "status": "ok", "releaseToolOutputs": ["call-1"],
+        })
+        current = self.repl.execute("current", 'rlm.release("current"); print("transcript only")')
+        self.assertEqual(current[-1]["releaseToolOutputs"], "current")
+        tail = self.repl.execute("tail", 'rlm.release("tail", batches=2)')
+        self.assertEqual(tail[-1]["releaseToolOutputs"], {"tail": 2})
+        invalid = self.repl.execute("invalid", 'rlm.release("tail", batches=0)')
+        self.assertEqual(one(invalid, "error")["ename"], "ValueError")
+        self.assertNotIn("releaseToolOutputs", invalid[-1])
+
     def test_emit_nan_payload_errors_in_cell_and_keeps_framing(self):
         # NaN would serialize as non-JSON text and tear protocol framing;
         # emit() must raise in the caller's cell instead.

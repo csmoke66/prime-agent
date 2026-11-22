@@ -87,6 +87,10 @@ runtime keeps serving. Closing stdin is equivalent to `shutdown`.
   `kill_kernel_bash` returns `{id,killed}`. Neither action accepts a PID.
   Restoring a missing file reports `status:"ok"` with empty
   `restored`/`failed` lists and `reason:"snapshot not found"`.
+  A successful `execute` may include `releaseToolOutputs`: `"current"`, `"last"`,
+  `"all"`, a nonempty array of tool call IDs, or `{"tail": N}` for up to N
+  preceding complete tool exchanges. The host freezes tail targets at landing.
+  These change the model's view, never the stored output.
 
 Before a cell's `done`, the runtime drains both channels: tagged Python-level
 writes ship synchronously from the writing thread, and the fd pipes are fenced

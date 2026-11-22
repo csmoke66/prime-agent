@@ -62,6 +62,100 @@ class RlmSubagentRegistryTest(unittest.TestCase):
 
         self.assertEqual(subagents[0].status, "error")
 
+    def test_default_roster_rendering_is_compact_but_keeps_the_full_list(self) -> None:
+        entries = [
+            {
+                "rlm_child_id": "sub-running",
+                "active_session_id": "active-running",
+                "session_id": "session-running",
+                "session_name": "builder",
+                "session_dir": "/private/large/session/path/running",
+                "status": "running",
+                "activity": {"kind": "executing", "tool_name": "bash"},
+                "tool_use_count": 4,
+                "duration_ms": 1234,
+                "answer_preview": "a large preview that should not be rendered",
+            },
+            {
+                "rlm_child_id": "sub-completed",
+                "active_session_id": None,
+                "session_id": "session-completed",
+                "session_name": "done-worker",
+                "session_dir": "/private/large/session/path/completed",
+                "status": "completed",
+            },
+            {
+                "rlm_child_id": "sub-error",
+                "active_session_id": None,
+                "session_id": "session-error",
+                "session_name": "broken-worker",
+                "session_dir": "/private/large/session/path/error",
+                "status": "error",
+                "duration_ms": 55,
+            },
+            {
+                "rlm_child_id": "sub-cancelled",
+                "active_session_id": None,
+                "session_id": "session-cancelled",
+                "session_name": "stopped-worker",
+                "session_dir": "/private/large/session/path/cancelled",
+                "status": "cancelled",
+            },
+        ]
+        host_request = AsyncMock(return_value={"subagents": entries})
+
+        with patch.object(rlm_module, "host_request", host_request):
+            roster = asyncio.run(rlm_module.rlm.list_subagents())
+
+        self.assertIsInstance(roster, list)
+        self.assertEqual(
+            [entry.rlm_child_id for entry in roster],
+            ["sub-running", "sub-completed", "sub-error", "sub-cancelled"],
+        )
+        expected = (
+            "Subagents:\n"
+            "  running builder [sub-running] activity=executing:bash duration_ms=1234 tool_uses=4\n"
+            "  error broken-worker [sub-error] duration_ms=55\n"
+            "  completed: 1\n"
+            "  cancelled: 1"
+        )
+        self.assertEqual(repr(roster), expected)
+        self.assertEqual(str(roster), expected)
+        self.assertNotIn("answer_preview", repr(roster))
+        self.assertNotIn("/private/", repr(roster))
+        self.assertEqual(roster[1].session_dir, Path("/private/large/session/path/completed"))
+
+    def test_full_roster_rendering_exposes_every_row_and_field(self) -> None:
+        entries = [
+            {
+                "rlm_child_id": "sub-completed",
+                "active_session_id": None,
+                "session_id": "session-completed",
+                "session_name": "done-worker",
+                "session_dir": "/tmp/sub-completed",
+                "status": "completed",
+                "answer_preview": "finished in full",
+            }
+        ]
+        host_request = AsyncMock(return_value={"subagents": entries})
+
+        with patch.object(rlm_module, "host_request", host_request):
+            roster = asyncio.run(rlm_module.rlm.list_subagents(full=True))
+
+        rendered = repr(roster)
+        self.assertIn("RLMSubagent(", rendered)
+        self.assertIn("session_dir=PosixPath('/tmp/sub-completed')", rendered)
+        self.assertIn("answer_preview='finished in full'", rendered)
+        self.assertEqual(roster[0].status, "completed")
+        host_request.assert_awaited_once_with("rlm.list_subagents")
+
+    def test_list_subagents_rejects_non_boolean_full(self) -> None:
+        host_request = AsyncMock()
+        with patch.object(rlm_module, "host_request", host_request):
+            with self.assertRaisesRegex(TypeError, "full must be bool"):
+                asyncio.run(rlm_module.list_subagents(full=1))
+        host_request.assert_not_awaited()
+
     def test_forwards_orchestrator_chosen_name_model_and_cwd_to_host(self) -> None:
         host_request = AsyncMock(
             return_value={

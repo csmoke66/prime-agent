@@ -64,10 +64,7 @@ pub struct CompactOptions<'a> {
 /// The model-visible message produced by a session entry (summarizer input).
 fn message_from_entry(entry: &FileEntry) -> Option<AgentMessage> {
     match entry {
-        FileEntry::Message { message, .. } => match message {
-            AgentMessage::ToolResult(_) => None,
-            _ => Some(message.clone()),
-        },
+        FileEntry::Message { message, .. } => super::messages::summary_message(message),
         FileEntry::CustomMessage { payload, .. } => {
             if payload.custom_type == "harness_digest"
                 || payload.custom_type == super::ipython_state::IPYTHON_STATE_CUSTOM_TYPE
@@ -206,14 +203,24 @@ pub(crate) fn prepare_attempt(
     } else {
         cut.first_kept_entry_index
     };
-    let history: Vec<AgentMessage> = entries[preparation.boundary_start..history_end]
-        .iter()
-        .filter_map(message_from_entry)
-        .collect();
-    let turn_prefix_messages: Vec<AgentMessage> = entries[history_end..cut.first_kept_entry_index]
-        .iter()
-        .filter_map(message_from_entry)
-        .collect();
+    use super::tool_output_release::{effect, entry_release_mask, ReleaseEffect};
+    let release_mask = entry_release_mask(&entries);
+    let projected_messages = |start: usize, end: usize| {
+        entries[start..end]
+            .iter()
+            .enumerate()
+            .filter_map(|(offset, entry)| {
+                if effect(&release_mask, start + offset) != ReleaseEffect::Keep {
+                    None
+                } else {
+                    message_from_entry(entry)
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let history = projected_messages(preparation.boundary_start, history_end);
+    let turn_prefix_messages =
+        projected_messages(history_end, cut.first_kept_entry_index);
     super::compaction_trace::trace(
         "compact.cut_prepared",
         &serde_json::json!({
@@ -232,12 +239,11 @@ pub(crate) fn prepare_attempt(
     let prev_compaction_index = entries[..cut.first_kept_entry_index]
         .iter()
         .rposition(|entry| matches!(entry, FileEntry::Compaction { .. }));
-    // A split turn's prefix file operations still belong in the summary
-    // details.
-    let mut file_op_messages = history.clone();
-    file_op_messages.extend(turn_prefix_messages.iter().cloned());
-    let details: CompactionDetails =
-        details_for(&file_op_messages, &entries, prev_compaction_index);
+    let details = details_for(
+        history.iter().chain(&turn_prefix_messages),
+        &entries,
+        prev_compaction_index,
+    );
     Ok(CompactionAttempt {
         session_id: session.get_session_id().to_string(),
         prefix_leaf,

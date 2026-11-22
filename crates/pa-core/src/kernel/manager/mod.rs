@@ -131,6 +131,7 @@ impl InternalExecuteResult {
                 sent_agent_messages: None,
                 bash_commands: None,
                 transcript_reads: None,
+                release_tool_outputs: None,
                 background_output: None,
                 ended_turn: false,
                 status: ExecuteStatus::Aborted,

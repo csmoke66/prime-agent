@@ -191,6 +191,14 @@ impl ClientSettings for CliClientSettings {
         Ok(())
     }
 
+    fn tool_output_reminder_percent(&self) -> u8 {
+        self.manager().get_tool_output_reminder_percent()
+    }
+
+    fn set_tool_output_reminder_percent(&self, percent: u8) -> Result<()> {
+        self.manager().set_tool_output_reminder_percent(percent)
+    }
+
     fn web_search_provider(&self) -> String {
         self.manager().get_web_search_provider().id().to_string()
     }
@@ -665,6 +673,7 @@ mod tests {
         assert_eq!(settings.mermaid_rendering_mode(), "streaming");
         assert_eq!(settings.tree_filter_mode(), "user-only");
         assert!(settings.warnings_anthropic_extra_usage());
+        assert_eq!(settings.tool_output_reminder_percent(), 30);
 
         settings.set_theme("dark").expect("theme");
         settings.set_idle_eviction_minutes("off").expect("idle");
@@ -676,6 +685,9 @@ mod tests {
         settings
             .set_provider_block_delivery("route")
             .expect("provider block delivery");
+        settings
+            .set_tool_output_reminder_percent(35)
+            .expect("tool-output reminder");
 
         assert_eq!(settings.theme().as_deref(), Some("dark"));
         assert_eq!(settings.idle_eviction_minutes(), "off");
@@ -686,6 +698,7 @@ mod tests {
             settings.provider_block_target_session().as_deref(),
             Some("hr-session")
         );
+        assert_eq!(settings.tool_output_reminder_percent(), 35);
 
         let content =
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
@@ -695,6 +708,7 @@ mod tests {
         assert_eq!(value["treeFilterMode"], "all");
         assert_eq!(value["providerBlockDelivery"], "route");
         assert_eq!(value["providerBlockTargetSession"], "hr-session");
+        assert_eq!(value["compaction"]["toolOutputReminderPercent"], 35);
 
         // The web search provider defaults to Serper and persists the choice.
         assert_eq!(settings.web_search_provider(), "serper");

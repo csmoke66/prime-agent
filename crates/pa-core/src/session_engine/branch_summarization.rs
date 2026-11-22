@@ -105,11 +105,7 @@ pub fn collect_entries_for_branch_summary(
 /// become their summary message; bookkeeping entries contribute nothing).
 fn get_message_from_entry(entry: &FileEntry) -> Option<AgentMessage> {
     match entry {
-        FileEntry::Message { message, .. } => match message {
-            // Tool results stay attached to their assistant tool call.
-            AgentMessage::ToolResult(_) => None,
-            _ => Some(message.clone()),
-        },
+        FileEntry::Message { message, .. } => super::messages::summary_message(message),
         FileEntry::CustomMessage { payload, .. } => {
             if payload.custom_type == "harness_digest"
                 || payload.custom_type == super::ipython_state::IPYTHON_STATE_CUSTOM_TYPE
@@ -173,9 +169,14 @@ fn prepare_branch_entries_with_refinements(
             }
         }
     }
+    use super::tool_output_release::{effect, entry_release_mask, ReleaseEffect};
+    let release_mask = entry_release_mask(entries);
     let mut messages: Vec<AgentMessage> = Vec::new();
     let mut total_tokens = 0u64;
-    for entry in entries.iter().rev() {
+    for (entry_index, entry) in entries.iter().enumerate().rev() {
+        if effect(&release_mask, entry_index) != ReleaseEffect::Keep {
+            continue;
+        }
         let Some(message) = get_message_from_entry(entry) else {
             continue;
         };
@@ -619,6 +620,33 @@ mod tests {
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.entries[0].id(), Some("a1"));
         assert_eq!(result.entries[1].id(), Some("u2"));
+    }
+
+    #[test]
+    fn summary_keeps_unreleased_checkpoints_without_replaying_directives_on_a_slice() {
+        let tool = |id: &str, text: &str, release: Option<&str>| {
+            let raw = serde_json::json!({
+                "role": "toolResult", "toolCallId": id, "toolName": "python_repl",
+                "content": [{"type": "text", "text": text}], "isError": false, "timestamp": 0,
+                "details": release.map(|target| serde_json::json!({"releaseToolOutputs": target})),
+            });
+            entry(id, None, serde_json::from_value(raw).unwrap())
+        };
+        let entries = [
+            tool("a", "obsolete checkpoint", Some("all")),
+            tool("b", "first finding", Some("last")),
+            tool("c", "raw evidence", None),
+            tool("d", "second finding", Some("last")),
+            tool("e", "unreleased bulk", None),
+        ];
+        let (request, _) = build_branch_summary_request(&entries, 0, None, false);
+        let AgentMessage::User(user) = &request[0] else {
+            panic!("expected branch summary request");
+        };
+        let text = user.content.text();
+        assert!(text.contains("first finding") && text.contains("second finding"));
+        assert!(!text.contains("obsolete checkpoint"));
+        assert!(!text.contains("raw evidence") && !text.contains("unreleased bulk"));
     }
 
     #[test]

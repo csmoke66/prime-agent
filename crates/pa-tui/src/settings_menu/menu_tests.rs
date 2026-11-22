@@ -714,6 +714,51 @@ fn threshold_control_retains_off_grid_values_and_selects_neighbouring_presets() 
 }
 
 #[test]
+fn tool_result_reminder_is_advisory_and_cycles_zero_with_five_point_steps() {
+    let values = SettingsCurrentValues {
+        tool_output_reminder_percent: Some(30),
+        ..Default::default()
+    };
+    let mut menu = SettingsMenu::new(settings_menu_rows(&values));
+    menu.paste("tool-result reminder");
+    let text = render_text(&menu);
+    assert!(text.iter().any(|row| row.contains("Tool-result reminder (%)")));
+    assert!(text.iter().any(|row| {
+        row.contains(
+            "Warn when live tool results use this percentage of the model window; advisory only, 0 disables",
+        )
+    }));
+    assert_eq!(
+        menu.handle_key("right", &kb()),
+        SettingsMenuAction::Change {
+            id: "tool-output-reminder",
+            value: "35".into()
+        }
+    );
+
+    let values = SettingsCurrentValues {
+        tool_output_reminder_percent: Some(0),
+        ..Default::default()
+    };
+    let mut menu = SettingsMenu::new(settings_menu_rows(&values));
+    menu.paste("tool-result reminder");
+    assert_eq!(
+        menu.handle_key("left", &kb()),
+        SettingsMenuAction::Change {
+            id: "tool-output-reminder",
+            value: "100".into()
+        }
+    );
+    assert_eq!(
+        menu.handle_key("right", &kb()),
+        SettingsMenuAction::Change {
+            id: "tool-output-reminder",
+            value: "0".into()
+        }
+    );
+}
+
+#[test]
 fn child_model_draft_requires_an_explicit_allow_all_choice() {
     use crate::client_settings::{ChildModelChoice, InheritedChildModels};
 

@@ -215,6 +215,8 @@ pub struct ExecuteResult {
     pub bash_commands: Option<KernelBashCommands>,
     /// The cell's `rlm.session.messages` reads, one display record each.
     pub transcript_reads: Option<Vec<Value>>,
+    /// The explicit output release from a successful foreground cell's `done` frame.
+    pub release_tool_outputs: Option<Value>,
     /// Output that arrived without this cell's id (user threads, other cells' leftovers, raw fd writes).
     pub background_output: Option<String>,
     /// The cell called the sanctioned `rlm.end_turn()`: the host marked

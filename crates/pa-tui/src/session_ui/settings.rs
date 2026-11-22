@@ -355,6 +355,7 @@ impl SessionUi {
             values.telemetry_enabled = Some(settings.telemetry_enabled());
             values.update_channel = Some(settings.effective_update_channel(&view.chrome.version));
             values.compaction_threshold_percent = settings.compaction_threshold_percent();
+            values.tool_output_reminder_percent = Some(settings.tool_output_reminder_percent());
             values.show_images = settings.show_images();
             values.auto_resize_images = settings.image_auto_resize();
             values.block_images = settings.block_images();
@@ -379,6 +380,7 @@ impl SessionUi {
             // The tier row preselects the saved default instead of the struct default.
             values.default_service_tier = settings.default_service_tier();
         } else {
+            values.tool_output_reminder_percent = Some(30);
             values.show_images = true;
             values.auto_resize_images = true;
             values.skill_commands = true;
@@ -616,6 +618,17 @@ impl SessionUi {
                         .parse::<f64>()
                         .map_err(anyhow::Error::from)
                         .and_then(|percent| settings.set_compaction_threshold_percent(percent));
+                    if let Err(error) = result {
+                        self.error_row(&format!("{error:#}"), view);
+                    }
+                }
+            }
+            "tool-output-reminder" => {
+                if let Some(settings) = &self.client_settings {
+                    let result = value
+                        .parse::<u8>()
+                        .map_err(anyhow::Error::from)
+                        .and_then(|percent| settings.set_tool_output_reminder_percent(percent));
                     if let Err(error) = result {
                         self.error_row(&format!("{error:#}"), view);
                     }

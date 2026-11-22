@@ -133,6 +133,18 @@ pub trait ClientSettings: Send + Sync {
     /// # Errors
     /// Returns an error for invalid percentages or failed persistence.
     fn set_compaction_threshold_percent(&self, percent: f64) -> Result<()>;
+    /// Advisory reminder threshold for live tool results as a percentage of the model window;
+    /// zero disables it.
+    fn tool_output_reminder_percent(&self) -> u8 {
+        30
+    }
+    /// Persist the advisory tool-result reminder percentage globally.
+    ///
+    /// # Errors
+    /// Returns an error for invalid percentages or failed persistence.
+    fn set_tool_output_reminder_percent(&self, _percent: u8) -> Result<()> {
+        anyhow::bail!("Tool-result reminder settings are unavailable")
+    }
     /// `theme` (TS `getTheme`/`setTheme`).
     fn theme(&self) -> Option<String>;
     /// Persists `theme` to the global scope.

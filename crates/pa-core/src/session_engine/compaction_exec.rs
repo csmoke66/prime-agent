@@ -283,8 +283,8 @@ pub fn summed_usage(slices: &[SummarySlice]) -> Option<pa_types::ai::Usage> {
 }
 
 /// File operations preserved across prior compactions plus current messages.
-fn extract_file_operations(
-    messages: &[AgentMessage],
+fn extract_file_operations<'a>(
+    messages: impl IntoIterator<Item = &'a AgentMessage>,
     entries: &[FileEntry],
     prev_compaction_index: Option<usize>,
 ) -> FileOperations {
@@ -345,7 +345,8 @@ pub async fn compact_with(
         reserve_tokens,
         model,
     } = request;
-    let summarized = &messages[..cut.first_kept_entry_index.min(messages.len())];
+    let projected = super::messages::project_tool_output_releases(messages);
+    let summarized = &projected[..cut.first_kept_entry_index.min(projected.len())];
     let request_messages = build_summarization_request(
         summarized,
         custom_instructions,
@@ -396,8 +397,8 @@ pub fn compaction_entry_for(
 
 /// Full-file-list details for a compact run (prev compaction ops + messages).
 #[must_use]
-pub fn details_for(
-    messages: &[AgentMessage],
+pub fn details_for<'a>(
+    messages: impl IntoIterator<Item = &'a AgentMessage>,
     entries: &[FileEntry],
     prev_compaction_index: Option<usize>,
 ) -> CompactionDetails {

@@ -67,6 +67,23 @@ Both field maps are required; use `{}` if there are no fields. Types are `string
 
 `await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. User-global workflows under `~/.prime/agent/workflows/` are the fallback, so a project may override one for its own sessions. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected operator definitions take precedence over project files, and project files take precedence over user-global files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
 
+## Agent-controlled context
+
+An agent can stop sending old tool output to the model without deleting it from the session transcript. In a successful foreground REPL cell, `rlm.release()` releases the previous result, `rlm.release([call_id, ...])` selects specific results, and `rlm.release("all")` releases every result before that cell. For example, an agent that has just verified a commit can keep a small checkpoint:
+
+```python
+print("Parser fix verified at 3f2a1bc. Remaining: run the Windows fixture.")
+rlm.release("all")
+```
+
+The checkpoint, user messages, assistant decisions, and subsequent tool results stay in context. There is no automatic release on commit and no extra model call. Changing an old result can invalidate the prompt cache from that point, so saving releases for a milestone can be cheaper than dropping small outputs every turn. In a daemon-backed session, recover the original with `await rlm.session.messages(start=-5, limit=5, role="toolResult")`; `row.raw["toolCallId"]` is the ID used for selection. Standalone runs that save a session also keep the originals in its JSONL file.
+
+For cache-friendly cleanup, `rlm.release("current")` keeps the current cell's raw output in the transcript but sends only a placeholder to the model, starting with the first request. No already-sent input changes. If the agent has just finished using a tool exchange, `rlm.release("tail", batches=1)` drops up to that many consecutive completed exchanges from the end of the **previous model input**. This removes the assistant turn (including text, reasoning, and structured call arguments) and all its parallel results together. The earlier prefix and current checkpoint stay unchanged. It stops at user messages, standalone assistant messages, summaries, and incomplete batches. Trimming isn't a refund: only the common prefix remains eligible for a cache hit, subject to the provider's minimum and block size.
+
+By default, a tool result carries an advisory when unreleased tool output reaches an estimated **30% of the model's entire context window**. It warns once while usage stays high and re-arms below 27% at the default threshold. The agent can ignore it; the warning neither releases output nor triggers compaction. Adjust **`/settings` → General → Tool-result reminder (%)**, or set `compaction.toolOutputReminderPercent` to `0` in `settings.json` to turn it off.
+
+`await rlm.list_subagents()` displays a compact roster without dropping children from iteration or indexing. Use `await rlm.list_subagents(full=True)` when you want all the records printed.
+
 ## Install
 
 Install the latest stable version with the one-command installer:

@@ -78,6 +78,22 @@ pub(crate) async fn execute_tool_calls(
     }
 }
 
+fn land_tool_result(
+    message: &mut ToolResultMessage,
+    current_context: &AgentContext,
+    batch_prefix: &[ToolResultMessage],
+    config: &AgentLoopConfig,
+) {
+    if let Some(landing) = &config.tool_result_landing {
+        landing(
+            message,
+            &current_context.messages,
+            batch_prefix,
+            &config.model,
+        );
+    }
+}
+
 async fn execute_tool_calls_sequential(
     current_context: &AgentContext,
     assistant_message: &AssistantMessage,
@@ -131,7 +147,13 @@ async fn execute_tool_calls_sequential(
         };
 
         emit_tool_execution_end(&finalized, emit).await?;
-        let tool_result_message = create_tool_result_message(&finalized);
+        let mut tool_result_message = create_tool_result_message(&finalized);
+        land_tool_result(
+            &mut tool_result_message,
+            current_context,
+            &messages,
+            config,
+        );
         emit_tool_result_message(&tool_result_message, emit).await?;
         messages.push(tool_result_message);
         finalized_calls.push(finalized);
@@ -246,7 +268,13 @@ async fn execute_tool_calls_parallel(
 
     let mut messages: Vec<ToolResultMessage> = Vec::new();
     for finalized in &ordered_finalized_calls {
-        let tool_result_message = create_tool_result_message(finalized);
+        let mut tool_result_message = create_tool_result_message(finalized);
+        land_tool_result(
+            &mut tool_result_message,
+            current_context,
+            &messages,
+            config,
+        );
         emit_tool_result_message(&tool_result_message, emit).await?;
         messages.push(tool_result_message);
     }

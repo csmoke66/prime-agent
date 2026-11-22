@@ -122,7 +122,6 @@ impl Inner {
                 if let Some(execution) = execution.filter(|e| e.request_id == id) {
                     {
                         let mut buffers = lock(&execution.buffers);
-                        buffers.done_fields = Some(fields.clone());
                         if status != "ok" && buffers.status == ExecuteStatus::Ok {
                             buffers.status = ExecuteStatus::Error;
                             // State requests report failures as a done reason
@@ -137,6 +136,7 @@ impl Inner {
                                 }
                             }
                         }
+                        buffers.done_fields = Some(fields);
                     }
                     self.finish_active_execution(&execution);
                     return;

@@ -55,6 +55,8 @@ pub mod turn_boundary;
 
 mod admission;
 mod compaction_arms;
+mod tool_output_release;
+mod tool_output_reminder;
 mod wiring;
 
 use std::sync::Arc;

@@ -36,7 +36,7 @@ The following programmatic tools are available in the REPL for subagent manageme
 - `rlm.create_session(prompt: str, name: str | None = None, model: str | None = None, thinking: str | None = None, cwd: str | None = None) -> RLMCreateSessionHandle`: creates another depth-0 session; only available to agents at depth 0 backed by a daemon; returns after the session is successfully created and the first prompt sent
 - `rlm.find_models(query: str = '', limit: int = 8) -> list[RLMModel]`: before requesting a different child model, look it up here and pass its returned `selector` to `spawn` or `create_session`. Daemon sessions only list models allowed by the user's policy. Omit `model` to inherit instead.
 - In daemon sessions, `await rlm.workflows.list()` lists names and `await rlm.workflows.describe(name)` shows the prompt and field schemas. `await rlm.workflows.run(name, input)` runs locally. To operate on another session, pass `session="SESSION_ID"`; targeted runs wait for validated output by default. Use `interrupt=True` when the workflow must stop that session's active turn before a state rewrite, and pair it with `continue_turn=True` to queue a fresh continuation after a successful rewrite. Identical active or queued targeted runs coalesce. Use `wait=False` only when the receipt's `runId` is more useful than the result. `await rlm.workflows.create(name, definition)` creates a project workflow with `version: 1`, `model`, `prompt`, `inputFields`, `outputFields`, and optional `effort` and `subagents`; creation cannot overwrite an existing name or an operator-protected workflow.
-- `rlm.list_subagents() -> list[RLMSubagent]`: direct child handles
+- `await rlm.list_subagents()` returns all direct children in order; its compact display lists running and failed children and counts quiet ones. Use `await rlm.list_subagents(full=True)` for every record and its fields, or select fields from the returned rows.
 - `rlm.delete_subagent(target: str | RLMSubagent) -> RLMSubagent`
 - `rlm.rename(new_name: str, *, session_id=None) -> str`: rename the calling session (omit `session_id`) or a direct child (spawn handle, `list_subagents()` row, or session id; never the child's name); names must be unique among siblings, and the renamed session sees a transcript line for the change
 - `rlm.collect(targets=None, *, timeout_ms: int = 0) -> list[RLMChildResult]`: typed snapshots of direct children (status, settled flag, answer preview, error) without steering anyone; `timeout_ms=0` returns a non-blocking snapshot; a positive timeout blocks only this call until the children settle or the deadline passes
@@ -58,7 +58,7 @@ The following programmatic tools are available in the REPL for subagent manageme
   - `session_id: str | None`
   - `session_name: str`
   - `session_dir: Path`
-  - `status: Literal["running", "completed", "error"]`
+  - `status: Literal["running", "completed", "error", "cancelled"]`
   - rows also carry live activity detail (current activity, tool use count, duration, answer preview, latest progress note)
 - `RLMModel`
   - `provider: str`
@@ -142,6 +142,8 @@ Memories are created by two mechanisms:
 
 prime-agent compacts automatically when there is only a given number of tokens left in the context window (default: 16384), when the user triggers compaction, or when the agent triggers compaction. REPL state persists across compactions, but compaction removes individual variables whose serialized form exceeds 16 MiB.
 
+- `rlm.release()` hides the previous tool result's body; pass `[tool_call_id, ...]` for selected IDs or `"all"` for all prior results. At a milestone, print the evidence and open questions you still need in the release cell. Older edits can break the cached prefix; batch them.
+- Prefer `rlm.release("current")` for output you need only in the transcript: the body never enters model input. `rlm.release("tail", batches=1)` instead drops up to that many complete tool exchanges from the end of the previous input, including assistant text/reasoning, call arguments, and parallel results together. It stops at user or other non-tool turns; print a checkpoint in the release cell. These calls are synchronous, optional, and apply only on success. Originals stay in the saved session; with the daemon, use `rlm.session.messages()` (`row.raw["toolCallId"]` on a tool result).
 - `compact.run(instructions: str | None = None) -> dict`: schedule a compaction at the next assistant turn boundary
 - `compact.status() -> dict`: context usage & threshold before auto-compaction
 - `rlm.session.messages(start: int = -10, limit: int = 10, *, role: str | tuple[str, ...] = "*", agent=None) -> list[RLMMessage]` / `rlm.session.count(role="*", *, agent=None) -> int`: this session's own transcript on the active branch, or with `agent` a nuclear-family member's (parent, sibling, or child: a name, child id, session id, spawn handle, or `list_subagents()` row), oldest first, including the messages compaction summarized away (each compaction in place as a `compactionSummary` message); `messages` returns `rows[start:][:limit]` (Python slice semantics) of the rows whose role matches `role`, fnmatch globs over `user`, `assistant`, `toolResult`, `custom`, `compactionSummary`, `branchSummary`, `bashExecution`; `count` returns `len(rows)`

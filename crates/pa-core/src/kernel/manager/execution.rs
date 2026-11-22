@@ -203,7 +203,15 @@ impl Inner {
                     "\n[... background output truncated at {MAX_BACKGROUND_OUTPUT_CHARS} chars ...]",
                 );
             }
-            let done_fields = buffers.done_fields.take();
+            let mut done_fields = buffers.done_fields.take();
+            let release_tool_outputs = if status == ExecuteStatus::Ok {
+                done_fields
+                    .as_mut()
+                    .and_then(Value::as_object_mut)
+                    .and_then(|fields| fields.remove("releaseToolOutputs"))
+            } else {
+                None
+            };
             let result = ExecuteResult {
                 stdout,
                 stderr,
@@ -216,6 +224,7 @@ impl Inner {
                 bash_commands: buffers.bash_commands.take(),
                 transcript_reads: (!buffers.transcript_reads.is_empty())
                     .then(|| std::mem::take(&mut buffers.transcript_reads)),
+                release_tool_outputs,
                 background_output: (!background_output.is_empty()).then_some(background_output),
                 ended_turn: buffers.ended_turn,
                 status,

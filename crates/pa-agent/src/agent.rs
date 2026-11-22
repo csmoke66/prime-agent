@@ -12,7 +12,7 @@ use crate::abort::{AbortController, AbortSignal};
 use crate::agent_loop::{
     AfterToolCallFn, AgentEventSink, AgentLoopConfig, BeforeToolCallFn, ConvertToLlmFn,
     GetContinuationMessagesFn, PollMessagesFn, ShouldStopAfterTurnFn, ShouldStopBeforeTurnFn,
-    TransformContextFn,
+    ToolResultLandingFn, TransformContextFn,
 };
 use crate::stream::StreamFn;
 use crate::types::{
@@ -104,6 +104,9 @@ pub struct AgentOptions {
     pub before_tool_call: Option<BeforeToolCallFn>,
     pub after_tool_call: Option<AfterToolCallFn>,
     pub should_stop_after_turn: Option<ShouldStopAfterTurnFn>,
+    /// Last-mile tool-result rewrite before its event and provider-facing
+    /// context append.
+    pub tool_result_landing: Option<ToolResultLandingFn>,
     pub should_stop_before_turn: Option<ShouldStopBeforeTurnFn>,
     pub get_continuation_messages: Option<GetContinuationMessagesFn>,
     pub steering_mode: Option<QueueMode>,
@@ -360,6 +363,9 @@ struct AgentInner {
     /// the session engine can install it. A plain mutex: cloned at event
     /// processing entry, never held across an await.
     message_end_transform: Mutex<Option<MessageEndTransformFn>>,
+    /// Synchronous last-mile tool-result rewrite, copied into each run's
+    /// immutable loop config.
+    tool_result_landing: Option<ToolResultLandingFn>,
     /// Per-run model override; the owner sets it right before starting a routed run and clears it
     /// before the next dispatch. A plain mutex: read at run-config build, never held across an
     /// await.
@@ -597,6 +603,9 @@ impl AgentInner {
         config.tool_progress = self.tool_progress;
         config.before_tool_call.clone_from(&self.before_tool_call);
         config.after_tool_call.clone_from(&self.after_tool_call);
+        config
+            .tool_result_landing
+            .clone_from(&self.tool_result_landing);
         config
     }
 
@@ -851,6 +860,7 @@ impl Agent {
             should_stop_before_turn: options.should_stop_before_turn,
             get_continuation_messages: Mutex::new(options.get_continuation_messages),
             message_end_transform: Mutex::new(None),
+            tool_result_landing: options.tool_result_landing,
             model_override: Mutex::new(None),
             session_id: options.session_id,
             transport: options.transport,

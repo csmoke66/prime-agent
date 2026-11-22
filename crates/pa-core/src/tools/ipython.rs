@@ -71,6 +71,8 @@ pub struct ExecuteResult {
     /// The cell's `rlm.session.messages` reads (`transcriptReads` on the
     /// tool-result details).
     pub transcript_reads: Vec<serde_json::Value>,
+    /// A request to omit prior tool result bodies from the model's context.
+    pub release_tool_outputs: Option<serde_json::Value>,
     /// The time limit that interrupted this cell, if one did.
     pub timed_out_after_ms: Option<u64>,
     /// The cell ended the turn via the sanctioned `rlm.end_turn()` call:
@@ -456,6 +458,9 @@ pub async fn execute_ipython(
             .iter()
             .map(sent_agent_message_json)
             .collect::<Vec<_>>());
+    }
+    if let Some(release) = r.release_tool_outputs {
+        details["releaseToolOutputs"] = release;
     }
 
     // The flagged cell ends the turn: the batch rule terminates the run's

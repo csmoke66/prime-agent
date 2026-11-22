@@ -341,3 +341,83 @@ fn project_percentage_overrides_global_and_stale_writes_preserve_external_settin
     first.reload().unwrap();
     assert_eq!(first.get_compaction_threshold_percent(), 60.5);
 }
+
+#[test]
+fn tool_output_reminder_preserves_compaction_siblings_and_survives_reload() {
+    let (storage, mut manager) =
+        fixture(r#"{"compaction":{"enabled":false,"reserveTokens":1234,"future":"keep"}}"#);
+    assert_eq!(manager.get_tool_output_reminder_percent(), 30);
+    for percent in [0, 1, 30, 100] {
+        manager.set_tool_output_reminder_percent(percent).unwrap();
+        manager.reload().unwrap();
+        assert_eq!(manager.get_tool_output_reminder_percent(), percent);
+        assert_eq!(
+            document(storage.as_ref()),
+            json!({"compaction":{
+                "enabled":false,
+                "reserveTokens":1234,
+                "future":"keep",
+                "toolOutputReminderPercent":percent
+            }})
+        );
+    }
+}
+
+#[test]
+fn invalid_tool_output_reminder_values_fall_back_without_mutating_settings() {
+    for invalid in [
+        json!(null),
+        json!("30"),
+        json!(false),
+        json!(-1),
+        json!(30.5),
+        json!(101),
+        json!({}),
+        json!([]),
+    ] {
+        let settings = super::load::from_value_lenient(&json!({"compaction":{
+            "reserveTokens":1234,"toolOutputReminderPercent":invalid
+        }}));
+        let manager = SettingsManager::in_memory(&settings);
+        assert_eq!(manager.get_tool_output_reminder_percent(), 30);
+        assert_eq!(
+            manager
+                .settings()
+                .compaction
+                .as_ref()
+                .unwrap()
+                .reserve_tokens,
+            Some(1234)
+        );
+    }
+
+    let (storage, mut manager) =
+        fixture(r#"{"compaction":{"toolOutputReminderPercent":80}}"#);
+    assert!(manager.set_tool_output_reminder_percent(101).is_err());
+    assert_eq!(manager.get_tool_output_reminder_percent(), 80);
+    assert_eq!(
+        document(storage.as_ref()),
+        json!({"compaction":{"toolOutputReminderPercent":80}})
+    );
+}
+
+#[test]
+fn project_tool_output_reminder_overrides_global_without_redirecting_global_writes() {
+    let (storage, mut manager) =
+        fixture(r#"{"compaction":{"toolOutputReminderPercent":40}}"#);
+    storage
+        .with_lock(SettingsScope::Project, &mut |_| {
+            Some(r#"{"compaction":{"toolOutputReminderPercent":70}}"#.into())
+        })
+        .unwrap();
+    manager.reload().unwrap();
+    assert_eq!(manager.get_tool_output_reminder_percent(), 70);
+
+    manager.set_tool_output_reminder_percent(20).unwrap();
+    manager.reload().unwrap();
+    assert_eq!(manager.get_tool_output_reminder_percent(), 70);
+    assert_eq!(
+        document(storage.as_ref()),
+        json!({"compaction":{"toolOutputReminderPercent":20}})
+    );
+}

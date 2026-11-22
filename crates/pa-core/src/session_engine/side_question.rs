@@ -132,6 +132,7 @@ pub async fn run_side_question(
     // Each turn re-clones the live main conversation, so follow-ups always see
     // the newest main-thread context; earlier side turns replay after it.
     let mut messages = parent_state.messages.clone();
+    super::messages::project_loop_history_tool_output_releases(&mut messages);
     for (index, turn) in previous_turns.iter().enumerate() {
         messages.push(pa_agent::types::AgentMessage::Standard(Message::User(
             UserMessage {

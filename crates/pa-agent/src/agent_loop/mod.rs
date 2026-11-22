@@ -9,7 +9,7 @@ use crate::abort::AbortSignal;
 use crate::types::{
     AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentMessage, BeforeToolCallContext,
     BeforeToolCallResult, GetContinuationMessagesContext, Message, Model,
-    ShouldStopAfterTurnContext, ThinkingLevel, ToolExecutionMode,
+    ShouldStopAfterTurnContext, ThinkingLevel, ToolExecutionMode, ToolResultMessage,
 };
 
 /// Sink receiving the loop's events. The loop awaits every emission, so
@@ -88,6 +88,15 @@ pub type AfterToolCallFn = Arc<
         + Sync,
 >;
 
+/// Last-mile rewrite of a completed tool result before its message event and
+/// before the loop adds it to the next provider request. `context_prefix`
+/// contains the live rows through the assistant that requested this batch;
+/// `batch_prefix` contains earlier results from this tool-call batch. Both are
+/// borrowed to avoid copying large output bodies.
+pub type ToolResultLandingFn = Arc<
+    dyn Fn(&mut ToolResultMessage, &[AgentMessage], &[ToolResultMessage], &Model) + Send + Sync,
+>;
+
 #[derive(Clone)]
 pub struct AgentLoopConfig {
     pub model: Model,
@@ -116,6 +125,7 @@ pub struct AgentLoopConfig {
     pub tool_progress: crate::types::ToolProgressCadence,
     pub before_tool_call: Option<BeforeToolCallFn>,
     pub after_tool_call: Option<AfterToolCallFn>,
+    pub tool_result_landing: Option<ToolResultLandingFn>,
 }
 
 impl AgentLoopConfig {
@@ -144,6 +154,7 @@ impl AgentLoopConfig {
             tool_progress: crate::types::ToolProgressCadence::default(),
             before_tool_call: None,
             after_tool_call: None,
+            tool_result_landing: None,
         }
     }
 

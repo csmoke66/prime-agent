@@ -79,6 +79,7 @@ class _CellExecution:
     def __init__(self) -> None:
         self.finished = asyncio.Event()
         self.owner: asyncio.Task[Any] | None = None
+        self.release_tool_outputs: str | list[str] | dict[str, int] | None = None
 
 
 # Asyncio tasks copy cell context at creation, so detached tasks retain their
@@ -152,6 +153,28 @@ def emit(data: dict[str, Any]) -> None:
 def is_active() -> bool:
     """True when this process serves the repl protocol (not merely imported)."""
     return _protocol_fd >= 0
+
+
+def request_output_release(target: str | list[str] | tuple[str, ...], batches: int) -> None:
+    execution = _current_cell_execution.get()
+    if execution is None or execution.owner is None or asyncio.current_task() is not execution.owner:
+        raise RuntimeError("rlm.release() must run in the foreground REPL cell")
+    if execution.release_tool_outputs is not None:
+        raise ValueError("use one rlm.release() per cell; pass a list to release several tool results")
+    if type(batches) is not int or not 1 <= batches <= (1 << 64) - 1:
+        raise ValueError("batches must be a positive 64-bit integer")
+    if target == "tail":
+        execution.release_tool_outputs = {"tail": batches}
+    elif batches != 1:
+        raise ValueError('batches is only valid for rlm.release("tail")')
+    elif isinstance(target, str) and target in ("current", "last", "all"):
+        execution.release_tool_outputs = target
+    elif isinstance(target, (list, tuple)) and target and all(isinstance(i, str) and i for i in target):
+        ids = list(target)
+        _check_payload("release", {"releaseToolOutputs": ids})
+        execution.release_tool_outputs = ids
+    else:
+        raise ValueError('rlm.release() takes "current", "tail", "last", "all", or a nonempty list of tool call IDs')
 
 
 def current_cell_completion_context() -> tuple[asyncio.Event, asyncio.Task[Any] | None] | None:
@@ -687,7 +710,10 @@ async def _handle_execute(req: dict[str, Any], ns: dict[str, Any]) -> None:
             _send({"event": "result", "id": cell_id, "text": result_text})
         if error is not None:
             _send(error)
-        _send({"event": "done", "id": cell_id, "status": status})
+        done = {"event": "done", "id": cell_id, "status": status}
+        if status == "ok" and execution.release_tool_outputs is not None:
+            done["releaseToolOutputs"] = execution.release_tool_outputs
+        _send(done)
     finally:
         execution.owner = None
         execution.finished.set()

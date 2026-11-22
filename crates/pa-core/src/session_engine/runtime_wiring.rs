@@ -475,6 +475,7 @@ fn convert_execute_result(
         sent_agent_messages: result.sent_agent_messages.unwrap_or_default(),
         bash_commands: result.bash_commands,
         transcript_reads: result.transcript_reads.unwrap_or_default(),
+        release_tool_outputs: result.release_tool_outputs,
         timed_out_after_ms: result.timed_out_after_ms,
         ended_turn: result.ended_turn,
     }

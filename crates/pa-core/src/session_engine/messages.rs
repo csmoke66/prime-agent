@@ -2,11 +2,15 @@
 //! presentation constants).
 
 use super::agent_messaging::sanitize_message_header_value;
+use super::tool_output_release::{
+    effect, loop_release_mask, release_directive, session_release_mask, ReleaseEffect,
+};
 use crate::cron::AgentCronJob;
 use pa_types::ai::{
     AssistantMessage, TextContent, ToolResultMessage, UserContent, UserContentBlock, UserMessage,
 };
 use pa_types::session::AgentMessage;
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 pub const COMPACTION_SUMMARY_PREFIX: &str = "[compaction-summary]\n\nThe conversation history before this point was compacted into the following summary.\nThe retained messages below are authoritative; this summary may lag behind them.\nBackground work may have progressed during compaction; treat resource statuses as last-observed and refresh them before relying on them.\n\n<summary>\n";
@@ -338,12 +342,98 @@ fn text_block(text: String) -> UserContentBlock {
     })
 }
 
+/// The model-visible body of a tool result whose output was explicitly
+/// released by a successful `python_repl` call.
+pub const RELEASED_TOOL_OUTPUT_PLACEHOLDER: &str = "[tool output released]";
+
+fn projected_result(result: &ToolResultMessage, content: Vec<UserContentBlock>) -> ToolResultMessage {
+    ToolResultMessage {
+        tool_call_id: result.tool_call_id.clone(),
+        tool_name: result.tool_name.clone(),
+        content,
+        details: None,
+        is_error: result.is_error,
+        timestamp: result.timestamp,
+        rest: result.rest.clone(),
+    }
+}
+
+fn clone_with_released_body(result: &ToolResultMessage) -> ToolResultMessage {
+    projected_result(result, vec![text_block(RELEASED_TOOL_OUTPUT_PLACEHOLDER.to_string())])
+}
+
+/// Return the model-facing projection without mutating durable history. The
+/// owned arm is allocated only when a directive changes at least one row.
+pub(crate) fn project_tool_output_releases(messages: &[AgentMessage]) -> Cow<'_, [AgentMessage]> {
+    let Some(mask) = session_release_mask(messages) else {
+        return Cow::Borrowed(messages);
+    };
+    Cow::Owned(
+        messages
+            .iter()
+            .zip(mask)
+            .filter_map(|(message, action)| match (message, action) {
+                (_, ReleaseEffect::Omit) => None,
+                (AgentMessage::ToolResult(result), ReleaseEffect::Body) => {
+                    Some(AgentMessage::ToolResult(clone_with_released_body(result)))
+                }
+                _ => Some(message.clone()),
+            })
+            .collect(),
+    )
+}
+
+/// Historically summaries omit tool results. Only a release cell's own
+/// checkpoint goes to the summarizer, without a directive that might be
+/// interpreted a second time against different neighbors in a summary slice.
+pub(super) fn summary_message(message: &AgentMessage) -> Option<AgentMessage> {
+    match message {
+        AgentMessage::ToolResult(result) => {
+            release_directive(&result.tool_name, result.is_error, result.details.as_ref())?;
+            Some(AgentMessage::ToolResult(projected_result(result, result.content.clone())))
+        }
+        _ => Some(message.clone()),
+    }
+}
+
+/// Apply the same provider projection to an already-owned loop history (for
+/// side threads that clone the parent but do not install the session
+/// conversion callback).
+pub(crate) fn project_loop_history_tool_output_releases(
+    messages: &mut Vec<pa_agent::types::AgentMessage>,
+) {
+    let Some(mask) = loop_release_mask(messages) else { return };
+    let mut actions = mask.into_iter();
+    messages.retain_mut(|message| {
+        match actions.next().expect("one projection per message") {
+            ReleaseEffect::Omit => return false,
+            ReleaseEffect::Body => {
+                if let pa_agent::types::AgentMessage::Standard(
+                    pa_agent::types::Message::ToolResult(r),
+                ) = message {
+                    r.content = vec![pa_agent::types::ToolResultContent::text(
+                        RELEASED_TOOL_OUTPUT_PLACEHOLDER,
+                    )];
+                    r.details = None;
+                }
+            }
+            ReleaseEffect::Keep => {}
+        }
+        true
+    });
+}
+
 /// The LLM message view of session messages: session-only roles become user
 /// text turns; bookkeeping custom types drop out entirely.
 #[must_use]
 pub fn convert_to_llm(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+    let release_mask = session_release_mask(messages);
     let mut out = Vec::new();
-    for message in messages {
+    for (index, message) in messages.iter().enumerate() {
+        let action = effect(&release_mask, index);
+        if action == ReleaseEffect::Omit {
+            continue;
+        }
         let converted = match message {
             AgentMessage::BashExecution(bash) => {
                 if bash.exclude_from_context.unwrap_or(false) {
@@ -407,6 +497,9 @@ pub fn convert_to_llm(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     rest: serde_json::Map::default(),
                 })
             }
+            AgentMessage::ToolResult(result) if action == ReleaseEffect::Body => {
+                AgentMessage::ToolResult(clone_with_released_body(result))
+            }
             AgentMessage::User(_) | AgentMessage::Assistant(_) | AgentMessage::ToolResult(_) => {
                 message.clone()
             }
@@ -425,8 +518,9 @@ pub type LlmToolResultMessage = ToolResultMessage;
 /// rules apply (what lets the harness-digest row ride the loop to the provider).
 #[must_use]
 pub fn loop_convert_to_llm(
-    messages: Vec<pa_agent::types::AgentMessage>,
+    mut messages: Vec<pa_agent::types::AgentMessage>,
 ) -> Vec<pa_agent::types::Message> {
+    project_loop_history_tool_output_releases(&mut messages);
     let mut out = Vec::new();
     for message in messages {
         match message {
@@ -671,6 +765,191 @@ state
                 );
             }
             _ => panic!("expected user message"),
+        }
+    }
+
+    #[test]
+    fn explicit_tool_output_release_projects_only_prior_selected_results() {
+        fn result(
+            id: &str,
+            name: &str,
+            content: Vec<UserContentBlock>,
+            is_error: bool,
+            details: serde_json::Value,
+        ) -> AgentMessage {
+            AgentMessage::ToolResult(ToolResultMessage {
+                tool_call_id: id.to_string(),
+                tool_name: name.to_string(),
+                content,
+                details: Some(details),
+                is_error,
+                timestamp: 0,
+                rest: serde_json::Map::default(),
+            })
+        }
+        fn text(value: &str) -> Vec<UserContentBlock> {
+            vec![text_block(value.to_string())]
+        }
+        fn projected_result(messages: &[AgentMessage], index: usize) -> &ToolResultMessage {
+            let AgentMessage::ToolResult(result) = &messages[index] else {
+                panic!("expected tool result");
+            };
+            result
+        }
+
+        let raw = vec![
+            result(
+                "r1",
+                "bash",
+                text("alpha-secret"),
+                false,
+                serde_json::json!({"echo": "alpha-detail"}),
+            ),
+            // An errored python result cannot issue a directive.
+            result(
+                "bad",
+                pa_types::ai::PYTHON_TOOL_NAME,
+                text("failed-secret"),
+                true,
+                serde_json::json!({"releaseToolOutputs": "all"}),
+            ),
+            // `last` is the closest preceding result of any tool, including
+            // an error result; its identity and error status must survive.
+            result(
+                "d-last",
+                pa_types::ai::PYTHON_TOOL_NAME,
+                text("last-ok"),
+                false,
+                serde_json::json!({"releaseToolOutputs": "last"}),
+            ),
+            result(
+                "r2",
+                "edit",
+                vec![UserContentBlock::Image(pa_types::ai::ImageContent {
+                    data: "image-base64-secret".to_string(),
+                    mime_type: "image/png".to_string(),
+                    rest: serde_json::Map::default(),
+                })],
+                false,
+                serde_json::json!({"rendered": "beta-detail"}),
+            ),
+            result(
+                "d-explicit",
+                pa_types::ai::PYTHON_TOOL_NAME,
+                text("explicit-ok"),
+                false,
+                serde_json::json!({"releaseToolOutputs": ["r1", "future"]}),
+            ),
+            result(
+                "future",
+                "bash",
+                text("gamma-secret"),
+                false,
+                serde_json::json!({"echo": "gamma-detail"}),
+            ),
+            result(
+                "d-all",
+                pa_types::ai::PYTHON_TOOL_NAME,
+                text("all-ok"),
+                false,
+                serde_json::json!({"releaseToolOutputs": "all"}),
+            ),
+            result(
+                "newer",
+                "bash",
+                text("omega-visible"),
+                false,
+                serde_json::json!({"echo": "omega-detail"}),
+            ),
+        ];
+
+        // Before the later `all`, explicit IDs cannot select a future row.
+        let prefix = project_tool_output_releases(&raw[..6]);
+        assert_eq!(
+            projected_result(prefix.as_ref(), 0).content,
+            text(RELEASED_TOOL_OUTPUT_PLACEHOLDER)
+        );
+        let failed = projected_result(prefix.as_ref(), 1);
+        assert_eq!(failed.tool_call_id, "bad");
+        assert_eq!(failed.tool_name, pa_types::ai::PYTHON_TOOL_NAME);
+        assert!(failed.is_error);
+        assert_eq!(failed.content, text(RELEASED_TOOL_OUTPUT_PLACEHOLDER));
+        assert!(failed.details.is_none());
+        assert!(matches!(
+            projected_result(prefix.as_ref(), 3).content.as_slice(),
+            [UserContentBlock::Image(_)]
+        ));
+        assert_eq!(
+            projected_result(prefix.as_ref(), 5).content,
+            text("gamma-secret")
+        );
+
+        // The later `all` releases every prior result (including directive
+        // results and non-text bodies), but never itself or a newer result.
+        let converted = convert_to_llm(&raw);
+        for index in 0..6 {
+            let result = projected_result(&converted, index);
+            assert_eq!(result.content, text(RELEASED_TOOL_OUTPUT_PLACEHOLDER));
+            assert!(result.details.is_none());
+        }
+        assert_eq!(projected_result(&converted, 6).content, text("all-ok"));
+        assert_eq!(
+            projected_result(&converted, 7).content,
+            text("omega-visible")
+        );
+        // Conversion is a projection: replay/raw transcript markers and
+        // explicit re-reads retain their original payload.
+        assert_eq!(
+            projected_result(&raw, 0).content,
+            text("alpha-secret")
+        );
+        assert_eq!(
+            projected_result(&raw, 6)
+                .details
+                .as_ref()
+                .and_then(|details| details.get("releaseToolOutputs")),
+            Some(&serde_json::json!("all"))
+        );
+
+        // The loop/provider conversion has the same projection and preserves
+        // the tool-call pairing fields and error bit.
+        let loop_history: Vec<pa_agent::types::AgentMessage> = raw
+            .iter()
+            .map(|message| {
+                serde_json::from_value(serde_json::to_value(message).unwrap()).unwrap()
+            })
+            .collect();
+        let provider = loop_convert_to_llm(loop_history);
+        assert_eq!(provider.len(), raw.len());
+        for (index, message) in provider.iter().enumerate() {
+            let pa_agent::types::Message::ToolResult(result) = message else {
+                panic!("expected provider tool result");
+            };
+            let raw_result = projected_result(&raw, index);
+            assert_eq!(result.tool_call_id, raw_result.tool_call_id);
+            assert_eq!(result.tool_name, raw_result.tool_name);
+            assert_eq!(result.is_error, raw_result.is_error);
+            if index < 6 {
+                assert_eq!(
+                    result.content,
+                    vec![pa_agent::types::ToolResultContent::text(
+                        RELEASED_TOOL_OUTPUT_PLACEHOLDER
+                    )]
+                );
+                assert!(result.details.is_none());
+            }
+        }
+        let provider_json = serde_json::to_string(&provider).unwrap();
+        for secret in [
+            "alpha-secret",
+            "alpha-detail",
+            "failed-secret",
+            "image-base64-secret",
+            "beta-detail",
+            "gamma-secret",
+            "gamma-detail",
+        ] {
+            assert!(!provider_json.contains(secret), "provider leaked {secret}");
         }
     }
 

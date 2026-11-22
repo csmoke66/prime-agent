@@ -45,12 +45,23 @@ pub(crate) fn without_refinements(messages: Vec<AgentMessage>) -> Vec<AgentMessa
 /// I/O runs off the async worker. Filtering precedes conversion while provenance is typed.
 pub(crate) fn convert_to_llm(
     settings: crate::settings::SettingsManager,
+    reminder_percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
 ) -> pa_agent::agent_loop::ConvertToLlmFn {
     let settings = std::sync::Arc::new(settings);
     std::sync::Arc::new(move |messages| {
         let settings = std::sync::Arc::clone(&settings);
+        let reminder_percent = std::sync::Arc::clone(&reminder_percent);
         Box::pin(async move {
-            let enabled = tokio::task::spawn_blocking(move || enabled(Some(&settings))).await?;
+            // Both policies use the same live settings snapshot. Landing a
+            // parallel batch of results must not re-read files on the async worker.
+            let enabled = tokio::task::spawn_blocking(move || {
+                let live = settings.reopen();
+                reminder_percent.store(
+                    live.get_tool_output_reminder_percent(),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                live.get_harness_refinements()
+            }).await?;
             let messages = if enabled {
                 messages
             } else {
@@ -92,7 +103,7 @@ mod tests {
     async fn live_request_gate_filters_saved_rows_and_preserves_quoted_user_content() {
         let tmp = tempfile::tempdir().unwrap();
         let mut settings = SettingsManager::create(tmp.path(), tmp.path().join("agent"));
-        let convert = convert_to_llm(settings.reopen());
+        let convert = convert_to_llm(settings.reopen(), std::sync::Arc::default());
         let digest =
             super::super::harness_digest::harness_digest_prompt_row("saved memory", 1, "fp");
         let quote =

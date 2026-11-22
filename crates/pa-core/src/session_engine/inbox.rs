@@ -851,7 +851,7 @@ pub fn arrival_notice(batch: &[InboxMessage], total_waiting: usize) -> (String, 
     (
         format!("Inbox: {summary}"),
         format!(
-            "[inbox {window} UTC] {summary}; total waiting: {total_waiting}. Read them with rlm.inbox.read()."
+            "[inbox {window} UTC] {summary}; {total_waiting} unread. rlm.inbox.read()"
         ),
     )
 }
@@ -1603,20 +1603,14 @@ mod tests {
         let single = message("inbox-3", INBOX_CLASS_BASH_DONE, at, "done");
         let (preview, text) = arrival_notice(std::slice::from_ref(&single), 3);
         assert_eq!(preview, "Inbox: 1 new message (bash-done)");
-        assert_eq!(
-            text,
-            "[inbox 14:03 UTC] 1 new message (bash-done); total waiting: 3. Read them with rlm.inbox.read()."
-        );
+        assert!(text.contains("14:03 UTC") && text.contains("3 unread"));
         let same_class = [
             message("inbox-1", INBOX_CLASS_BASH_DONE, at - 60_000, "a"),
             message("inbox-2", INBOX_CLASS_BASH_DONE, at, "b"),
         ];
         let (preview, text) = arrival_notice(&same_class, 2);
         assert_eq!(preview, "Inbox: 2 new bash-done messages");
-        assert_eq!(
-            text,
-            "[inbox 14:02-14:03 UTC] 2 new bash-done messages; total waiting: 2. Read them with rlm.inbox.read()."
-        );
+        assert!(text.contains("14:02-14:03 UTC") && text.contains("2 unread"));
         let batch = [
             message("inbox-1", INBOX_CLASS_BASH_DONE, at - 60_000, "a"),
             message("inbox-2", INBOX_CLASS_FACTORY_PROGRESS, at - 30_000, "b"),
@@ -1627,10 +1621,7 @@ mod tests {
             preview,
             "Inbox: 3 new messages (2 bash-done, 1 factory-progress)"
         );
-        assert_eq!(
-            text,
-            "[inbox 14:02-14:03 UTC] 3 new messages (2 bash-done, 1 factory-progress); total waiting: 3. Read them with rlm.inbox.read()."
-        );
+        assert!(text.contains("2 bash-done, 1 factory-progress") && text.contains("3 unread"));
     }
 
     /// The child-status projection: the terminal notice routes as

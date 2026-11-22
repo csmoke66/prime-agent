@@ -120,7 +120,7 @@ async fn an_idle_arrival_queues_one_short_notice_and_keeps_the_message() {
         "the short notice steers: {message}"
     );
     assert!(message.contains("rlm.inbox.read()"));
-    assert!(message.contains("total waiting: 1"));
+    assert!(message.contains("1 unread"));
     assert_eq!(preview.as_deref(), Some("Inbox: 1 new message (bash-done)"));
     assert!(!visible, "an idle wake is an invisible injected turn");
     let (queue_key, custom_message) = {
@@ -232,7 +232,7 @@ async fn busy_window_arrivals_coalesce_into_one_queued_row() {
     assert!(
         message.contains("3 new messages")
             && message.contains("2 bash-done, 1 factory-progress")
-            && message.contains("total waiting: 3"),
+            && message.contains("3 unread"),
         "the row covers the whole busy window: {message}"
     );
     assert_eq!(inbox.count().0, 3);
@@ -286,7 +286,7 @@ async fn a_delivered_row_starts_a_fresh_batch() {
         "the fresh batch names only the new arrival: {message}"
     );
     assert!(
-        message.contains("total waiting: 2"),
+        message.contains("2 unread"),
         "the total still counts every unread message: {message}"
     );
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());

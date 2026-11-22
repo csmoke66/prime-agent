@@ -1,0 +1,1 @@
+- Shorten recurring goal continuations and inbox arrival notices without omitting the objective, budget, unread count, or instructions for completing goals and reading messages. Existing transcripts and reminder delivery are unchanged.

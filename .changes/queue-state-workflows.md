@@ -1,0 +1,1 @@
+- State-rewrite workflows now queue behind a busy turn or another rewrite instead of failing. They acquire the rewrite gate when the target session becomes idle and then apply normally.

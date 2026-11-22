@@ -264,27 +264,48 @@ impl Worker {
             None => None,
         };
         let applies_state = apply_context_field.is_some() || memory_apply.is_some();
-        if applies_state {
+        let (session, queued_for_idle) = {
             let mut core = self.core.lock().unwrap();
-            if core.busy || core.compacting {
-                return response_failure(
-                    None,
-                    COMMAND,
-                    "Wait for the session to become idle before running a state-rewrite workflow",
-                    None,
-                );
+            let queued = applies_state && (core.busy || core.compacting);
+            if applies_state && !queued {
+                // Reuse the compaction admission gate: no parent turn may start
+                // while an isolated reviewer is preparing a replacement.
+                core.compacting = true;
             }
-            // Reuse the compaction admission gate: no parent turn may start
-            // while an isolated reviewer is preparing a replacement.
-            core.compacting = true;
-        }
+            (core.generation.clone(), queued)
+        };
         let name = name.to_owned();
         let core = self.core.clone();
         let events = self.events.clone();
         let engine = std::sync::Arc::clone(&self.engine);
         let idle_notify = std::sync::Arc::clone(&self.idle_notify);
-        let session = core.lock().unwrap().generation.clone();
+        let queued_idle_notify = std::sync::Arc::clone(&idle_notify);
+        let queued_core = self.core.clone();
+        let queued_session = session.clone();
         tokio::spawn(async move {
+            if queued_for_idle {
+                loop {
+                    let idle = queued_idle_notify.notified();
+                    tokio::pin!(idle);
+                    idle.as_mut().enable();
+                    let admitted = {
+                        let mut core = queued_core.lock().unwrap();
+                        if core.generation != queued_session || core.shutdown_requested {
+                            return;
+                        }
+                        if core.busy || core.compacting {
+                            false
+                        } else {
+                            core.compacting = true;
+                            true
+                        }
+                    };
+                    if admitted {
+                        break;
+                    }
+                    idle.await;
+                }
+            }
             let mut result = host.run_workflow(&name, input).await;
             let mut memory_backup = None;
             if let (Ok(output), Some((field, dir, scope))) = (&result, &memory_apply) {
@@ -372,7 +393,11 @@ impl Worker {
                 idle_notify.notify_waiters();
             }
         });
-        response_success(None, COMMAND, Some(json!({"started":true})))
+        response_success(
+            None,
+            COMMAND,
+            Some(json!({"started":true,"queued":queued_for_idle})),
+        )
     }
 
     // DaemonResponse is the wire response struct and is deliberately wide; the

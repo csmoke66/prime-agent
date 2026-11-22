@@ -88,6 +88,10 @@ Default workflows are provided with the repository to help handle false positive
 1. `railguard-context-repair` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
 2. `railguard-memory-repair` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
 
+### Improved token usage
+
+Several improvements have been made for efficient token usage, including following OpenAI's new guidelines on how to appropriately use caching.
+
 ## Install
 
 Install the latest stable version with the one-command installer:

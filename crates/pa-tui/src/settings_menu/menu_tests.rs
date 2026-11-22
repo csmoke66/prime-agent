@@ -71,25 +71,41 @@ fn confirm_cycles_values_and_reports_the_change() {
 }
 
 #[test]
-fn provider_block_notices_cycle_between_visible_and_silent() {
+fn provider_rejection_delivery_cycles_through_all_three_modes() {
     let values = SettingsCurrentValues {
-        show_provider_block_messages: true,
+        provider_block_delivery: "show".into(),
         ..Default::default()
     };
     let mut menu = SettingsMenu::new(settings_menu_rows(&values));
-    menu.paste("provider");
+    menu.paste("delivery");
+    for expected in ["silence", "route", "show"] {
+        assert_eq!(
+            menu.handle_key("enter", &kb()),
+            SettingsMenuAction::Change {
+                id: "provider-block-delivery",
+                value: expected.to_string()
+            }
+        );
+    }
+}
+
+#[test]
+fn provider_rejection_target_uses_existing_session_selector() {
+    let values = SettingsCurrentValues {
+        provider_block_targets: vec![ProviderBlockTargetChoice {
+            selector: "durable-hr-id".into(),
+            label: "HR · durable-hr".into(),
+        }],
+        ..Default::default()
+    };
+    let mut menu = SettingsMenu::new(settings_menu_rows(&values));
+    menu.paste("rejection target");
+    assert_eq!(menu.handle_key("enter", &kb()), SettingsMenuAction::None);
     assert_eq!(
         menu.handle_key("enter", &kb()),
-        SettingsMenuAction::Change {
-            id: "provider-block-messages",
-            value: "false".to_string()
-        }
-    );
-    assert_eq!(
-        menu.handle_key("enter", &kb()),
-        SettingsMenuAction::Change {
-            id: "provider-block-messages",
-            value: "true".to_string()
+        SettingsMenuAction::SaveProviderBlockTarget {
+            selector: "durable-hr-id".into(),
+            label: "HR · durable-hr".into(),
         }
     );
 }

@@ -867,29 +867,36 @@ impl AgentSessionEngine {
             );
             let cwd = self.cwd();
             let project = cwd.clone();
+            let agent_dir = self.config.agent_dir.clone();
             handlers.register(
                 "rlm.workflows.list",
                 host_handler(move |_| {
                     let cwd = project.clone();
+                    let agent_dir = agent_dir.clone();
                     async move {
-                        let names =
-                            tokio::task::spawn_blocking(move || pa_core::workflows::list(&cwd))
-                                .await??;
+                        let names = tokio::task::spawn_blocking(move || {
+                            pa_core::workflows::list(&cwd, &agent_dir)
+                        })
+                        .await??;
                         Ok(serde_json::json!({"names":names}))
                     }
                 }),
             );
             let project = cwd.clone();
+            let agent_dir = self.config.agent_dir.clone();
             handlers.register(
                 "rlm.workflows.describe",
                 host_handler(move |request| {
                     let cwd = project.clone();
+                    let agent_dir = agent_dir.clone();
                     async move {
                         tokio::task::spawn_blocking(move || {
                             let name = request.data["name"]
                                 .as_str()
                                 .ok_or_else(|| anyhow::anyhow!("workflow name must be a string"))?;
-                            Ok(serde_json::to_value(pa_core::workflows::load(&cwd, name)?)?)
+                            Ok(serde_json::to_value(pa_core::workflows::load(
+                                &cwd, &agent_dir, name,
+                            )?)?)
                         })
                         .await?
                     }

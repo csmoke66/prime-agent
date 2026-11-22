@@ -302,6 +302,26 @@ pub struct TelemetrySettings {
     pub local_mirror: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProviderBlockDelivery {
+    #[default]
+    Show,
+    Silence,
+    Route,
+}
+
+impl ProviderBlockDelivery {
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Show => "show",
+            Self::Silence => "silence",
+            Self::Route => "route",
+        }
+    }
+}
+
 /// The default time limit for user `python_repl` cells: 60 seconds.
 pub const DEFAULT_PYTHON_CELL_TIMEOUT_MS: u64 = 60_000;
 
@@ -391,9 +411,10 @@ pub struct Settings {
     pub emoji_shortcodes: Option<bool>,
     pub markdown: Option<MarkdownSettings>,
     pub warnings: Option<WarningSettings>,
-    /// Show the sanitized provider-block notice and its recovery steer in chat.
-    /// Unset preserves the visible behavior; false keeps recovery internal.
-    pub show_provider_block_messages: Option<bool>,
+    /// Delivery policy for sanitized provider-rejection notices.
+    pub provider_block_delivery: Option<ProviderBlockDelivery>,
+    /// Durable session selector receiving routed provider-rejection reports.
+    pub provider_block_target_session: Option<String>,
     /// Session storage can restore executable kernel state, so only global
     /// settings (or an explicit CLI/environment override) may select it.
     pub session_dir: Option<String>,

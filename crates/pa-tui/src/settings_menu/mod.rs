@@ -28,6 +28,12 @@ fn thinking_description(level: &str) -> &'static str {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderBlockTargetChoice {
+    pub selector: String,
+    pub label: String,
+}
+
 /// A submenu a row opens with Enter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsSubmenu {
@@ -43,6 +49,10 @@ pub enum SettingsSubmenu {
     SessionServiceTier { tiers: Vec<&'static str> },
     /// Reasoning override for newly spawned children.
     ChildEffort,
+    /// Existing independent sessions eligible to receive provider-rejection reports.
+    ProviderBlockTarget {
+        sessions: Vec<ProviderBlockTargetChoice>,
+    },
 }
 
 /// The service-tier descriptions the TS settings submenu lists.
@@ -111,6 +121,10 @@ pub enum SettingsMenuAction {
     SaveChildModels(Option<Vec<String>>),
     /// Persist the child effort; None inherits the spawn request or parent.
     SaveChildEffort(Option<ModelThinkingLevel>),
+    SaveProviderBlockTarget {
+        selector: String,
+        label: String,
+    },
     /// The theme submenu's selection moved: preview the theme live.
     PreviewTheme {
         name: String,
@@ -206,12 +220,32 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             values: None, submenu: None,
         },
         toggle("trace-sharing", "Trace sharing", "Automatically upload session traces", current.trace_sharing),
-        toggle(
-            "provider-block-messages",
-            "Provider block notices",
-            "Show the sanitized false-positive notice and recovery steer; disable to keep both out of chat",
-            Some(current.show_provider_block_messages),
-        ),
+        SettingsMenuRow {
+            id: "provider-block-delivery",
+            label: "Provider rejection delivery",
+            description: "Show in this chat, silence locally, or route a sanitized report to another existing session",
+            current: if current.provider_block_delivery.is_empty() {
+                "show".into()
+            } else {
+                current.provider_block_delivery.clone()
+            },
+            values: Some(vec!["show".into(), "silence".into(), "route".into()]),
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "provider-block-target",
+            label: "Provider rejection target",
+            description: "Independent existing session that receives routed reports through its inbox",
+            current: current.provider_block_target_session.as_ref().and_then(|target| {
+                current.provider_block_targets.iter()
+                    .find(|choice| &choice.selector == target)
+                    .map(|choice| choice.label.clone())
+            }).unwrap_or_else(|| current.provider_block_target_session.clone().unwrap_or_else(|| "Not selected".into())),
+            values: None,
+            submenu: (!current.provider_block_targets.is_empty()).then(|| SettingsSubmenu::ProviderBlockTarget {
+                sessions: current.provider_block_targets.clone(),
+            }),
+        },
         SettingsMenuRow {
             id: "update-channel", label: "Update channel", description: "Stable releases or nightly pre-releases",
             current: current.update_channel.clone().unwrap_or_else(|| "Unavailable".into()),
@@ -532,7 +566,9 @@ pub struct SettingsCurrentValues {
     pub skill_commands: bool,
     pub builtin_skills: bool,
     pub harness_refinements: bool,
-    pub show_provider_block_messages: bool,
+    pub provider_block_delivery: String,
+    pub provider_block_target_session: Option<String>,
+    pub provider_block_targets: Vec<ProviderBlockTargetChoice>,
     pub web_search_provider: String,
     pub hardware_cursor: bool,
     pub emoji_shortcodes: bool,
@@ -866,6 +902,10 @@ impl SettingsMenu {
                     .iter()
                     .position(|&effort| child_effort_label(effort) == row.current)
                     .unwrap_or(0),
+                SettingsSubmenu::ProviderBlockTarget { sessions } => sessions
+                    .iter()
+                    .position(|session| session.label == row.current)
+                    .unwrap_or(0),
                 _ => 0,
             };
             self.sub = Some(SubmenuState {
@@ -919,6 +959,7 @@ impl SettingsMenu {
             SettingsSubmenu::ServiceTier => SERVICE_TIER_CHOICES.len(),
             SettingsSubmenu::SessionServiceTier { tiers } => tiers.len(),
             SettingsSubmenu::ChildEffort => CHILD_EFFORT_CHOICES.len(),
+            SettingsSubmenu::ProviderBlockTarget { sessions } => sessions.len(),
         };
         if kb.matches(key, "tui.select.up") {
             if options > 0 {
@@ -988,6 +1029,12 @@ impl SettingsMenu {
                         Some(SettingsMenuAction::SaveChildEffort(effort))
                     }
                 }
+                SettingsSubmenu::ProviderBlockTarget { sessions } => sessions
+                    .get(sub.selected)
+                    .map(|session| SettingsMenuAction::SaveProviderBlockTarget {
+                        selector: session.selector.clone(),
+                        label: session.label.clone(),
+                    }),
             };
             // A value select closes the submenu and updates the row's displayed value.
             if let Some(action) = value {
@@ -1197,14 +1244,16 @@ impl SettingsMenu {
         width: usize,
         kb: &KeybindingsManager,
     ) -> Vec<crate::Line> {
-        let (title, description, options): (&str, &str, Vec<(String, Option<&'static str>)>) =
+        let (title, description, options): (&str, &str, Vec<(String, Option<String>)>) =
             match &sub.kind {
                 SettingsSubmenu::Thinking { levels } => (
                     "Thinking Level",
                     "Select reasoning depth for thinking-capable models",
                     levels
                         .iter()
-                        .map(|level| (level.clone(), Some(thinking_description(level))))
+                        .map(|level| {
+                            (level.clone(), Some(thinking_description(level).to_owned()))
+                        })
                         .collect(),
                 ),
                 SettingsSubmenu::Theme { themes } => (
@@ -1222,14 +1271,21 @@ impl SettingsMenu {
                     "Service tier for new sessions; applies to the current session when the model supports it",
                     SERVICE_TIER_CHOICES
                         .iter()
-                        .map(|tier| (tier.to_string(), Some(service_tier_description(tier))))
+                        .map(|tier| {
+                            (tier.to_string(), Some(service_tier_description(tier).to_owned()))
+                        })
                         .collect(),
                 ),
                 SettingsSubmenu::SessionServiceTier { tiers } => (
                     "Session Service Tier",
                     "Choose a tier supported by the current model",
                     tiers.iter()
-                        .map(|tier| ((*tier).to_owned(), Some(service_tier_description(tier))))
+                        .map(|tier| {
+                            (
+                                (*tier).to_owned(),
+                                Some(service_tier_description(tier).to_owned()),
+                            )
+                        })
                         .collect(),
                 ),
                 SettingsSubmenu::ChildEffort => (
@@ -1239,7 +1295,20 @@ impl SettingsMenu {
                         .iter()
                         .map(|&effort| {
                             let label = child_effort_label(effort);
-                            (label.to_owned(), effort.map(|_| thinking_description(label)))
+                            (
+                                label.to_owned(),
+                                effort.map(|_| thinking_description(label).to_owned()),
+                            )
+                        })
+                        .collect(),
+                ),
+                SettingsSubmenu::ProviderBlockTarget { sessions } => (
+                    "Provider Rejection Target",
+                    "Route sanitized reports to this existing independent session's inbox",
+                    sessions
+                        .iter()
+                        .map(|session| {
+                            (session.label.clone(), Some(session.selector.clone()))
                         })
                         .collect(),
                 ),
@@ -1280,7 +1349,10 @@ impl SettingsMenu {
             let position = start + position;
             let selected = position == sub.selected;
             let trailing: Vec<crate::menu_panel::MenuSegment> = description
-                .map(|description| vec![crate::menu_panel::MenuSegment::muted(description)])
+                .as_ref()
+                .map(|description| {
+                    vec![crate::menu_panel::MenuSegment::muted(description.as_str())]
+                })
                 .unwrap_or_default();
             lines.push(crate::menu_panel::menu_row(
                 theme,

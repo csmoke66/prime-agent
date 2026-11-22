@@ -120,6 +120,28 @@ impl ClientSettings for CliClientSettings {
         Ok(())
     }
 
+    fn provider_block_delivery(&self) -> String {
+        self.manager().get_provider_block_delivery().id().to_owned()
+    }
+
+    fn set_provider_block_delivery(&self, mode: &str) -> Result<()> {
+        let mode: pa_core::settings::ProviderBlockDelivery =
+            serde_json::from_value(Value::String(mode.to_owned()))
+                .map_err(|error| anyhow::anyhow!("Invalid provider-block delivery mode: {error}"))?;
+        self.manager().set_provider_block_delivery(mode)
+    }
+
+    fn provider_block_target_session(&self) -> Option<String> {
+        self.manager()
+            .get_provider_block_target_session()
+            .map(str::to_owned)
+    }
+
+    fn set_provider_block_target_session(&self, target: &str) -> Result<()> {
+        self.manager()
+            .set_provider_block_target_session(target.to_owned())
+    }
+
     fn inbox_reminder_mode(&self, session_file: &str) -> Result<String> {
         use pa_core::session_engine::inbox::reminders::ReminderMode;
         Ok(ReminderMode::load(Path::new(session_file))?.name().to_owned())
@@ -238,13 +260,7 @@ impl ClientSettings for CliClientSettings {
         set_show_images,
         bool
     );
-    setting!(
-        show_provider_block_messages,
-        set_show_provider_block_messages,
-        get_show_provider_block_messages,
-        set_show_provider_block_messages,
-        bool
-    );
+ 
     setting!(
         clear_on_shrink,
         set_clear_on_shrink,
@@ -653,7 +669,7 @@ mod tests {
         let settings = CliClientSettings::new(dir.path().to_path_buf(), agent_dir.clone());
 
         assert!(settings.show_images());
-        assert!(settings.show_provider_block_messages());
+        assert_eq!(settings.provider_block_delivery(), "show");
         assert!(!settings.quiet_startup());
         assert_eq!(settings.idle_eviction_minutes(), "90");
         assert_eq!(settings.mermaid_rendering_mode(), "streaming");
@@ -665,14 +681,21 @@ mod tests {
         settings.set_tree_filter_mode("all").expect("tree filter");
         settings.set_show_images(false).expect("show images");
         settings
-            .set_show_provider_block_messages(false)
-            .expect("provider block messages");
+            .set_provider_block_target_session("hr-session")
+            .expect("provider block target");
+        settings
+            .set_provider_block_delivery("route")
+            .expect("provider block delivery");
 
         assert_eq!(settings.theme().as_deref(), Some("dark"));
         assert_eq!(settings.idle_eviction_minutes(), "off");
         assert_eq!(settings.tree_filter_mode(), "all");
         assert!(!settings.show_images());
-        assert!(!settings.show_provider_block_messages());
+        assert_eq!(settings.provider_block_delivery(), "route");
+        assert_eq!(
+            settings.provider_block_target_session().as_deref(),
+            Some("hr-session")
+        );
 
         let content =
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
@@ -680,7 +703,8 @@ mod tests {
         assert_eq!(value["theme"], "dark");
         assert_eq!(value["idleEvictionMinutes"], "off");
         assert_eq!(value["treeFilterMode"], "all");
-        assert_eq!(value["showProviderBlockMessages"], false);
+        assert_eq!(value["providerBlockDelivery"], "route");
+        assert_eq!(value["providerBlockTargetSession"], "hr-session");
 
         // The web search provider defaults to Serper and persists the choice.
         assert_eq!(settings.web_search_provider(), "serper");

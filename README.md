@@ -33,7 +33,7 @@ Use inheritance to follow your global policy, or allow all models to remove the 
 
 ### Named workflows
 
-A workflow is a reusable job with its own model and child settings. Save a definition such as `.prime/workflows/review.json` in the session's working directory:
+A workflow is a reusable job with its own model and child settings. Save a project definition such as `.prime/workflows/review.json` in the session's working directory, or put a shared definition in `~/.prime/agent/workflows/` to make it available from every project:
 
 ```json
 {
@@ -64,7 +64,7 @@ print(result["summary"])
 
 Both field maps are required; use `{}` if there are no fields. Types are `string`, `integer`, `number`, `boolean`, `object`, `array`, and `null`. Optional means the key may be absent, not that a value of the wrong type is accepted. Missing required fields, undeclared keys and mistyped values are errors on input and output. The caller's model and session settings are unchanged. A workflow cannot expand the caller's allowed models.
 
-`await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected names take precedence over project files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
+`await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. User-global workflows under `~/.prime/agent/workflows/` are the fallback, so a project may override one for its own sessions. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected operator definitions take precedence over project files, and project files take precedence over user-global files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
 
 ### Inbox reminders
 

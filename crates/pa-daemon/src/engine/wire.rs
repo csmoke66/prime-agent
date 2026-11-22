@@ -122,6 +122,12 @@ pub enum EngineEvent {
     /// A durable custom message (wire `role: "custom"`): recorded into the
     /// session store, framed to clients as a `message_start` + `message_end` pair.
     CustomMessage(Value),
+    /// A sanitized provider rejection to route into an existing independent
+    /// session's inbox. The worker adds authoritative source-session metadata.
+    ProviderBlockRoute {
+        target: Option<String>,
+        diagnostic: String,
+    },
     /// A compaction run started (TS `compaction_start` wire event); the
     /// payload is the complete event. Emitted before the summarizer runs so
     /// attached clients can swap their loader to the compaction label.

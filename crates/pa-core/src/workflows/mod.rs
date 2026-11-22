@@ -1,7 +1,8 @@
-//! Named v1 workflows. Project definitions are editable and live in
-//! `.prime/workflows`. Operator definitions are read-only to this API and win
-//! even when a project defines the same name: trust comes from OS ownership
-//! and permissions, never from a field in an editable definition.
+//! Named v1 workflows. User-global definitions live under the configured agent
+//! directory's `workflows` folder, project definitions live in `.prime/workflows`,
+//! and operator definitions are read-only to this API. Precedence is operator,
+//! project, then user-global: trust comes from OS ownership and permissions,
+//! never from a field in an editable definition.
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -252,11 +253,16 @@ fn project_dir(cwd: &Path, create: bool) -> io::Result<Option<Directory>> {
     prime.open_dir(OsStr::new("workflows"), create)
 }
 
+fn user_dir(agent_dir: &Path) -> io::Result<Option<Directory>> {
+    Directory::project_root(agent_dir)?.open_dir(OsStr::new("workflows"), false)
+}
+
 fn load_from(
     cwd: &Path,
     name: &str,
     filename: &OsStr,
     operator: Option<&Directory>,
+    user: Option<&Directory>,
 ) -> Result<Workflow> {
     if let Some(dir) = operator {
         let definition = read_workflow(dir, filename)
@@ -272,19 +278,33 @@ fn load_from(
             return Ok(workflow);
         }
     }
+    if let Some(dir) = user {
+        let definition =
+            read_workflow(dir, filename).with_context(|| format!("load user workflow {name:?}"))?;
+        if let Some(workflow) = definition {
+            return Ok(workflow);
+        }
+    }
     bail!("workflow {name:?} not found")
 }
 
-/// Load a named workflow. A matching operator entry takes precedence even
-/// when it cannot be read or is invalid.
+/// Load a named workflow. Operator definitions take precedence, followed by
+/// project definitions and the user's `<agent dir>/workflows` registry.
 ///
 /// # Errors
 /// Returns an error for invalid names, missing or invalid definitions or
 /// instructions, or an inaccessible or unsafe storage location.
-pub fn load(cwd: &Path, name: &str) -> Result<Workflow> {
+pub fn load(cwd: &Path, agent_dir: &Path, name: &str) -> Result<Workflow> {
     let filename = definition_name(name)?;
     let operator = Directory::operator_root().context("open operator workflow directory")?;
-    load_from(cwd, name, OsStr::new(&filename), operator.as_ref())
+    let user = user_dir(agent_dir).context("open user workflow directory")?;
+    load_from(
+        cwd,
+        name,
+        OsStr::new(&filename),
+        operator.as_ref(),
+        user.as_ref(),
+    )
 }
 
 fn create_in(
@@ -333,10 +353,14 @@ pub fn create(cwd: &Path, name: &str, workflow: &Workflow) -> Result<()> {
     )
 }
 
-fn list_from(cwd: &Path, operator: Option<&Directory>) -> Result<Vec<String>> {
+fn list_from(
+    cwd: &Path,
+    operator: Option<&Directory>,
+    user: Option<&Directory>,
+) -> Result<Vec<String>> {
     let mut names = BTreeSet::new();
     let project = project_dir(cwd, false).context("open project workflow directory")?;
-    for dir in [operator, project.as_ref()].into_iter().flatten() {
+    for dir in [operator, project.as_ref(), user].into_iter().flatten() {
         dir.for_each_file(|filename| {
             let Some(filename) = filename.to_str() else {
                 return;
@@ -355,14 +379,15 @@ fn list_from(cwd: &Path, operator: Option<&Directory>) -> Result<Vec<String>> {
     Ok(names.into_iter().collect())
 }
 
-/// List sorted, unique names from both registries without reading their
-/// definitions. Use [`load`] to validate and resolve a listed workflow.
+/// List sorted, unique names from the operator, project, and user registries
+/// without reading their definitions. Use [`load`] to validate a definition.
 ///
 /// # Errors
 /// Returns an error if a registry cannot be safely opened or enumerated.
-pub fn list(cwd: &Path) -> Result<Vec<String>> {
+pub fn list(cwd: &Path, agent_dir: &Path) -> Result<Vec<String>> {
     let operator = Directory::operator_root().context("open operator workflow directory")?;
-    list_from(cwd, operator.as_ref())
+    let user = user_dir(agent_dir).context("open user workflow directory")?;
+    list_from(cwd, operator.as_ref(), user.as_ref())
 }
 
 #[cfg(test)]

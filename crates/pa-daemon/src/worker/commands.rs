@@ -42,13 +42,14 @@ impl Worker {
             "run_workflow" => self.start_workflow(payload),
             "list_workflows" => {
                 let cwd = self.core.lock().unwrap().cwd.clone();
+                let agent_dir = self.config.agent_dir.clone();
                 match tokio::task::spawn_blocking(move || -> anyhow::Result<Value> {
                     let cwd = std::path::Path::new(&cwd);
-                    let names = pa_core::workflows::list(cwd)?;
+                    let names = pa_core::workflows::list(cwd, &agent_dir)?;
                     let mut definitions = serde_json::Map::new();
                     let mut errors = serde_json::Map::new();
                     for name in &names {
-                        match pa_core::workflows::load(cwd, name) {
+                        match pa_core::workflows::load(cwd, &agent_dir, name) {
                             Ok(def) => {
                                 definitions.insert(name.clone(), serde_json::to_value(def)?);
                             }
@@ -208,7 +209,8 @@ impl Worker {
             Err(e) => return response_failure(None, COMMAND, &e.to_string(), None),
         };
         let cwd = self.core.lock().unwrap().cwd.clone();
-        let definition = match pa_core::workflows::load(std::path::Path::new(&cwd), name) {
+        let definition =
+            match pa_core::workflows::load(std::path::Path::new(&cwd), &self.config.agent_dir, name) {
             Ok(definition) => definition,
             Err(error) => {
                 return response_failure(None, COMMAND, &format!("{error:#}"), None);

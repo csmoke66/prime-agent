@@ -243,6 +243,80 @@ impl SessionUi {
                 None
             }
         };
+        let provider_block_targets = match self
+            .bounded_request(
+                Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
+                DaemonCommand::List {
+                    id: None,
+                    all: Some(true),
+                    cwd: None,
+                    session_dir: None,
+                    include_client_owned: Some(true),
+                    rest: Map::default(),
+                },
+            )
+            .await
+        {
+            Ok(data) => {
+                let own_session_id = state.get("sessionId").and_then(Value::as_str);
+                let own_active_id = state.get("activeSessionId").and_then(Value::as_str);
+                let mut choices = data
+                    .get("sessions")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter(|session| {
+                        session
+                            .get("runtimeKind")
+                            .and_then(Value::as_str)
+                            .is_none_or(|kind| kind == "top-level")
+                            && session
+                                .get("parentSessionId")
+                                .and_then(Value::as_str)
+                                .is_none()
+                    })
+                    .filter_map(|session| {
+                        let active = session.get("id").and_then(Value::as_str)?;
+                        let durable = session
+                            .get("sessionId")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .unwrap_or(active);
+                        if Some(active) == own_active_id || Some(durable) == own_session_id {
+                            return None;
+                        }
+                        let name = session
+                            .get("sessionName")
+                            .and_then(Value::as_str)
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or(durable);
+                        let cwd = session
+                            .get("cwd")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        let short = durable.chars().take(12).collect::<String>();
+                        Some(crate::settings_menu::ProviderBlockTargetChoice {
+                            selector: durable.to_owned(),
+                            label: if cwd.is_empty() {
+                                format!("{name} · {short}")
+                            } else {
+                                format!("{name} · {short} · {cwd}")
+                            },
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                choices.sort_by(|left, right| left.label.cmp(&right.label));
+                choices.dedup_by(|left, right| left.selector == right.selector);
+                choices
+            }
+            Err(error) => {
+                self.error_row(
+                    &format!("Cannot list provider-rejection target sessions: {error:#}"),
+                    view,
+                );
+                Vec::new()
+            }
+        };
         let mut values = crate::settings_menu::SettingsCurrentValues {
             autocompact: state
                 .get("autoCompactionEnabled")
@@ -285,6 +359,7 @@ impl SessionUi {
                 .is_some_and(pa_types::ai::supports_fast_mode),
             inbox_reminders,
             rlm_depth: rlm_depth.unwrap_or_else(|| "Unavailable".into()),
+            provider_block_targets,
             ..Default::default()
         };
         values.speed_display = self.speed_display_enabled;
@@ -303,7 +378,8 @@ impl SessionUi {
             values.skill_commands = settings.enable_skill_commands();
             values.builtin_skills = settings.enable_builtin_skills();
             values.harness_refinements = settings.harness_refinements();
-            values.show_provider_block_messages = settings.show_provider_block_messages();
+            values.provider_block_delivery = settings.provider_block_delivery();
+            values.provider_block_target_session = settings.provider_block_target_session();
             values.web_search_provider = settings.web_search_provider();
             values.hardware_cursor = settings.show_hardware_cursor();
             values.emoji_shortcodes = settings.emoji_shortcodes();
@@ -325,7 +401,8 @@ impl SessionUi {
             values.skill_commands = true;
             values.builtin_skills = true;
             values.harness_refinements = true;
-            values.show_provider_block_messages = true;
+            values.provider_block_delivery = "show".to_string();
+            values.provider_block_target_session = None;
             values.emoji_shortcodes = true;
             values.web_search_provider = "serper".to_string();
             values.idle_eviction_minutes = "90".to_string();
@@ -460,6 +537,31 @@ impl SessionUi {
                     }
                 }
             }
+            crate::settings_menu::SettingsMenuAction::SaveProviderBlockTarget {
+                selector,
+                label,
+            } => {
+                let Some(settings) = &self.client_settings else {
+                    return Ok(());
+                };
+                match settings.set_provider_block_target_session(&selector) {
+                    Ok(()) => {
+                        if let Some(menu) = &mut view.settings_menu {
+                            menu.set_row_value("provider-block-target", &label);
+                        }
+                        self.note(
+                            &format!("Provider rejection reports will route to {label}."),
+                            view,
+                        );
+                    }
+                    Err(error) => {
+                        self.error_row(
+                            &format!("Cannot save provider-rejection target: {error:#}"),
+                            view,
+                        );
+                    }
+                }
+            }
         }
         self.dirty = true;
         Ok(())
@@ -472,8 +574,23 @@ impl SessionUi {
             "speed-display" => self.set_speed_display(value == "true", view),
             "autonomous" => {
                 view.settings_menu = None;
-                if let Err(err) = self.send_prompt(&format!("/autonomous {value}"), super::prompt::SubmitBehavior::Steer, view) {
-                    self.error_row(&err.to_string(), view);
+                if let Err(error) = self.send_prompt(
+                    &format!("/autonomous {value}"),
+                    super::prompt::SubmitBehavior::Steer,
+                    view,
+                ) {
+                    self.error_row(&error.to_string(), view);
+                }
+            }
+            "provider-block-delivery" => {
+                let Some(settings) = &self.client_settings else {
+                    return;
+                };
+                if let Err(error) = settings.set_provider_block_delivery(value) {
+                    self.error_row(
+                        &format!("Cannot save provider-rejection delivery: {error:#}"),
+                        view,
+                    );
                 }
             }
             "trace-sharing" => {
@@ -545,13 +662,6 @@ impl SessionUi {
                 }
                 self.show_images = value == "true";
                 view.show_images = value == "true";
-            }
-            "provider-block-messages" => {
-                self.persist_bool_setting(
-                    |settings, show| settings.set_show_provider_block_messages(show),
-                    value,
-                    view,
-                );
             }
             "auto-resize-images" => {
                 self.persist_bool_setting(

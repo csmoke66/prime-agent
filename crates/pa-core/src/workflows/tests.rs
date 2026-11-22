@@ -40,7 +40,7 @@ fn create_project(cwd: &Path, name: &str, definition: &Workflow) -> Result<()> {
 }
 
 fn load_project(cwd: &Path, name: &str) -> Result<Workflow> {
-    load_from(cwd, name, OsStr::new(&definition_name(name)?), None)
+    load_from(cwd, name, OsStr::new(&definition_name(name)?), None, None)
 }
 
 fn write_definition(dir: &Path, name: &str, definition: &serde_json::Value) {
@@ -53,7 +53,7 @@ fn creates_lists_and_loads_inline_without_overwriting() {
     let project = tempdir().unwrap();
     let cwd = project.path();
     let original = workflow("Review the change.");
-    assert!(list_from(cwd, None).unwrap().is_empty());
+    assert!(list_from(cwd, None, None).unwrap().is_empty());
     assert!(!project_path(cwd).exists());
     create_project(cwd, "review", &original).unwrap();
     assert!(create_project(cwd, "review", &workflow("replacement")).is_err());
@@ -64,7 +64,7 @@ fn creates_lists_and_loads_inline_without_overwriting() {
         json!(["openai-codex/gpt-6.2-sol"])
     );
     assert_eq!(load_project(cwd, "review").unwrap(), original);
-    assert_eq!(list_from(cwd, None).unwrap(), ["review"]);
+    assert_eq!(list_from(cwd, None, None).unwrap(), ["review"]);
     assert_eq!(stdfs::read_dir(project_path(cwd)).unwrap().count(), 1);
 }
 
@@ -90,7 +90,7 @@ fn rejects_nonportable_names_before_creating_directories() {
             create(cwd, name, &workflow("Instructions")).is_err(),
             "{name:?}"
         );
-        assert!(load(cwd, name).is_err(), "{name:?}");
+        assert!(load(cwd, cwd, name).is_err(), "{name:?}");
     }
     assert!(!project_path(cwd).exists());
 }
@@ -134,6 +134,47 @@ fn validates_create_and_disk_schema() {
 }
 
 #[test]
+fn user_registry_is_global_fallback_and_project_definitions_override_it() {
+    let project = tempdir().unwrap();
+    let user = tempdir().unwrap();
+    let user_registry = user.path().join("workflows");
+    write_definition(
+        &user_registry,
+        "review",
+        &serde_json::to_value(workflow("user")).unwrap(),
+    );
+    write_definition(
+        &user_registry,
+        "global-only",
+        &serde_json::to_value(workflow("global")).unwrap(),
+    );
+    write_definition(
+        &project_path(project.path()),
+        "review",
+        &serde_json::to_value(workflow("project")).unwrap(),
+    );
+    let user = Directory::project_root(&user_registry).unwrap();
+    let filename = OsStr::new("review.json");
+    assert_eq!(
+        load_from(project.path(), "review", filename, None, Some(&user))
+            .unwrap()
+            .prompt,
+        "project"
+    );
+    assert_eq!(
+        list_from(project.path(), None, Some(&user)).unwrap(),
+        ["global-only", "review"]
+    );
+    stdfs::remove_file(project_path(project.path()).join(filename)).unwrap();
+    assert_eq!(
+        load_from(project.path(), "review", filename, None, Some(&user))
+            .unwrap()
+            .prompt,
+        "user"
+    );
+}
+
+#[test]
 fn operator_precedence_and_reservation_never_depend_on_definition_data() {
     let project = tempdir().unwrap();
     let cwd = project.path();
@@ -162,17 +203,17 @@ fn operator_precedence_and_reservation_never_depend_on_definition_data() {
     );
     let filename = OsStr::new("review.json");
     assert_eq!(
-        load_from(cwd, "review", filename, Some(&operator))
+        load_from(cwd, "review", filename, Some(&operator), None)
             .unwrap()
             .prompt,
         "from operator"
     );
     assert_eq!(
-        list_from(cwd, Some(&operator)).unwrap(),
+        list_from(cwd, Some(&operator), None).unwrap(),
         ["additional", "review"]
     );
     stdfs::write(admin.path().join("review.json"), "not json").unwrap();
-    assert!(load_from(cwd, "review", filename, Some(&operator)).is_err());
+    assert!(load_from(cwd, "review", filename, Some(&operator), None).is_err());
     stdfs::remove_file(registry.join(filename)).unwrap();
     assert!(create_in(
         cwd,

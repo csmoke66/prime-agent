@@ -3,9 +3,9 @@
 use super::{
     checkpoint_queue_recovery, compact_action_label, create_daemon_event_meta,
     emit_refinement_event_for_session, emit_refinement_row, gather_delivery_batch, json, oneshot,
-    session_snapshot, AssistantSnapshot, DaemonOutbound, EngineEvent, EventPump, Lane, Map, Notify,
-    OutboundFrame, PromptRequest, QueueCheckpoint, QueuedItem, Result, SessionActionSnapshot,
-    SessionCore, SessionEngine, TurnSettle, Value, WorkerRecoveryJournal,
+    persist_custom_row, session_snapshot, AssistantSnapshot, DaemonOutbound, EngineEvent, EventPump,
+    Lane, Map, Notify, OutboundFrame, PromptRequest, QueueCheckpoint, QueuedItem, Result,
+    SessionActionSnapshot, SessionCore, SessionEngine, TurnSettle, Value, WorkerRecoveryJournal,
     ABORTED_TURN_SETTLE_ERROR,
 };
 
@@ -427,6 +427,11 @@ impl TurnRunner {
         // The accepted prefix must survive an engine panic after persistence.
         let accepted_prefix = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let accepted_prefix_seen = Arc::clone(&accepted_prefix);
+        let provider_route_runtime = tokio::runtime::Handle::current();
+        let provider_route_link = std::sync::Arc::clone(&self.passivation.link);
+        let provider_route_core = Arc::clone(&core);
+        let provider_route_events = Arc::clone(&events);
+        let provider_route_source = self.active_session_id.clone();
         let turn = tokio::task::spawn_blocking(move || {
             // The engine's own terminal `turn_end` frame keeps the
             // trailing `Done` fallback silent.
@@ -446,6 +451,18 @@ impl TurnRunner {
             // A failed run's `agent_end` frame, held for the frame after it.
             let mut held_run_end: Option<Value> = None;
             let mut emit = |mut event: EngineEvent| -> bool {
+                if let EngineEvent::ProviderBlockRoute { target, diagnostic } = &event {
+                    let link = std::sync::Arc::clone(&provider_route_link);
+                    let core = Arc::clone(&provider_route_core);
+                    let events = Arc::clone(&provider_route_events);
+                    let source = provider_route_source.clone();
+                    let target = target.clone();
+                    let diagnostic = diagnostic.clone();
+                    provider_route_runtime.spawn(async move {
+                        route_provider_block(link, core, events, source, target, diagnostic).await;
+                    });
+                    return true;
+                }
                 // A cancelled turn stops consuming its own events, except the frames
                 // TS still broadcasts for an interrupted turn: aborted row/tool settle
                 // frames and the trailing `Done` (a dropped Done hung `prompt_and_wait`
@@ -914,6 +931,7 @@ impl TurnRunner {
                         "aborted": true,
                     })],
                     EngineEvent::ModelChange(_)
+                    | EngineEvent::ProviderBlockRoute { .. }
                     | EngineEvent::Done(Ok(()) | Err(_))
                     | EngineEvent::DoneAborted => Vec::new(),
                     EngineEvent::AutoRetryStart {
@@ -1350,4 +1368,78 @@ fn keep_recent_tokens(cwd: &str, agent_dir: &std::path::Path) -> u64 {
         .unwrap_or_default()
         .keep_recent_tokens
         .unwrap_or(pa_core::session_engine::compaction::DEFAULT_KEEP_RECENT_TOKENS)
+}
+
+async fn route_provider_block(
+    link: std::sync::Arc<crate::supervisor_link::SupervisorLink>,
+    core: Arc<Mutex<SessionCore>>,
+    events: Arc<EventPump>,
+    source_active_session_id: String,
+    target: Option<String>,
+    diagnostic: String,
+) {
+    let (generation, source) = {
+        let core = core.lock().unwrap();
+        let store = core.store.as_ref();
+        (
+            core.generation.clone(),
+            json!({
+                "activeSessionId": source_active_session_id.clone(),
+                "sessionId": store.map(crate::session_store::SessionFile::session_id),
+                "sessionName": store.and_then(crate::session_store::SessionFile::session_name),
+                "sessionFile": store.map(|store| store.path.to_string_lossy().into_owned()),
+                "cwd": core.cwd.clone(),
+            }),
+        )
+    };
+    let report = json!({
+        "type": "provider-rejection-report",
+        "diagnostic": diagnostic,
+        "sourceSession": source,
+        "notice": "The provider declined a step without supplying a usable reason. This may be a false positive and is not, by itself, evidence that the originating task is disallowed.",
+        "requestedAction": "Review this report independently. Use the source session identity to inspect its saved context if needed; do not retry the rejected request verbatim.",
+    });
+    let result = match target.as_deref() {
+        Some(target) if target != source_active_session_id => {
+            link.request_success(
+                json!({
+                    "type": "send_message",
+                    "targetActiveSessionId": target,
+                    "message": serde_json::to_string_pretty(&report).unwrap_or_else(|_| report.to_string()),
+                    "fromActiveSessionId": source_active_session_id,
+                    "agentOrigin": true,
+                }),
+                std::time::Duration::from_secs(30),
+            )
+            .await
+            .map(|_| format!("Provider rejection report delivered to session {target}."))
+        }
+        Some(_) => Err(anyhow::anyhow!(
+            "Provider rejection report was not delivered because the configured target is this session."
+        )),
+        None => Err(anyhow::anyhow!(
+            "Provider rejection report was not delivered because no target session is configured."
+        )),
+    };
+    let (content, severity) = match result {
+        Ok(message) => (message, "info"),
+        Err(error) => (format!("{error:#}"), "error"),
+    };
+    let row = json!({
+        "role": "custom",
+        "customType": "provider-block-route-status",
+        "content": content,
+        "display": true,
+        "timestamp": crate::util::now_ms(),
+        "details": {
+            "severity": severity,
+            "targetSession": target,
+        },
+    });
+    let mut core = core.lock().unwrap();
+    if core.generation != generation {
+        return;
+    }
+    persist_custom_row(&mut core, &row);
+    super::broadcast_custom_row_locked(&mut core, &events, &row);
 }

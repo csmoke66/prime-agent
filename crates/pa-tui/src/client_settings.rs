@@ -74,16 +74,27 @@ pub trait ClientSettings: Send + Sync {
     fn set_harness_refinements(&self, _enabled: bool) -> Result<()> {
         anyhow::bail!("Harness refinement settings are unavailable")
     }
-    /// Show sanitized provider-block notices and recovery steers in chat.
-    fn show_provider_block_messages(&self) -> bool {
-        true
+    /// Sanitized provider-rejection delivery mode: show, silence, or route.
+    fn provider_block_delivery(&self) -> String {
+        "show".into()
     }
-    /// Persist provider-block notice visibility.
+    /// Persist the provider-rejection delivery mode.
     ///
     /// # Errors
-    /// Returns an error if the settings store fails or is unavailable.
-    fn set_show_provider_block_messages(&self, _show: bool) -> Result<()> {
-        anyhow::bail!("Provider-block notice settings are unavailable")
+    /// Returns an error if the settings store fails or the mode is invalid.
+    fn set_provider_block_delivery(&self, _mode: &str) -> Result<()> {
+        anyhow::bail!("Provider-rejection delivery settings are unavailable")
+    }
+    /// Durable selector of the existing session receiving routed reports.
+    fn provider_block_target_session(&self) -> Option<String> {
+        None
+    }
+    /// Persist the existing target session selector.
+    ///
+    /// # Errors
+    /// Returns an error if the settings store fails or the selector is invalid.
+    fn set_provider_block_target_session(&self, _target: &str) -> Result<()> {
+        anyhow::bail!("Provider-rejection target settings are unavailable")
     }
 
     /// Read the non-consuming inbox reminder mode for the attached session.

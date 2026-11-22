@@ -5,7 +5,7 @@
 use anyhow::{anyhow, Result};
 
 use super::manager::SettingsManager;
-use super::types::WebSearchProvider;
+use super::types::{ProviderBlockDelivery, WebSearchProvider};
 
 impl SettingsManager {
     /// Global preference controlling refinement creation and context loading (default on).
@@ -23,22 +23,57 @@ impl SettingsManager {
         self.global_mut().harness_refinements = Some(enabled);
         self.save_global_scope(&["harnessRefinements"])
     }
-    /// Whether sanitized provider-block recovery rows appear in chat (default on).
-    /// Recovery still runs when this is disabled.
+    /// Delivery policy for sanitized provider-rejection notices.
     #[must_use]
-    pub fn get_show_provider_block_messages(&self) -> bool {
+    pub fn get_provider_block_delivery(&self) -> ProviderBlockDelivery {
         self.global_settings()
-            .show_provider_block_messages
-            .unwrap_or(true)
+            .provider_block_delivery
+            .or_else(|| {
+                self.global_settings()
+                    .extra
+                    .get("showProviderBlockMessages")
+                    .and_then(serde_json::Value::as_bool)
+                    .map(|show| {
+                        if show {
+                            ProviderBlockDelivery::Show
+                        } else {
+                            ProviderBlockDelivery::Silence
+                        }
+                    })
+            })
+            .unwrap_or_default()
     }
 
-    /// Persist provider-block notice visibility to the global settings scope.
+    /// Persist provider-rejection delivery and remove the retired boolean key.
     ///
     /// # Errors
     /// Returns an error when the global scope cannot be saved.
-    pub fn set_show_provider_block_messages(&mut self, show: bool) -> Result<()> {
-        self.global_mut().show_provider_block_messages = Some(show);
-        self.save_global_scope(&["showProviderBlockMessages"])
+    pub fn set_provider_block_delivery(&mut self, mode: ProviderBlockDelivery) -> Result<()> {
+        self.global_mut().provider_block_delivery = Some(mode);
+        self.global_mut().extra.remove("showProviderBlockMessages");
+        self.save_global_scope(&["providerBlockDelivery", "showProviderBlockMessages"])
+    }
+
+    #[must_use]
+    pub fn get_provider_block_target_session(&self) -> Option<&str> {
+        self.global_settings()
+            .provider_block_target_session
+            .as_deref()
+            .map(str::trim)
+            .filter(|target| !target.is_empty())
+    }
+
+    /// Persist the durable selector of the independent session receiving reports.
+    ///
+    /// # Errors
+    /// Returns an error when the selector is blank or the global scope cannot be saved.
+    pub fn set_provider_block_target_session(&mut self, target: String) -> Result<()> {
+        let target = target.trim();
+        if target.is_empty() {
+            return Err(anyhow!("provider-block target session cannot be blank"));
+        }
+        self.global_mut().provider_block_target_session = Some(target.to_owned());
+        self.save_global_scope(&["providerBlockTargetSession"])
     }
 
     /// The service the bundled websearch skill queries (default Serper). Global only, like the

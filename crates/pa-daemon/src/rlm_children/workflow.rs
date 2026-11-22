@@ -278,7 +278,7 @@ fn prepare(
             .as_deref()
             .context("workflow requires a project directory")?,
     );
-    let workflow = workflows::load(cwd, name)?;
+    let workflow = workflows::load(cwd, &host.agent_dir, name)?;
     let mut input = WorkflowInput::parse(&workflow, data)?;
     if let Some(context) = workflow
         .context

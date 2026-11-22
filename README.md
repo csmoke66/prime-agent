@@ -85,8 +85,8 @@ Specific handling settings for railguards instead of the typical fully blocking 
 3. A tertiary option that will deliver information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
 
 Default workflows are provided with the repository to help handle false positive railguards violations:
-1. `railguard-context-repair.json` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
-2. `railguard-memory-repair.json` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
+1. `railguard-context-repair` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
+2. `railguard-memory-repair` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
 
 ## Install
 

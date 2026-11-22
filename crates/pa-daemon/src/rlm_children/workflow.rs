@@ -290,6 +290,23 @@ fn prepare(
             context.max_characters.unwrap_or(120_000),
         )?);
     }
+    if let Some(memory) = &workflow.harness_memory {
+        let scope = workflow_memory_scope(&input.data, &memory.scope_input_field)?;
+        let dir = match scope {
+            pa_core::refinement::HarnessScope::Local => {
+                pa_core::session_engine::harness_digest::local_harness_dir_for_log(Path::new(parent))
+                    .context("workflow requires a local harness directory")?
+            }
+            pa_core::refinement::HarnessScope::Global => {
+                pa_core::refinement::get_global_harness_state_dir(&host.agent_dir)
+            }
+        };
+        input.harness_memory = Some(json!({
+            "scope": scope,
+            "memories": pa_core::refinement::read_workflow_memories(&dir, scope)?,
+        }));
+    }
+
     let input_json = serde_json::to_string(&input)?;
     let Workflow {
         model,
@@ -398,6 +415,17 @@ fn parent_context(path: &Path, max_characters: usize) -> Result<Value> {
         "truncated": truncated,
         "messages": messages,
     }))
+}
+
+pub(crate) fn workflow_memory_scope(
+    data: &Map<String, Value>,
+    field: &str,
+) -> Result<pa_core::refinement::HarnessScope> {
+    match data.get(field).and_then(Value::as_str) {
+        Some("local") => Ok(pa_core::refinement::HarnessScope::Local),
+        Some("global") => Ok(pa_core::refinement::HarnessScope::Global),
+        _ => bail!("workflow memory scope must be \"local\" or \"global\""),
+    }
 }
 
 fn workflow_effort(
@@ -520,9 +548,19 @@ mod tests {
             "effort": "off",
             "subagents": {"allowedModels": ["workflow-test/child"], "effort": "off"},
             "prompt": "Run the configured operation.",
-            "inputFields": {"query": {"type": "string", "required": true}},
+            "inputFields": {
+                "query": {"type": "string", "required": true},
+                "scope": {"type": "string", "required": true, "choices": ["local", "global"]}
+            },
             "context": {"includeParentSession": true, "maxCharacters": 4096},
-            "outputFields": {"ok": {"type": "boolean", "required": true}},
+            "harnessMemory": {
+                "scopeInputField": "scope",
+                "interactiveApplyOutputField": "memories"
+            },
+            "outputFields": {
+                "ok": {"type": "boolean", "required": true},
+                "memories": {"type": "array", "required": true}
+            },
         })
     }
 
@@ -619,11 +657,12 @@ mod tests {
                         assert!(prompt.contains(r#""query":"hello""#));
                         assert!(prompt.contains(r#""parentContext":"#));
                         assert!(prompt.contains("captured parent context"));
+                        assert!(prompt.contains(r#""harnessMemory":{"scope":"local","memories":[]}"#));
                         None
                     }
                     "wait_for_idle" => {
                         assert_eq!(command["waitForRlmQuiescence"], true);
-                        std::fs::write(&file, assistant(r#"{"ok":true}"#, "stop").to_string())
+                        std::fs::write(&file, assistant(r#"{"ok":true,"memories":[]}"#, "stop").to_string())
                             .unwrap();
                         None
                     }
@@ -641,13 +680,13 @@ mod tests {
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            host.run_workflow("bound-test", json!({"query":"hello"})),
+            host.run_workflow("bound-test", json!({"query":"hello","scope":"local"})),
         )
         .await
         .unwrap()
         .unwrap();
         server.await.unwrap();
-        assert_eq!(result, json!({"ok":true}));
+        assert_eq!(result, json!({"ok":true,"memories":[]}));
         assert_eq!(std::fs::read(parent).unwrap(), parent_bytes);
         assert!(!host.has_active_workflows());
         assert!(host.child_identities().await.is_empty());

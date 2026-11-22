@@ -215,28 +215,94 @@ impl Worker {
             }
         };
         let apply_context_field = definition.interactive_apply_context_field;
-        if apply_context_field.is_some() {
+        let input = payload["input"].clone();
+        let memory_apply = match definition.harness_memory {
+            Some(memory) => {
+                let Some(data) = input.as_object() else {
+                    return response_failure(None, COMMAND, "Workflow input must be an object", None);
+                };
+                let scope = match crate::rlm_children::workflow_memory_scope(
+                    data,
+                    &memory.scope_input_field,
+                ) {
+                    Ok(scope) => scope,
+                    Err(error) => {
+                        return response_failure(None, COMMAND, &error.to_string(), None);
+                    }
+                };
+                let dir = match scope {
+                    pa_core::refinement::HarnessScope::Global => {
+                        pa_core::refinement::get_global_harness_state_dir(&self.config.agent_dir)
+                    }
+                    pa_core::refinement::HarnessScope::Local => {
+                        let core = self.core.lock().unwrap();
+                        let Some(log) = core.store.as_ref().map(|store| store.path.as_path()) else {
+                            return response_failure(
+                                None,
+                                COMMAND,
+                                "A saved session is required to rewrite local memory",
+                                None,
+                            );
+                        };
+                        let Some(dir) =
+                            pa_core::session_engine::harness_digest::local_harness_dir_for_log(log)
+                        else {
+                            return response_failure(
+                                None,
+                                COMMAND,
+                                "Cannot resolve the local harness directory",
+                                None,
+                            );
+                        };
+                        dir
+                    }
+                };
+                Some((memory.interactive_apply_output_field, dir, scope))
+            }
+            None => None,
+        };
+        let applies_state = apply_context_field.is_some() || memory_apply.is_some();
+        if applies_state {
             let mut core = self.core.lock().unwrap();
             if core.busy || core.compacting {
                 return response_failure(
                     None,
                     COMMAND,
-                    "Wait for the session to become idle before running a context-rewrite workflow",
+                    "Wait for the session to become idle before running a state-rewrite workflow",
                     None,
                 );
             }
-            // Reuse the compaction admission gate while the isolated reviewer runs:
-            // no parent turn may start against the context that is being replaced.
+            // Reuse the compaction admission gate: no parent turn may start
+            // while an isolated reviewer is preparing a replacement.
             core.compacting = true;
         }
-        let (name, input) = (name.to_owned(), payload["input"].clone());
+        let name = name.to_owned();
         let core = self.core.clone();
         let events = self.events.clone();
         let engine = std::sync::Arc::clone(&self.engine);
         let idle_notify = std::sync::Arc::clone(&self.idle_notify);
         let session = core.lock().unwrap().generation.clone();
         tokio::spawn(async move {
-            let result = host.run_workflow(&name, input).await;
+            let mut result = host.run_workflow(&name, input).await;
+            let mut memory_backup = None;
+            if let (Ok(output), Some((field, dir, scope))) = (&result, &memory_apply) {
+                let applied = output
+                    .get(field)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("workflow memory output field {field:?} is missing")
+                    })
+                    .and_then(|memories| {
+                        pa_core::refinement::apply_workflow_memories(&dir, *scope, memories)
+                    });
+                match applied {
+                    Ok(backup) => memory_backup = backup,
+                    Err(error) => {
+                        result = Err(anyhow::anyhow!(
+                            "apply workflow memory rewrite: {error:#}"
+                        ));
+                    }
+                }
+            }
             let (mut text, mut details) = match &result {
                 Ok(output) => (
                     format!("Workflow {name}\n{output:#}"),
@@ -247,6 +313,10 @@ impl Worker {
                     json!({"workflow":name,"severity":"error","error":format!("{error:#}")}),
                 ),
             };
+            if let Some(backup) = memory_backup {
+                details["memoryApplied"] = json!(true);
+                details["memoryBackup"] = json!(backup);
+            }
             let summary = result.as_ref().ok().and_then(|output| {
                 apply_context_field
                     .as_deref()
@@ -292,7 +362,7 @@ impl Worker {
                     eprintln!("pa-daemon: workflow context rebuild failed: {error}");
                 }
             }
-            if apply_context_field.is_some() {
+            if applies_state {
                 let mut core = core.lock().unwrap();
                 if core.generation == session {
                     core.compacting = false;

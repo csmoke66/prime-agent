@@ -30,6 +30,8 @@ struct Field {
     kind: FieldType,
     required: bool,
     description: Option<String>,
+    #[serde(default)]
+    choices: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -189,10 +191,16 @@ impl WorkflowForm {
                 inputs: definition
                     .input_fields
                     .into_iter()
-                    .map(|(name, field)| Input {
-                        name,
-                        field,
-                        editor: SearchInput::new(),
+                    .map(|(name, field)| {
+                        let mut editor = SearchInput::new();
+                        if let Some(first) = field.choices.as_ref().and_then(|choices| choices.first()) {
+                            editor.prefill(&choice_text(first));
+                        }
+                        Input {
+                            name,
+                            field,
+                            editor,
+                        }
                     })
                     .collect(),
             },
@@ -211,6 +219,9 @@ impl WorkflowForm {
     pub(crate) fn paste(&mut self, text: &str) {
         if let Stage::Edit { inputs, .. } = &mut self.stage {
             if let Some(input) = inputs.get_mut(self.focus) {
+                if input.field.choices.is_some() {
+                    return;
+                }
                 if text.contains(['\n', '\r']) {
                     if matches!(input.field.kind, FieldType::String)
                         && input.editor.value().is_empty()
@@ -248,6 +259,13 @@ impl WorkflowForm {
                 continue;
             }
             let value = field.kind.parse(text, name).map_err(|err| (index, err))?;
+            if field
+                .choices
+                .as_ref()
+                .is_some_and(|choices| !choices.contains(&value))
+            {
+                return Err((index, format!("{name:?}: choose one of the listed values")));
+            }
             values.insert(name.clone(), value);
         }
         Ok(Value::Object(values))
@@ -274,6 +292,19 @@ impl WorkflowForm {
                     if let Some(input) = inputs.get_mut(self.focus) {
                         if key == "enter" {
                             self.focus += 1;
+                        } else if let Some(choices) = &input.field.choices {
+                            if matches!(key, "left" | "right" | "space") {
+                                let current = choices
+                                    .iter()
+                                    .position(|value| choice_text(value) == input.editor.value())
+                                    .unwrap_or(0);
+                                let next = if key == "left" {
+                                    (current + choices.len() - 1) % choices.len()
+                                } else {
+                                    (current + 1) % choices.len()
+                                };
+                                input.editor.prefill(&choice_text(&choices[next]));
+                            }
                         } else {
                             input.editor.handle_key(key, kb);
                         }
@@ -370,14 +401,18 @@ impl WorkflowForm {
                                 width,
                                 input.field.description.as_deref(),
                             );
-                            lines.extend(search_field_lines(
-                                theme,
-                                width,
-                                input.editor.value(),
-                                input.editor.cursor(),
-                                true,
-                                input.field.kind.placeholder(),
-                            ));
+                            if input.field.choices.is_some() {
+                                lines.push(hint_row(theme, width, "←/→ or Space: choose"));
+                            } else {
+                                lines.extend(search_field_lines(
+                                    theme,
+                                    width,
+                                    input.editor.value(),
+                                    input.editor.cursor(),
+                                    true,
+                                    input.field.kind.placeholder(),
+                                ));
+                            }
                         }
                     }
                 }
@@ -393,6 +428,13 @@ impl WorkflowForm {
         }
         lines
     }
+}
+
+fn choice_text(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| value.to_string())
 }
 
 fn push_description(lines: &mut Vec<Line>, theme: &Theme, width: usize, description: Option<&str>) {
@@ -506,6 +548,29 @@ mod tests {
             WorkflowForm::open("broken", response).unwrap_err(),
             r#"Cannot load workflow "broken": missing prompt"#
         );
+    }
+
+    #[test]
+    fn choice_fields_are_prefilled_and_cycle_without_free_text() {
+        let mut form = WorkflowForm::open(
+            "review",
+            catalog(json!({
+                "scope": {
+                    "type": "string",
+                    "required": true,
+                    "choices": ["local", "global"]
+                }
+            })),
+        )
+        .unwrap();
+        let kb = KeybindingsManager::new();
+        form.paste("invalid");
+        form.handle_key("right", &kb);
+        form.handle_key("enter", &kb);
+        let WorkflowFormAction::Submit { input, .. } = form.handle_key("enter", &kb) else {
+            panic!("form did not submit: {form:?}")
+        };
+        assert_eq!(input, json!({"scope": "global"}));
     }
 
     #[test]

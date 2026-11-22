@@ -13,6 +13,8 @@ pub struct WorkflowInput<'a> {
     pub output_fields: &'a Fields,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_context: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness_memory: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -23,6 +25,8 @@ pub struct Field {
     pub required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -47,6 +51,7 @@ impl<'a> WorkflowInput<'a> {
             data,
             output_fields: &workflow.output_fields,
             parent_context: None,
+            harness_memory: None,
         })
     }
 }
@@ -63,6 +68,18 @@ pub fn parse_output(fields: &Fields, text: &str) -> Result<Value> {
     Ok(output)
 }
 
+pub(crate) fn value_matches_type(kind: FieldType, value: &Value) -> bool {
+    match kind {
+        FieldType::String => value.is_string(),
+        FieldType::Number => value.is_number(),
+        FieldType::Integer => value.is_i64() || value.is_u64(),
+        FieldType::Boolean => value.is_boolean(),
+        FieldType::Array => value.is_array(),
+        FieldType::Object => value.is_object(),
+        FieldType::Null => value.is_null(),
+    }
+}
+
 fn validate_fields(side: &str, fields: &Fields, obj: &Map<String, Value>) -> Result<()> {
     for (key, field) in fields {
         let Some(value) = obj.get(key) else {
@@ -72,20 +89,18 @@ fn validate_fields(side: &str, fields: &Fields, obj: &Map<String, Value>) -> Res
             );
             continue;
         };
-        let valid = match field.kind {
-            FieldType::String => value.is_string(),
-            FieldType::Number => value.is_number(),
-            FieldType::Integer => value.is_i64() || value.is_u64(),
-            FieldType::Boolean => value.is_boolean(),
-            FieldType::Array => value.is_array(),
-            FieldType::Object => value.is_object(),
-            FieldType::Null => value.is_null(),
-        };
+        let valid = value_matches_type(field.kind, value);
         ensure!(
             valid,
             "workflow {side} field {key:?} has the wrong type (expected {:?})",
             field.kind
         );
+        if let Some(choices) = &field.choices {
+            ensure!(
+                choices.contains(value),
+                "workflow {side} field {key:?} is not one of its declared choices"
+            );
+        }
     }
     if let Some(extra) = obj.keys().find(|k| !fields.contains_key(*k)) {
         anyhow::bail!("workflow {side} contains undeclared field {extra:?}");

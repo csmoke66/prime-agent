@@ -332,6 +332,139 @@ pub fn read_harness_entries(
     Ok(rows)
 }
 
+/// Stable memory record exposed to a workflow and accepted back for replacement.
+/// Identity and version are concurrency guards; only title, content, and path are editable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowMemory {
+    pub scope: HarnessScope,
+    pub id: String,
+    pub version: u64,
+    pub title: String,
+    pub content: String,
+    pub path: String,
+}
+
+/// Read every memory in one harness store using the strict browser reader.
+///
+/// # Errors
+/// Returns an error when the state document or a memory row is malformed.
+pub fn read_workflow_memories(
+    harness_state_dir: &Path,
+    scope: HarnessScope,
+) -> anyhow::Result<Vec<WorkflowMemory>> {
+    read_harness_entries(harness_state_dir, scope)?
+        .into_iter()
+        .filter(|entry| entry.get("kind").and_then(Value::as_str) == Some("memory"))
+        .map(|entry| {
+            let entry: HarnessEntry =
+                serde_json::from_value(entry).context("invalid workflow memory snapshot")?;
+            Ok(WorkflowMemory {
+                scope,
+                id: entry.id,
+                version: entry.version,
+                title: entry.title,
+                content: entry.content,
+                path: entry.path,
+            })
+        })
+        .collect()
+}
+
+/// Replace every memory in one selected store, preserving all other harness data.
+/// The returned backup is the exact pre-rewrite state file.
+///
+/// # Errors
+/// Rejects missing, added, duplicated, stale, or cross-scope records before writing.
+pub fn apply_workflow_memories(
+    harness_state_dir: &Path,
+    scope: HarnessScope,
+    output: &Value,
+) -> anyhow::Result<Option<PathBuf>> {
+    let rewrites: Vec<WorkflowMemory> = serde_json::from_value(output.clone())
+        .context("workflow memory output must be an array of memory records")?;
+    let path = resolved_state_file(&get_harness_state_path(harness_state_dir));
+    let lock = match lock_harness_state_file(&path) {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && rewrites.is_empty() => {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot lock harness state at {}", path.display()));
+        }
+    };
+    let mut document = read_harness_document(&path)?
+        .with_context(|| format!("harness state disappeared at {}", path.display()))?;
+    let records = harness_entries_object(&mut document, &path)?
+        .get_mut("memory")
+        .context("malformed harness state: missing memory entries")?
+        .as_object_mut()
+        .context("malformed harness state: memory entries must be an object")?;
+    anyhow::ensure!(
+        rewrites.len() == records.len(),
+        "workflow memory output must contain every selected memory exactly once"
+    );
+    let expected_scope = match scope {
+        HarnessScope::Local => "local",
+        HarnessScope::Global => "global",
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for rewrite in &rewrites {
+        anyhow::ensure!(
+            rewrite.scope == scope && seen.insert(rewrite.id.as_str()),
+            "workflow memory output contains a duplicate or wrong-scope record"
+        );
+        anyhow::ensure!(
+            !rewrite.title.trim().is_empty()
+                && !rewrite.content.trim().is_empty()
+                && !rewrite.path.trim().is_empty(),
+            "workflow memory title, content, and path cannot be blank"
+        );
+        let current = records
+            .get(&rewrite.id)
+            .and_then(Value::as_object)
+            .with_context(|| format!("workflow memory {:?} no longer exists", rewrite.id))?;
+        anyhow::ensure!(
+            current.get("version").and_then(Value::as_u64) == Some(rewrite.version)
+                && current.get("id").and_then(Value::as_str) == Some(rewrite.id.as_str())
+                && current.get("kind").and_then(Value::as_str) == Some("memory")
+                && current
+                    .get("scope")
+                    .and_then(Value::as_str)
+                    .is_none_or(|value| value == expected_scope),
+            "workflow memory {:?} changed while the workflow was running",
+            rewrite.id
+        );
+    }
+    if rewrites.is_empty() {
+        return Ok(None);
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let backup = path.with_file_name(format!(
+        "harness_state.pre-workflow-{stamp}-{}.json",
+        std::process::id()
+    ));
+    std::fs::copy(&path, &backup)
+        .with_context(|| format!("cannot back up harness state to {}", backup.display()))?;
+    for rewrite in rewrites {
+        let current = records
+            .get_mut(&rewrite.id)
+            .and_then(Value::as_object_mut)
+            .expect("validated workflow memory remains present");
+        current.insert("title".into(), Value::String(rewrite.title));
+        current.insert("content".into(), Value::String(rewrite.content));
+        current.insert("path".into(), Value::String(rewrite.path));
+        current.insert("version".into(), Value::from(rewrite.version.saturating_add(1)));
+    }
+    lock.ensure_owned()?;
+    write_harness_state_file(&path, &document)?;
+    Ok(Some(backup))
+}
+
 /// Merge global + local states: local ids conflict-prefixed with their scope.
 ///
 /// # Panics
@@ -847,6 +980,67 @@ mod tests {
             });
         assert!(result.is_err());
         assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[test]
+    fn workflow_memory_rewrite_is_exact_scoped_and_recoverable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = empty_harness_state();
+        state.entries.get_mut(&RefinementKind::Memory).unwrap().insert(
+            "m1".into(),
+            entry("m1", RefinementKind::Memory, HarnessScope::Local, "old memory"),
+        );
+        state.entries.get_mut(&RefinementKind::Skill).unwrap().insert(
+            "s1".into(),
+            entry("s1", RefinementKind::Skill, HarnessScope::Local, "untouched skill"),
+        );
+        let path = save_harness_state(dir.path(), &state).unwrap();
+        let global_dir = tempfile::tempdir().unwrap();
+        let mut global_state = empty_harness_state();
+        global_state
+            .entries
+            .get_mut(&RefinementKind::Memory)
+            .unwrap()
+            .insert(
+                "g1".into(),
+                entry(
+                    "g1",
+                    RefinementKind::Memory,
+                    HarnessScope::Global,
+                    "global memory",
+                ),
+            );
+        let global_path = save_harness_state(global_dir.path(), &global_state).unwrap();
+        let global_before = std::fs::read(&global_path).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let mut memories = read_workflow_memories(dir.path(), HarnessScope::Local).unwrap();
+        memories[0].title = "Clean memory".into();
+        memories[0].content = "verified fact".into();
+        memories[0].path = "repaired".into();
+        let output = serde_json::to_value(&memories).unwrap();
+
+        let backup = apply_workflow_memories(dir.path(), HarnessScope::Local, &output)
+            .unwrap()
+            .unwrap();
+        assert_eq!(std::fs::read(backup).unwrap(), before);
+        let rewritten = load_harness_state(dir.path(), HarnessScope::Local);
+        let memory = &rewritten.entries[&RefinementKind::Memory]["m1"];
+        assert_eq!(memory.title, "Clean memory");
+        assert_eq!(memory.content, "verified fact");
+        assert_eq!(memory.path, "repaired");
+        assert_eq!(memory.version, 2);
+        assert_eq!(
+            rewritten.entries[&RefinementKind::Skill]["s1"],
+            state.entries[&RefinementKind::Skill]["s1"]
+        );
+        assert_eq!(std::fs::read(global_path).unwrap(), global_before);
+
+        let after = std::fs::read(&path).unwrap();
+        assert!(
+            apply_workflow_memories(dir.path(), HarnessScope::Local, &output).is_err(),
+            "a stale version must not overwrite a newer memory"
+        );
+        assert_eq!(std::fs::read(path).unwrap(), after);
     }
 
     #[test]

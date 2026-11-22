@@ -41,6 +41,8 @@ pub struct Workflow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<WorkflowContext>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness_memory: Option<WorkflowHarnessMemory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub interactive_apply_context_field: Option<String>,
     pub prompt: String,
     pub input_fields: Fields,
@@ -64,6 +66,14 @@ pub struct WorkflowContext {
     pub max_characters: Option<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowHarnessMemory {
+    pub scope_input_field: String,
+    pub interactive_apply_output_field: String,
+}
+
+
 impl Workflow {
     fn validate(&self) -> Result<()> {
         ensure!(
@@ -83,6 +93,51 @@ impl Workflow {
             ensure!(
                 context.max_characters.is_none_or(|limit| (4_096..=1_000_000).contains(&limit)),
                 "context.maxCharacters must be between 4096 and 1000000"
+            );
+        }
+        for (name, field) in self.input_fields.iter().chain(&self.output_fields) {
+            if let Some(choices) = &field.choices {
+                ensure!(!choices.is_empty(), "workflow field {name:?} choices cannot be empty");
+                ensure!(
+                    choices.iter().all(|value| crate::workflow_io::value_matches_type(field.kind, value)),
+                    "workflow field {name:?} has a choice with the wrong type"
+                );
+                ensure!(
+                    choices
+                        .iter()
+                        .enumerate()
+                        .all(|(index, value)| !choices[..index].contains(value)),
+                    "workflow field {name:?} choices must be unique"
+                );
+            }
+        }
+        if let Some(memory) = &self.harness_memory {
+            let scope = self.input_fields.get(&memory.scope_input_field).with_context(|| {
+                format!(
+                    "harnessMemory.scopeInputField names unknown input field {:?}",
+                    memory.scope_input_field
+                )
+            })?;
+            ensure!(
+                scope.required
+                    && scope.kind == FieldType::String
+                    && scope.choices.as_ref().is_some_and(|choices| {
+                        choices == &[serde_json::Value::String("local".into()), serde_json::Value::String("global".into())]
+                    }),
+                "harnessMemory.scopeInputField must name a required string field with choices [\"local\", \"global\"]"
+            );
+            let output = self
+                .output_fields
+                .get(&memory.interactive_apply_output_field)
+                .with_context(|| {
+                    format!(
+                        "harnessMemory.interactiveApplyOutputField names unknown output field {:?}",
+                        memory.interactive_apply_output_field
+                    )
+                })?;
+            ensure!(
+                output.required && output.kind == FieldType::Array,
+                "harnessMemory.interactiveApplyOutputField must name a required array output field"
             );
         }
         if let Some(field) = &self.interactive_apply_context_field {

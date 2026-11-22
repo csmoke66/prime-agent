@@ -1091,6 +1091,7 @@ mod retirement;
 mod run_state;
 mod usage;
 mod workflow;
+pub(crate) use workflow::workflow_memory_scope;
 
 #[cfg(test)]
 mod watch_tests;

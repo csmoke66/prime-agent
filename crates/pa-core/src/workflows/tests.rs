@@ -17,6 +17,7 @@ fn workflow(instructions: &str) -> Workflow {
             effort: Some("medium".into()),
         }),
         context: None,
+        harness_memory: None,
         interactive_apply_context_field: None,
         prompt: instructions.into(),
         input_fields: Fields::new(),

@@ -82,7 +82,7 @@ In an attached session, type `/harness` to browse what the agent has saved. **Lo
 Specific handling settings for railguards instead of the typical fully blocking failures:
 1. The default option is a sanitized normal message about potential false positives
 2. A secondary option to not deliver a message at all, but to re-try the turn once
-3. A tertiary option that will delivery information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
+3. A tertiary option that will deliver information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
 
 Default workflows are provided with the repository to help handle false positive railguards:
 1. `railguard-context-repair.json` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate

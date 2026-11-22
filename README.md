@@ -19,17 +19,20 @@ Support for OpenAI's [daybreak program](https://openai.com/daybreak/):
 * Blue badges in the model selection list for daybreak blue supported models
 * Blue badges in the TUI for session utilizing daybreak blue
 
-### Web search
+### Railguard handling
 
-Support for more web search options:
-* ChatGPT
-* Claude
+Specific handling settings for railguards instead of the typical fully blocking failures:
+1. The default option is a sanitized normal message about potential false positives
+2. A secondary option to not deliver a message at all, but to re-try the turn once
+3. A tertiary option that will deliver information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
 
-### Allowed models
+Default workflows are provided with the repository to help handle false positive railguards violations:
+1. `railguard-context-repair` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
+2. `railguard-memory-repair` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
 
-Open `/settings` → **Models** to choose the main session’s model. Under **Agents**, open **Child allowed models**, type to search, and press **Space** to check or uncheck a model. **Enter** saves the whole selection; **Esc** discards the edits. Set sub-agent effort separately on the same tab. Children can query the effective list; a rejected spawn also lists the allowed choices.
+### Improved token usage
 
-Use inheritance to follow your global policy, or allow all models to remove the session restriction. Session overrides survive reattaching and apply to subsequent spawns in the same session family, not to other sessions.
+Several improvements have been made for efficient token usage, including following OpenAI's new guidelines on how to appropriately use caching.
 
 ### Named workflows
 
@@ -67,6 +70,18 @@ Both field maps are required; use `{}` if there are no fields. Types are `string
 
 `await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. User-global workflows under `~/.prime/agent/workflows/` are the fallback, so a project may override one for its own sessions. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected operator definitions take precedence over project files, and project files take precedence over user-global files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
 
+### Web search
+
+Support for more web search options:
+* ChatGPT
+* Claude
+
+### Allowed models
+
+Open `/settings` → **Models** to choose the main session’s model. Under **Agents**, open **Child allowed models**, type to search, and press **Space** to check or uncheck a model. **Enter** saves the whole selection; **Esc** discards the edits. Set sub-agent effort separately on the same tab. Children can query the effective list; a rejected spawn also lists the allowed choices.
+
+Use inheritance to follow your global policy, or allow all models to remove the session restriction. Session overrides survive reattaching and apply to subsequent spawns in the same session family, not to other sessions.
+
 ### Inbox reminders
 
 Configure inbox reminders in `/settings` for the attached session. **Preview** (the default) shows the first five unread messages, up to 200 characters each. **Full** includes every unread message body, which can use considerably more context. **Count** shows only the unread count. None of these marks a message as read or changes when the parent wakes.
@@ -76,21 +91,6 @@ At 20 unread agent-to-agent messages, the worker bypasses the reminder setting a
 ### Inspect the harness
 
 In an attached session, type `/harness` to browse what the agent has saved. **Local** entries belong to that session; **global** entries are shared across sessions. Select a skill to read its saved instructions and Python reference without running it. The tree refreshes while it is open. Deleting a leaf removes the saved entry after confirmation, not the file it references.
-
-### Railguard handling
-
-Specific handling settings for railguards instead of the typical fully blocking failures:
-1. The default option is a sanitized normal message about potential false positives
-2. A secondary option to not deliver a message at all, but to re-try the turn once
-3. A tertiary option that will deliver information about the message to a different session that can then handle it (think of this as a HR.. or CR department)
-
-Default workflows are provided with the repository to help handle false positive railguards violations:
-1. `railguard-context-repair` diagnoses the reason for a session's false positives, then rewrites and compacts the context if appropriate
-2. `railguard-memory-repair` diagnoses any potential false positive triggers in either `local` or `global` memory, then rewrites the memory if appropriate
-
-### Improved token usage
-
-Several improvements have been made for efficient token usage, including following OpenAI's new guidelines on how to appropriately use caching.
 
 ## Install
 

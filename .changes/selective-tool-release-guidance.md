@@ -1,0 +1,1 @@
+- The system prompt asks agents to release tool results selectively, retaining useful evidence and batching small results at natural checkpoints instead of clearing output on every REPL call.

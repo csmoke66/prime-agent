@@ -1,13 +1,13 @@
 ---
 name: rlm-heartbeat
-description: Manage agent-owned RLM heartbeats from the Python REPL. Use when the user asks the agent to start, create, schedule, or manage a heartbeat, unless they explicitly request the user's /heartbeat.
+description: Create, inspect, pause, resume, and remove this session's agent-owned heartbeats from the Python REPL, including invalid or obsolete recurring checks. Does not manage user-owned /heartbeat jobs.
 ---
 
 # RLM Heartbeat
 
 RLM heartbeats are internal recurring prompts for the current agent session.
-They are separate from the user's visible `/heartbeat`: this skill cannot read,
-replace, pause, resume, or clear that user-level heartbeat.
+They are separate from user-owned `/heartbeat` jobs: this skill cannot read
+or change those jobs or any other session's jobs.
 
 Call directly from the Python REPL:
 
@@ -44,10 +44,11 @@ the session when it is busy:
 
 ## Rules
 
-- Use this when the user asks you to start, create, schedule, or manage your own
-  heartbeat without explicitly referring to `/heartbeat`.
-- Use this only for agent-internal recurring checks and long-running task
-  coordination.
+- Use `list()` to find a heartbeat's exact ID and inspect its status, instruction,
+  and `last_error` before changing it.
+- Delete clearly invalid, obsolete, or duplicate jobs rather than letting them
+  keep waking the session. If you're unsure whether a job is still needed,
+  pause it first, then resume only after resolving the issue.
 - Do not use this skill to satisfy a user's request to configure `/heartbeat`;
   that is a separate user-level surface.
 - Keep heartbeat instructions specific and actionable so each recurring turn

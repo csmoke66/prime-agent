@@ -1,0 +1,1 @@
+- The agent system prompt and heartbeat skill now explain how to create, pause, resume, and delete agent-owned heartbeats, and tell agents to cancel clearly invalid or obsolete jobs rather than keep waking for them.

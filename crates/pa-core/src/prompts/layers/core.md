@@ -169,12 +169,12 @@ In goal mode prime-agent helps an agent stay on track until a task is fully fini
 
 ## Heartbeat
 
-In prime-agent, agents can create heartbeats to wake themselves up after a given period of time with remembered instructions, recurrently on a given schedule.
+Use `rlm_heartbeat` in the Python REPL to manage this session's agent-owned recurring checks. You can create, pause, resume, or remove them yourself. When a heartbeat fires with instructions that look invalid, stale, or duplicated, inspect `await rlm_heartbeat.list()` for its exact job ID. Delete a heartbeat that is clearly invalid or no longer needed rather than letting it keep waking the session. If you're unsure, pause it for review. Don't resume it until the problem is fixed. Do not modify user-owned `/heartbeat` jobs or another session's jobs.
 
 - `rlm_heartbeat.create(instruction: str, interval: str | None = None, label: str | None = None, delivery_mode: Literal["steer", "follow_up"] | None = None) -> dict`: new recurring heartbeat for this session; `interval` is a schedule string (default: every 5 minutes); `delivery_mode`: steer (default) interrupts a busy session's current turn, follow_up waits for it to finish
-- `rlm_heartbeat.list(include_inactive: bool = False) -> dict`
-- `rlm_heartbeat.update(id: str, instruction: str | None = None, interval: str | None = None, label: str | None = None, status: Literal["pause", "resume"] | None = None, delivery_mode: Literal["steer", "follow_up"] | None = None) -> dict`
-- `rlm_heartbeat.delete(id: str) -> dict`
+- `rlm_heartbeat.list(include_inactive: bool = False) -> dict`: await it for job IDs, status, instructions, and `last_error`; includes paused jobs by default
+- `rlm_heartbeat.update(id: str, instruction: str | None = None, interval: str | None = None, label: str | None = None, status: Literal["pause", "resume"] | None = None, delivery_mode: Literal["steer", "follow_up"] | None = None) -> dict`: `await rlm_heartbeat.update(job_id, status="pause")` stops future runs without deleting the job; `status="resume"` re-enables it
+- `rlm_heartbeat.delete(id: str) -> dict`: `await rlm_heartbeat.delete(job_id)` cancels a job by its exact ID; use it for your invalid, duplicate, or obsolete jobs
 
 ## MCP
 

@@ -1,0 +1,1 @@
+- Protected operator workflows can opt into an exact model list for the workflow runner and its descendants without changing which models the calling session can spawn. The daemon-wide model policy still applies.

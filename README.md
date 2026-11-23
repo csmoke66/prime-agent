@@ -63,9 +63,11 @@ print(result["summary"])
 ```
 Targeted REPL runs wait for validated output by default. Pass `wait=False` to return immediately with a receipt containing `runId`.
 
-Both field maps are required; use `{}` if there are no fields. Types are `string`, `integer`, `number`, `boolean`, `object`, `array`, and `null`. Optional means the key may be absent, not that a value of the wrong type is accepted. Missing required fields, undeclared keys and mistyped values are errors on input and output. The caller's model and session settings are unchanged. A workflow cannot expand the caller's allowed models.
+Both field maps are required; use `{}` if there are no fields. Types are `string`, `integer`, `number`, `boolean`, `object`, `array`, and `null`. Optional means the key may be absent, not that a value of the wrong type is accepted. Missing required fields, undeclared keys and mistyped values are errors on input and output. Workflows inherit the caller's child-model restrictions unless the operator grants the exception below. They never change the caller's own settings.
 
 `await rlm.workflows.create("review", definition)` creates a project workflow without overwriting an existing name. User-global workflows under `~/.prime/agent/workflows/` are the fallback, so a project may override one for its own sessions. For an **immutable** workflow, an administrator installs the JSON under `/etc/prime-agent/workflows/` on Unix or `Prime Agent\workflows` under Program Files on Windows, without granting the agent write access. Protected operator definitions take precedence over project files, and project files take precedence over user-global files. Run agents without administrative privileges; a JSON flag cannot protect an agent-writable file.
+
+An operator workflow invoked from a root session can set `"overrideSubagentModels": true` to use its exact `model` for the runner and its explicit `subagents.allowedModels` for descendants instead of the root session's child-model list. Use `"subagents": {"allowedModels": []}` when the runner should not spawn any children. All selected models still have to pass the daemon-wide allowlist and catalog checks. This flag is rejected in user-global and project definitions, including definitions created by agents.
 
 ## Agent-controlled context
 

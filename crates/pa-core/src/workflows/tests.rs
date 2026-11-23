@@ -16,6 +16,7 @@ fn workflow(instructions: &str) -> Workflow {
             allowed_models: Some(vec!["openai-codex/gpt-6.2-sol".into()]),
             effort: Some("medium".into()),
         }),
+        override_subagent_models: false,
         context: None,
         harness_memory: None,
         interactive_apply_context_field: None,
@@ -109,6 +110,7 @@ fn validates_create_and_disk_schema() {
     for (field, value) in [
         ("version", json!(2)),
         ("locked", json!(true)),
+        ("overrideSubagentModels", json!(true)),
         ("prompt", json!(" \t")),
         ("instructionsFile", json!("instructions.md")),
         ("model", json!("bare-model")),

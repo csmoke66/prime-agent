@@ -39,6 +39,9 @@ pub struct Workflow {
     pub effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagents: Option<WorkflowSubagents>,
+    /// A protected workflow can replace the calling root's child model list.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub override_subagent_models: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<WorkflowContext>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +92,12 @@ impl Workflow {
                 validate_model(model, "subagents.allowedModels")?;
             }
             validate_effort(subagents.effort.as_deref(), "subagents.effort")?;
+        }
+        if self.override_subagent_models {
+            ensure!(
+                self.subagents.as_ref().is_some_and(|s| s.allowed_models.is_some()),
+                "overrideSubagentModels requires an explicit subagents.allowedModels list (use [] to forbid descendants)"
+            );
         }
         if let Some(context) = &self.context {
             ensure!(
@@ -275,6 +284,7 @@ fn load_from(
         let definition = read_workflow(&dir, filename)
             .with_context(|| format!("load project workflow {name:?}"))?;
         if let Some(workflow) = definition {
+            reject_unprotected_override(&workflow)?;
             return Ok(workflow);
         }
     }
@@ -282,10 +292,32 @@ fn load_from(
         let definition =
             read_workflow(dir, filename).with_context(|| format!("load user workflow {name:?}"))?;
         if let Some(workflow) = definition {
+            reject_unprotected_override(&workflow)?;
             return Ok(workflow);
         }
     }
     bail!("workflow {name:?} not found")
+}
+
+fn reject_unprotected_override(workflow: &Workflow) -> Result<()> {
+    ensure!(
+        !workflow.override_subagent_models,
+        "overrideSubagentModels is only allowed in the protected operator workflow registry"
+    );
+    Ok(())
+}
+
+/// Read an override from the protected registry only, never from mutable definitions.
+///
+/// # Errors
+/// Returns an error when the protected grant is missing, invalid, or disabled.
+pub fn load_model_override(name: &str) -> Result<Workflow> {
+    let filename = definition_name(name)?;
+    let dir = Directory::operator_root()?.context("no protected operator workflow registry")?;
+    let workflow = read_workflow(&dir, OsStr::new(&filename))?
+        .with_context(|| format!("protected workflow {name:?} not found"))?;
+    ensure!(workflow.override_subagent_models, "workflow {name:?} no longer grants a model override");
+    Ok(workflow)
 }
 
 /// Load a named workflow. Operator definitions take precedence, followed by
@@ -315,6 +347,7 @@ fn create_in(
     operator: Option<&Directory>,
 ) -> Result<()> {
     workflow.validate()?;
+    reject_unprotected_override(workflow)?;
     if let Some(dir) = operator {
         ensure!(
             !dir.contains(filename)?,

@@ -36,6 +36,8 @@ pub struct WorkflowRunPolicy {
     pub runner_model: String,
     pub allowed_models: Option<Vec<String>>,
     pub effort: Option<ThinkingLevelSetting>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_workflow: Option<String>,
 }
 
 fn workflow_file(log: &Path) -> Result<PathBuf> {
@@ -43,13 +45,16 @@ fn workflow_file(log: &Path) -> Result<PathBuf> {
         .join("workflow-policy.json"))
 }
 
-pub fn set_workflow_policy(log: &Path, runner_model: &str, allowed_models: Option<Vec<String>>, effort: Option<ThinkingLevelSetting>) -> Result<()> {
+/// Persist the checked model policy before the workflow worker starts.
+///
+/// # Errors
+/// Returns an error if the snapshot already exists or cannot be saved.
+pub fn set_workflow_policy(log: &Path, policy: &WorkflowRunPolicy) -> Result<()> {
     let path = workflow_file(log)?;
     fs::create_dir_all(path.parent().context("missing workflow policy directory")?)?;
     let _lock = LockDir::acquire_owned_retrying(&path, Duration::from_secs(30), 50, Duration::from_millis(10))?;
     anyhow::ensure!(!path.try_exists()?, "workflow policy is already set");
-    let policy = WorkflowRunPolicy { runner_model: runner_model.to_owned(), allowed_models, effort };
-    atomic_write_with(&path, &serde_json::to_string(&policy)?, AtomicWriteOptions { fsync: true })?;
+    atomic_write_with(&path, &serde_json::to_string(policy)?, AtomicWriteOptions { fsync: true })?;
     Ok(())
 }
 

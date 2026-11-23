@@ -142,6 +142,9 @@ impl AgentsViewMode {
                 }
             }
         }
+        if !scope_active && self.query.trim().is_empty() {
+            super::groups::group_rows(&mut rows, &self.groups);
+        }
         // The machine-wide persistent shells head the unscoped, unsearched list.
         if !scope_active && self.query.trim().is_empty() {
             rows.splice(0..0, self.persistent_shell_rows(&records));
@@ -523,6 +526,10 @@ impl AgentsViewMode {
                 self.handle_rename_key(rename, key);
                 return;
             }
+            Composer::Group(group) => {
+                self.handle_group_key(group, key);
+                return;
+            }
             Composer::Reply(reply) => {
                 self.handle_reply_key(reply, was_delete_armed, key);
                 return;
@@ -560,6 +567,10 @@ impl AgentsViewMode {
         // enter the rename composer.
         if !has_query && self.keybindings.matches(key, "app.agents.rename") {
             self.enter_rename_mode();
+            return;
+        }
+        if !has_query && self.keybindings.matches(key, "app.agents.group") {
+            self.enter_group_mode();
             return;
         }
         // `app.agents.delete` (default ctrl+x, empty editor only): the first press arms the
@@ -749,7 +760,7 @@ impl AgentsViewMode {
     /// nothing.
     pub(super) fn materialize_composer_autocomplete(&mut self) {
         match &mut self.composer {
-            Composer::Search => {}
+            Composer::Search | Composer::Group(_) => {}
             Composer::Rename(rename) => rename.editor.materialize_autocomplete(),
             Composer::Reply(reply) => reply.editor.materialize_autocomplete(),
         }
@@ -766,6 +777,11 @@ impl AgentsViewMode {
                 rename.editor.handle_paste(text);
                 let _ = rename.editor.take_events();
                 self.composer = Composer::Rename(rename);
+            }
+            Composer::Group(mut group) => {
+                group.editor.handle_paste(text);
+                let _ = group.editor.take_events();
+                self.composer = Composer::Group(group);
             }
             Composer::Reply(mut reply) => {
                 reply.editor.handle_paste(text);

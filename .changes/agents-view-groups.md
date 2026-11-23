@@ -1,0 +1,1 @@
+- In Agents View, press `Alt+G` on a top-level session to move it to a named group. Clear the name to return it to Running, Idle, or Inactive. Groups persist locally without changing agent ownership.

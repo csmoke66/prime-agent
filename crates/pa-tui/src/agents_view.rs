@@ -54,6 +54,7 @@ use delete::{spawn_delete_dispatch, PendingDelete};
 
 mod rename;
 use rename::{spawn_rename_dispatch, Rename};
+mod groups;
 
 mod reply;
 use reply::{
@@ -263,6 +264,8 @@ enum UiInput {
         rename: Rename,
         outcome: Result<(), String>,
     },
+    GroupsLoaded(Result<groups::Groups, String>),
+    GroupSaved(groups::GroupChange, Result<(), String>),
     /// The armed target's headline landed (or failed): the header renders it; a
     /// re-targeted or disarmed composer drops it.
     HeadlineResult {
@@ -389,6 +392,10 @@ struct AgentsViewMode {
     /// The prompt's composition state: the search field, or the rename composer while a rename
     /// composes.
     composer: Composer,
+    groups: groups::Groups,
+    groups_ready: bool,
+    saving_group: bool,
+    pending_group: Option<groups::GroupChange>,
     /// The confirmed rename the run loop dispatches (the wire call runs off the key loop with the
     /// client).
     pending_rename: Option<Rename>,
@@ -513,6 +520,7 @@ enum Composer {
     Search,
     Rename(Box<rename::RenameComposer>),
     Reply(Box<reply::ReplyComposer>),
+    Group(Box<groups::GroupComposer>),
 }
 
 impl AgentsViewMode {
@@ -558,6 +566,10 @@ impl AgentsViewMode {
             notice,
             pending_delete: None,
             composer: Composer::Search,
+            groups: groups::Groups::new(),
+            groups_ready: false,
+            saving_group: false,
+            pending_group: None,
             pending_rename: None,
             pending_reply: None,
             pending_kill: None,
@@ -828,6 +840,7 @@ async fn run_agents_view_surface(
     // The first frame renders from the live roster the moment the surface mounts: the
     // saved-catalog fetch applies as an input when it lands instead of holding the frame.
     renderer.draw(&mut mode);
+    groups::spawn_load(ui_tx.clone());
     // The saved catalog feeds the Inactive section (cwd + sessionDir scope); the scan runs while
     // the view is already interactive, so a large catalog never delays the first frame. The re-arm
     // closure shares these clones (the mode never holds the client).
@@ -978,6 +991,9 @@ async fn run_agents_view_surface(
                             rename,
                         ));
                     }
+                    if let Some(change) = mode.pending_group.take() {
+                        action_dispatches.push(groups::spawn_save(ui_tx.clone(), change));
+                    }
                     // The reply composer's dispatches: the 2s exit drain covers an
                     // Enter-then-exit the same way it covers a confirmed stop-or-delete.
                     if let Some(request) = mode.pending_reply.take() {
@@ -1022,6 +1038,15 @@ async fn run_agents_view_surface(
                 UiInput::RenameResult { rename, outcome } => {
                     mode.rename_result(rename, outcome);
                 }
+                UiInput::GroupsLoaded(result) => match result {
+                    Ok(groups) => {
+                        mode.groups = groups;
+                        mode.groups_ready = true;
+                        mode.rebuild_rows();
+                    }
+                    Err(error) => mode.set_status(&format!("Could not load session groups: {error}")),
+                },
+                UiInput::GroupSaved(change, result) => mode.group_saved(change, result),
                 UiInput::HeadlineResult { key, result } => {
                     mode.headline_result(&key, result);
                 }
@@ -1406,6 +1431,7 @@ async fn run_agents_view_surface(
             UiInput::RenameResult { rename, outcome } => {
                 mode.rename_result(rename, outcome);
             }
+            UiInput::GroupSaved(change, result) => mode.group_saved(change, result),
             // The reply outcomes apply on the exit path too (an Enter-then-exit): the
             // statuses paint nothing on a run that ended, but the adoption actions
             // (`reply_sent`, `killed`) must still reach the outcome.

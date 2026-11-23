@@ -392,6 +392,10 @@ pub const APP_KEYBINDINGS: &[(&str, KeybindingDefinition)] = &[
         def!(&["ctrl+r"], "Rename selected agent session"),
     ),
     (
+        "app.agents.group",
+        def!(&["alt+g"], "Move selected agent session to a custom group"),
+    ),
+    (
         "app.agents.searchContent",
         def!(&["ctrl+f"], "Toggle searching session message text"),
     ),

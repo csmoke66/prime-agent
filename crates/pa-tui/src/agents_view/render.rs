@@ -207,6 +207,18 @@ impl AgentsViewMode {
                 );
                 (Vec::new(), surface.rows, surface.cursor)
             }
+            Composer::Group(group) => {
+                let header = vec![theme.fg(ThemeColor::Warning, "Move to group".to_string())];
+                let surface = crate::view::editor_surface::render(
+                    &mut group.editor,
+                    theme,
+                    width,
+                    u16::try_from(self.last_height).unwrap_or(u16::MAX),
+                    Some(header),
+                    Some("Group name (empty to remove)"),
+                );
+                (Vec::new(), surface.rows, surface.cursor)
+            }
         }
     }
 
@@ -287,7 +299,7 @@ impl AgentsViewMode {
         /// or one row (carrying its `self.rows` index — the click surface's row identity).
         enum DisplayItem<'a> {
             Spacer,
-            Heading(Section),
+            Heading(&'a str, usize),
             ShellsHeading(usize),
             Row(usize, &'a AgentsViewRow),
             /// One note line of the selected row's expansion; one item per
@@ -321,19 +333,6 @@ impl AgentsViewMode {
             .get(self.selected)
             .map(|row| self.render_note_details(row, width))
             .filter(|details| !details.is_empty());
-        // Each non-empty section contributes a spacer (when not first), its heading, then its rows.
-        let counts: Vec<(Section, usize)> = [Section::Running, Section::Idle, Section::Inactive]
-            .into_iter()
-            .map(|section| {
-                (
-                    section,
-                    self.rows
-                        .iter()
-                        .filter(|row| row.kind == RowKind::Agent && row.section == section)
-                        .count(),
-                )
-            })
-            .collect();
         let mut display: Vec<DisplayItem> = Vec::new();
         // While a query is active the list is a ranked picker: one flat, relevance-ordered run
         // of hits (per-row icons carry the status), not status section blocks.
@@ -352,28 +351,54 @@ impl AgentsViewMode {
                         .map(|(index, row)| DisplayItem::Row(index, row)),
                 );
             }
-            for (section, count) in &counts {
-                if *count == 0 {
+            // The row builder orders complete trees by group, then leaves
+            // ungrouped trees in their original status order.
+            let group = |row: &AgentsViewRow| {
+                if self.scope_active {
+                    return None;
+                }
+                super::groups::session_id(row)
+                    .and_then(|id| self.groups.get(id))
+                    .map(String::as_str)
+            };
+            let mut start = 0;
+            while start < self.rows.len() {
+                let row = &self.rows[start];
+                if row.kind != RowKind::Agent || row.depth != 0 {
+                    start += 1;
                     continue;
+                }
+                let label = group(row);
+                let section = row.section;
+                let (mut end, mut count) = (start + 1, 1);
+                while let Some(next) = self.rows.get(end) {
+                    if next.depth == 0 {
+                        if next.kind != RowKind::Agent
+                            || group(next) != label
+                            || (label.is_none() && next.section != section)
+                        {
+                            break;
+                        }
+                        count += 1;
+                    }
+                    end += 1;
                 }
                 if !display.is_empty() {
                     display.push(DisplayItem::Spacer);
                 }
-                display.push(DisplayItem::Heading(*section));
-                let mut include = false;
-                for (index, row) in self.rows.iter().enumerate() {
-                    if row.depth == 0 {
-                        include = row.kind == RowKind::Agent && row.section == *section;
-                    }
-                    if include {
-                        display.push(DisplayItem::Row(index, row));
-                        if index == self.selected {
-                            if let Some(details) = note_details.take() {
-                                display.extend(details.into_iter().map(DisplayItem::Detail));
-                            }
+                display.push(DisplayItem::Heading(
+                    label.unwrap_or_else(|| section_title(section)),
+                    count,
+                ));
+                for index in start..end {
+                    display.push(DisplayItem::Row(index, &self.rows[index]));
+                    if index == self.selected {
+                        if let Some(details) = note_details.take() {
+                            display.extend(details.into_iter().map(DisplayItem::Detail));
                         }
                     }
                 }
+                start = end;
             }
         } else {
             for (index, row) in self.rows.iter().enumerate() {
@@ -448,14 +473,10 @@ impl AgentsViewMode {
             let local = lines.len();
             match item {
                 DisplayItem::Spacer => lines.push(Vec::new()),
-                DisplayItem::Heading(section) => {
-                    let count = counts
-                        .iter()
-                        .find(|(count_section, _)| count_section == section)
-                        .map_or(0, |(_, count)| *count);
+                DisplayItem::Heading(label, count) => {
                     lines.push(vec![self.theme.fg(
                         ThemeColor::Muted,
-                        truncate_text(&format!("{} ({count})", section_title(*section)), width),
+                        truncate_text(&format!("{label} ({count})"), width),
                     )]);
                 }
                 DisplayItem::ShellsHeading(count) => {
@@ -802,7 +823,7 @@ impl AgentsViewMode {
             return truncate_line(&vec![theme.fg(ThemeColor::Muted, hint)], width);
         }
         // The rename composer's hint: save/cancel over the confirm/cancel bindings' every key.
-        if let Composer::Rename(_) = &self.composer {
+        if matches!(&self.composer, Composer::Rename(_) | Composer::Group(_)) {
             let hint = format!(
                 "{} save   {} cancel",
                 self.keybindings.key_text("tui.select.confirm"),
@@ -852,6 +873,9 @@ impl AgentsViewMode {
             if let Some(keys) = all("app.agents.rename").filter(|_| self.rename_target().is_some())
             {
                 segments.push(format!("{keys} rename"));
+            }
+            if let Some(keys) = all("app.agents.group").filter(|_| self.group_target().is_some()) {
+                segments.push(format!("{keys} group"));
             }
             // The reply slot (the operator's completeness directive: TS shows none,
             // so the space arm would be undiscoverable): only while the selected row

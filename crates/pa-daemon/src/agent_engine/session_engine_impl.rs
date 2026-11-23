@@ -246,6 +246,12 @@ impl SessionEngine for AgentSessionEngine {
         self.resolve_model().ok().map(|model| model.context_window)
     }
 
+    fn retained_tool_output(&self) -> Option<pa_core::session_engine::ToolOutputStats> {
+        self.built_handles()
+            .and_then(|handles| handles.session.upgrade())
+            .map(|engine| engine.retained_tool_output())
+    }
+
     fn creation_model(&self) -> Option<(String, String)> {
         let model = self.resolve_registry_model().ok()?;
         Some((model.provider.clone(), model.id))
@@ -584,6 +590,7 @@ impl SessionEngine for AgentSessionEngine {
             "api": model.api,
             "provider": model.provider,
             "reasoning": model.reasoning,
+            "contextWindow": model.context_window,
         }))
     }
 

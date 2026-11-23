@@ -1,9 +1,10 @@
 //! The input handlers behind dispatch: prompt delivery, queue
 //! operations, and agent-message delivery.
 use super::{
-    admit_inbox_notice, enqueue_priority, json, oneshot, parse_custom_message, parse_prompt_images,
-    response_success, sender_is_child_of, AgentFamilyRelationship, AgentMessagePromptPayload, Lane,
-    QueueCheckpoint, QueuePriority, QueuedItem, TurnPolicy, Worker, AGENT_MESSAGE_SOURCE,
+    admit_inbox_notice, admit_inbox_notice_without_wake, enqueue_priority, json, oneshot,
+    parse_custom_message, parse_prompt_images, response_success, sender_is_child_of,
+    AgentFamilyRelationship, AgentMessagePromptPayload, Lane, QueueCheckpoint, QueuePriority,
+    QueuedItem, TurnPolicy, Worker, AGENT_MESSAGE_SOURCE,
     DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION, QUEUED_INPUT_SUSPENDED,
 };
 
@@ -378,6 +379,15 @@ impl Worker {
                 );
             }
         };
+        let inbox_only = payload.get("inboxOnly").and_then(Value::as_bool) == Some(true);
+        if inbox_only && priority != "low" {
+            return response_failure(
+                None,
+                "worker_deliver_message",
+                "Inbox-only agent messages must use low priority",
+                None,
+            );
+        }
         let sender = payload.get("sender").cloned().unwrap_or(Value::Null);
         // A delivery from one of this session's RLM children counts as the
         // child's reply: the settle watcher withholds the no-reply notice.
@@ -425,6 +435,14 @@ impl Worker {
         let inbox_on = self.agent_engine.as_ref().is_some_and(|engine| {
             crate::agent_inbox::inbox_enabled(&engine.cwd(), &self.config.agent_dir)
         });
+        if inbox_only && !inbox_on {
+            return response_failure(
+                None,
+                "worker_deliver_message",
+                "Target session inbox is disabled",
+                None,
+            );
+        }
         let inbox_route = self.agent_engine.as_ref().and_then(|engine| {
             if !inbox_on {
                 return None;
@@ -434,6 +452,14 @@ impl Worker {
                 .map(|inbox| (std::sync::Arc::clone(engine), inbox))
         });
         if let Some((engine, inbox)) = inbox_route {
+            if inbox_only && engine.session_is_closed() {
+                return response_failure(
+                    None,
+                    "worker_deliver_message",
+                    "Target session is closed",
+                    None,
+                );
+            }
             let (id, queued, target) = {
                 let (core, inputs) = self.summary_inputs();
                 let id =
@@ -531,36 +557,57 @@ impl Worker {
                 }
             };
             let closed_engine = std::sync::Arc::clone(&engine);
-            // The admission answers whether ITS busy sample parked the
-            // notice: the receipt's `deliveryStatus` follows that sample,
-            // never the earlier one taken outside the lock.
-            let queued = match admit_inbox_notice(
-                &self.recovery,
-                &self.core,
-                &self.work_notify,
-                &inbox,
-                &self.inbox_arrivals,
-                notice,
-                lane,
-                move || closed_engine.session_is_closed(),
-                capacity_error,
-                Some(engine.as_ref()),
-            ) {
+            let session_is_closed = move || closed_engine.session_is_closed();
+            // Inbox-only context advisories use the same durable admission and
+            // capacity bound but may neither create a lane row nor turn a full
+            // inbox into a wake.
+            let admission = if inbox_only {
+                admit_inbox_notice_without_wake(
+                    &self.recovery,
+                    &self.core,
+                    &self.work_notify,
+                    &inbox,
+                    &self.inbox_arrivals,
+                    notice,
+                    lane,
+                    &session_is_closed,
+                    &capacity_error,
+                    Some(engine.as_ref()),
+                )
+            } else {
+                admit_inbox_notice(
+                    &self.recovery,
+                    &self.core,
+                    &self.work_notify,
+                    &inbox,
+                    &self.inbox_arrivals,
+                    notice,
+                    lane,
+                    &session_is_closed,
+                    &capacity_error,
+                    Some(engine.as_ref()),
+                )
+            };
+            let queued = match admission {
                 Ok(queued) => queued,
                 Err(error) => {
                     return response_failure(None, "worker_deliver_message", &error, None);
                 }
             };
-            // The direct route's strip refresh: the queued notice row
-            // must reach the clients like any other lane change. The
-            // projection recomputes under the emission lock, so a
-            // concurrent read hook's newer strip is never overwritten by
-            // a stale copy.
+            // Refresh the client projection after the durable inbox change.
+            // Inbox-only delivery has no lane row and does not notify the
+            // runner; ordinary delivery may have refreshed or queued one.
             let _ = crate::worker::emit_action_update_fresh(&self.core, &self.events);
-            // The notice is admitted live work — a restart must revive
-            // the worker to deliver it (no client reopens the session).
             let receipt = agent_message_receipt(&id, &target, message, lane, queued, &sender);
             return response_success(None, "worker_deliver_message", Some(receipt));
+        }
+        if inbox_only {
+            return response_failure(
+                None,
+                "worker_deliver_message",
+                "Target session inbox is unavailable",
+                None,
+            );
         }
         // A retiring session with the inbox on but no store left takes
         // no lane row either: refuse instead of injecting the raw row

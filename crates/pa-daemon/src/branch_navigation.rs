@@ -304,7 +304,10 @@ impl TreeNavigation {
                     }
                 }
             }
-            (store.branch_file_entries(), summary_entry)
+            let branch_entries = store.branch_file_entries();
+            let (active_ms, epoch) = store.compaction_clock_state();
+            core.restore_compaction_clock(active_ms, epoch);
+            (branch_entries, summary_entry)
         };
         // TS `Boolean(summaryText)`: a created summary entry means the navigation rebuilt
         // the context across a compaction-style cut; a plain move reloads faithfully.
@@ -437,6 +440,7 @@ impl TreeNavigation {
     pub(crate) async fn replace_with_fork(&self, mut forked: SessionFile) -> Result<(), String> {
         let branch_entries = forked.branch_file_entries();
         let new_path = forked.path.clone();
+        let (compaction_active_ms, compaction_epoch) = forked.compaction_clock_state();
         // Prime the fork store's usage fold before it enters the core: the
         // summaries the swap's roster pushes read resume from this cache
         // and fold only the appended tail.
@@ -461,6 +465,7 @@ impl TreeNavigation {
                     });
                 forked.trace_upload.clone_from(&transferred);
             }
+            core.restore_compaction_clock(compaction_active_ms, compaction_epoch);
             (core.store.replace(forked), transferred)
         };
         if let Some(traces) = &transferred {

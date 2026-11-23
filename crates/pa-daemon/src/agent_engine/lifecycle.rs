@@ -842,6 +842,7 @@ impl AgentSessionEngine {
         let observer = Arc::new(LinkAgentObserveController::new(
             Arc::clone(&self.link),
             config.active_session_id.clone(),
+            config.worker_token.clone(),
             Arc::clone(&self.own_summary),
             self.children.clone(),
         ));

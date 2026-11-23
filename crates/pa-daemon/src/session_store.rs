@@ -37,6 +37,11 @@ mod index;
 use index::fold_child_usage_attributions;
 pub(crate) use index::new_entry_id;
 
+/// Internal checkpoint rows for executing-turn runtime. They are session
+/// metadata, not transcript content, and remain on the active parent chain so
+/// branch/fork restores select the matching clock naturally.
+pub(super) const SESSION_WORK_CLOCK_ENTRY_TYPE: &str = "session_work_clock";
+
 // The read arm lives in session_store::read; the facade re-exports keep the crate paths stable.
 mod read;
 

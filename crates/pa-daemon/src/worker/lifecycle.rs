@@ -492,6 +492,9 @@ impl Worker {
             .compaction
             .run(custom_instructions, &self.idle_notify)
             .await;
+        // The compaction_end frame can flush while isCompacting is still true.
+        // Publish the settled clock and flag even if this worker now goes idle.
+        self.push_roster_delta();
         // The pump re-schedules on every outcome: a resume site that cleared the
         // suspension MID-window left its item parked behind the compacting gate;
         // without this wake the parked steer would strand forever.

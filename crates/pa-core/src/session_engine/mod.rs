@@ -123,6 +123,19 @@ pub enum TrailingAssistantFilter {
     /// The TS will-retry branch's post-rebuild drop.
     ErrorOnly,
 }
+/// Cheap snapshot of tool-result retention in the model-visible context.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ToolOutputStats {
+    /// Estimated tokens in unreleased tool-result bodies.
+    pub tokens: u64,
+    /// Tool results after the newest visible successful release directive,
+    /// or all visible tool results when there is no such directive.
+    pub results_since_release: u64,
+    /// Newest visible successful release receipt. This reports the directive
+    /// the model issued; it does not infer that the underlying work was done.
+    pub last_release: Option<&'static str>,
+}
+
 
 fn standard_message(message: &pa_agent::types::AgentMessage) -> Option<&pa_agent::types::Message> {
     let pa_agent::types::AgentMessage::Standard(message) = message else {

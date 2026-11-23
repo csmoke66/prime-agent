@@ -1,0 +1,1 @@
+- Heartbeat agents can check other live sessions’ tool-result share of the model window, last release, and working time since full compaction, and send a release or compaction suggestion. The system prompt and tool-output pressure reminder explain why even small spent results are worth releasing on the next useful call. Neither reminder clears context automatically.

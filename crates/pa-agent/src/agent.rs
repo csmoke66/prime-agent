@@ -91,6 +91,14 @@ pub struct AgentInitialState {
     pub messages: Option<Vec<AgentMessage>>,
 }
 
+/// Synchronous invalidation hook for host-owned indexes over the live transcript.
+///
+/// The agent invokes it for the initial history and after every explicit
+/// history replacement, append, or mutation. Natural loop appends are excluded:
+/// hosts that index those rows should update from their existing landing/event
+/// hook instead of rescanning the transcript on every streamed turn.
+pub type MessageHistoryChangedFn = Arc<dyn Fn(&[AgentMessage]) + Send + Sync>;
+
 /// Options for constructing an [`Agent`]. The loop's request surface
 /// (temperature, max tokens, reasoning, session id, API key) is carried by
 /// [`crate::agent_loop::AgentLoopConfig`] / [`crate::stream::StreamRequestOptions`].
@@ -107,6 +115,9 @@ pub struct AgentOptions {
     /// Last-mile tool-result rewrite before its event and provider-facing
     /// context append.
     pub tool_result_landing: Option<ToolResultLandingFn>,
+    /// Invalidates host-owned transcript indexes after out-of-loop history
+    /// changes (restore, branch replacement, compaction, or direct append).
+    pub message_history_changed: Option<MessageHistoryChangedFn>,
     pub should_stop_before_turn: Option<ShouldStopBeforeTurnFn>,
     pub get_continuation_messages: Option<GetContinuationMessagesFn>,
     pub steering_mode: Option<QueueMode>,
@@ -366,6 +377,8 @@ struct AgentInner {
     /// Synchronous last-mile tool-result rewrite, copied into each run's
     /// immutable loop config.
     tool_result_landing: Option<ToolResultLandingFn>,
+    /// Host-owned indexes are rebuilt after explicit history mutations.
+    message_history_changed: Option<MessageHistoryChangedFn>,
     /// Per-run model override; the owner sets it right before starting a routed run and clears it
     /// before the next dispatch. A plain mutex: read at run-config build, never held across an
     /// await.
@@ -833,6 +846,9 @@ impl Agent {
             messages: initial.messages.unwrap_or_default(),
             ..MutableAgentState::default()
         };
+        if let Some(changed) = &options.message_history_changed {
+            changed(&state.messages);
+        }
         let inner = Arc::new(AgentInner {
             event_delivery: tokio::sync::Mutex::new(()),
             shared: tokio::sync::Mutex::new(Shared {
@@ -861,6 +877,7 @@ impl Agent {
             get_continuation_messages: Mutex::new(options.get_continuation_messages),
             message_end_transform: Mutex::new(None),
             tool_result_landing: options.tool_result_landing,
+            message_history_changed: options.message_history_changed,
             model_override: Mutex::new(None),
             session_id: options.session_id,
             transport: options.transport,
@@ -971,25 +988,34 @@ impl Agent {
     }
 
     pub async fn set_messages(&self, messages: Vec<AgentMessage>) {
-        self.inner.shared.lock().await.state.messages = messages;
+        let mut shared = self.inner.shared.lock().await;
+        shared.state.messages = messages;
+        if let Some(changed) = &self.inner.message_history_changed {
+            changed(&shared.state.messages);
+        }
     }
 
     /// Append rows to the transcript under ONE state lock (the atomic
     /// form of the `state()` + `set_messages` read-modify-write).
     pub async fn append_messages(&self, messages: Vec<AgentMessage>) {
-        self.inner
-            .shared
-            .lock()
-            .await
-            .state
-            .messages
-            .extend(messages);
+        if messages.is_empty() {
+            return;
+        }
+        let mut shared = self.inner.shared.lock().await;
+        shared.state.messages.extend(messages);
+        if let Some(changed) = &self.inner.message_history_changed {
+            changed(&shared.state.messages);
+        }
     }
 
     /// Mutate the transcript under ONE state lock (the atomic form of the
     /// `state()` + `set_messages` read-modify-write).
     pub async fn mutate_messages(&self, mutate: impl FnOnce(&mut Vec<AgentMessage>)) {
-        mutate(&mut self.inner.shared.lock().await.state.messages);
+        let mut shared = self.inner.shared.lock().await;
+        mutate(&mut shared.state.messages);
+        if let Some(changed) = &self.inner.message_history_changed {
+            changed(&shared.state.messages);
+        }
     }
 
     /// # Panics

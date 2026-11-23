@@ -10,6 +10,7 @@ use serde_json::{json, Map, Value};
 
 use pa_types::daemon::DaemonCommand;
 
+use crate::agent_messaging::FamilyIdentity;
 use crate::lease::canonical_session_path;
 use crate::protocol::{response_failure, response_line, response_success, DaemonResponse};
 use crate::session_store::{read_session_info, SessionFile};
@@ -708,27 +709,55 @@ impl Supervisor {
         command_id: &str,
         type_name: &str,
     ) -> (Vec<Value>, bool) {
-        let DaemonCommand::ListAgentPeers { worker_token, .. } = command else {
-            return (
+        let fail = |message: &str| {
+            (
                 vec![response_line(&response_failure(
-                    Some(command_id),
-                    type_name,
-                    "invalid command",
-                    None,
+                    Some(command_id), type_name, message, None,
                 ))],
                 false,
-            );
+            )
+        };
+        let DaemonCommand::ListAgentPeers {
+            worker_token,
+            view,
+            min_tool_percent,
+            min_active_seconds,
+            ..
+        } = command
+        else {
+            return fail("invalid command");
         };
         let Some(requester) = self.registry.find_by_token(worker_token).await else {
-            return (
-                vec![response_line(&response_failure(
-                    Some(command_id),
-                    type_name,
-                    "Worker authentication failed",
-                    None,
-                ))],
-                false,
-            );
+            return fail("Worker authentication failed");
+        };
+        let health = match view.as_deref() {
+            None if min_tool_percent.is_none() && min_active_seconds.is_none() => None,
+            Some("context_health") => {
+                if min_tool_percent.is_some_and(|min| !min.is_finite() || min < 0.0) {
+                    return fail("minToolPercent must be a finite nonnegative number");
+                }
+                let descriptor = requester.descriptor.lock().await;
+                let active = &descriptor.root_active_session_id;
+                let roster = self
+                    .roster
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let caller = roster
+                    .by_active_session_id(active)
+                    .filter(|entry| {
+                        entry.worker_id.as_deref() == Some(requester.worker_id.as_str())
+                            && entry.summary["workerInstanceId"].as_str()
+                                == descriptor.worker_instance_id.as_deref()
+                    })
+                    .map(|entry| FamilyIdentity::from_summary(Some(&entry.summary), active));
+                Some(ContextHealthQuery {
+                    caller,
+                    min_tool_percent: *min_tool_percent,
+                    min_active_seconds: *min_active_seconds,
+                    now_ms: crate::util::now_ms(),
+                })
+            }
+            _ => return fail("invalid list_agent_peers view or filters"),
         };
         let mut peers = Vec::new();
         for resident in self.registry.list().await {
@@ -747,36 +776,94 @@ impl Supervisor {
             if root_active_session_id.is_empty() {
                 continue;
             }
-            let summary = {
-                let roster = self
-                    .roster
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                roster
-                    .by_active_session_id(&root_active_session_id)
-                    .map(|entry| entry.summary.clone())
+            let roster = self
+                .roster
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(entry) = roster.by_active_session_id(&root_active_session_id) else {
+                continue;
             };
-            if let Some(summary) = summary {
-                // A replacement may not have pushed yet. Never serve the old
-                // process's snapshot as the new resident's live state.
-                if summary
-                    .get("workerInstanceId")
-                    .and_then(Value::as_str)
-                    .is_some_and(|instance| Some(instance) != worker_instance_id.as_deref())
-                {
-                    continue;
+            let summary = &entry.summary;
+            // A replacement may not have pushed yet. Never serve the old
+            // process's snapshot as the new resident's live state.
+            if summary
+                .get("workerInstanceId")
+                .and_then(Value::as_str)
+                .is_some_and(|instance| Some(instance) != worker_instance_id.as_deref())
+            {
+                continue;
+            }
+            if let Some(query) = &health {
+                if entry.worker_id.as_deref() == Some(resident.worker_id.as_str()) {
+                    peers.extend(query.project(summary));
                 }
-                peers.push(agent_peer_summary(&summary));
+            } else {
+                peers.push(agent_peer_summary(summary));
             }
         }
         (
             vec![response_line(&response_success(
                 Some(command_id),
                 type_name,
-                Some(json!({ "peers": peers })),
+                Some(if health.is_some() {
+                    json!({ "agents": peers })
+                } else {
+                    json!({ "peers": peers })
+                }),
             ))],
             false,
         )
+    }
+}
+
+/// Projects the already-pushed counters, never the full roster row: outside the
+/// family the janitor may see numbers and an address, not conversation content.
+struct ContextHealthQuery {
+    caller: Option<FamilyIdentity>,
+    min_tool_percent: Option<f64>,
+    min_active_seconds: Option<u64>,
+    now_ms: u64,
+}
+
+impl ContextHealthQuery {
+    fn project(&self, summary: &Value) -> Option<Value> {
+        let health = &summary["contextHealth"];
+        let window = summary["model"]["contextWindow"]
+            .as_u64()
+            .filter(|&w| w > 0);
+        let tokens = health["toolOutputTokens"].as_u64();
+        let percent = tokens.zip(window).map(|(t, w)| 100.0 * t as f64 / w as f64);
+        let seconds = health["activeMsSinceCompaction"].as_u64().map(|base| {
+            let ongoing = health["accruingAsOfMs"]
+                .as_u64()
+                .map_or(0, |start| self.now_ms.saturating_sub(start));
+            base.saturating_add(ongoing) / 1000
+        });
+        // Inclusive OR: a long-running session can qualify even after releasing
+        // every tool result. An unknown measurement cannot qualify on that axis.
+        if (self.min_tool_percent.is_some() || self.min_active_seconds.is_some())
+            && !self.min_tool_percent.zip(percent).is_some_and(|(min, p)| p >= min)
+            && !self.min_active_seconds.zip(seconds).is_some_and(|(min, s)| s >= min)
+        {
+            return None;
+        }
+        Some(json!({
+            "activeSessionId": summary["activeSessionId"].as_str()?,
+            "sessionId": summary["sessionId"].as_str(),
+            "sessionName": summary["sessionName"].as_str(),
+            "parentActiveSessionId": summary["parentActiveSessionId"].as_str(),
+            "relationship": self.caller.as_ref()
+                .and_then(|caller| caller.relationship_to(summary)).map(|r| r.as_str()),
+            "isStreaming": summary["isStreaming"].as_bool().unwrap_or(false),
+            "isCompacting": summary["isCompacting"].as_bool().unwrap_or(false),
+            "toolOutputTokens": tokens,
+            "contextWindow": window,
+            "toolOutputPercent": percent,
+            "lastReleaseKind": health["lastReleaseKind"].as_str(),
+            "toolResultsSinceRelease": health["toolResultsSinceRelease"].as_u64(),
+            "activeSecondsSinceCompaction": seconds,
+            "compactionEpoch": health["compactionEpoch"].as_str(),
+        }))
     }
 }
 
@@ -1174,6 +1261,55 @@ mod tombstone_usage_tests {
             edges[0].deleted,
             Some(crate::rlm_ledger::RlmLedgerDeleteReason::User),
             "the tombstone still lands bare"
+        );
+    }
+}
+
+#[cfg(test)]
+mod context_health_tests {
+    use super::*;
+
+    #[test]
+    fn context_health_thresholds_are_independent_and_do_not_expose_the_transcript() {
+        let query = ContextHealthQuery {
+            caller: Some(FamilyIdentity::from_summary(None, "janitor")),
+            min_tool_percent: Some(30.0),
+            min_active_seconds: Some(3 * 3600),
+            now_ms: 10_000,
+        };
+        let mut row = json!({
+            "activeSessionId": "target", "sessionId": "durable", "sessionName": "other",
+            "parentActiveSessionId": "another-parent", "isStreaming": true,
+            "firstMessage": "private", "progressNote": "private too", "cwd": "/private",
+            "model": {"contextWindow": 10_000},
+            "contextHealth": {
+                "toolOutputTokens": 2_999, "toolResultsSinceRelease": 12, "lastReleaseKind": "all",
+                "activeMsSinceCompaction": 10_799_500, "accruingAsOfMs": 9_500, "compactionEpoch": "cut"
+            }
+        });
+        assert_eq!(query.project(&row), Some(json!({
+            "activeSessionId": "target", "sessionId": "durable", "sessionName": "other",
+            "parentActiveSessionId": "another-parent", "relationship": null,
+            "isStreaming": true, "isCompacting": false,
+            "toolOutputTokens": 2_999, "contextWindow": 10_000, "toolOutputPercent": 29.99,
+            "toolResultsSinceRelease": 12, "lastReleaseKind": "all",
+            "activeSecondsSinceCompaction": 10_800, "compactionEpoch": "cut"
+        })));
+        // No ticking when settled; the independent tool threshold still qualifies exactly at 30%.
+        row["contextHealth"]["accruingAsOfMs"] = Value::Null;
+        assert_eq!(query.project(&row), None);
+        row["contextHealth"]["toolOutputTokens"] = json!(3_000);
+        assert_eq!(query.project(&row).unwrap()["toolOutputPercent"], 30.0);
+        row["model"] = Value::Null;
+        assert_eq!(query.project(&row), None);
+        let unfiltered = ContextHealthQuery {
+            min_tool_percent: None,
+            min_active_seconds: None,
+            ..query
+        };
+        assert_eq!(
+            unfiltered.project(&row).unwrap()["toolOutputPercent"],
+            Value::Null
         );
     }
 }

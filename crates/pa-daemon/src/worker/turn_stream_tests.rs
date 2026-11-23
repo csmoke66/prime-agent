@@ -57,6 +57,9 @@ fn burst_runner(engine: Arc<dyn SessionEngine>) -> TurnRunner {
         running_tool_calls: std::collections::HashSet::new(),
         running_admission_ids: std::collections::HashSet::new(),
         tool_use_count: 0,
+        compaction_active_ms: 0,
+        compaction_active_since: None,
+        compaction_epoch: None,
     }));
     TurnRunner {
         core,
@@ -716,6 +719,7 @@ async fn a_turns_tool_executions_count_onto_the_summary() {
                 quota_parked: false,
                 subagents_running: false,
                 progress_note: None,
+                retained_tool_output: None,
             },
         )
     };

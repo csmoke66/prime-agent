@@ -45,6 +45,7 @@ impl SessionNavigation {
         } = target;
         let branch_entries = file.branch_file_entries();
         let new_path = file.path.clone();
+        let (compaction_active_ms, compaction_epoch) = file.compaction_clock_state();
         // Prime the new store's usage fold before it enters the core: the
         // resume summaries read from this cache and fold only the appended tail.
         let primed = new_path.clone();
@@ -62,6 +63,7 @@ impl SessionNavigation {
             }
             let traces = file.trace_upload.clone();
             // No await or fallible preparation between slot transfer and publication.
+            core.restore_compaction_clock(compaction_active_ms, compaction_epoch);
             (core.store.replace(file), traces)
         };
         if let Some(traces) = traces.filter(|_| trace_persisted) {

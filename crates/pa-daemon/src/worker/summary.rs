@@ -410,6 +410,7 @@ pub(crate) struct SummaryInputs {
     pub(crate) quota_parked: bool,
     pub(crate) subagents_running: bool,
     pub(crate) progress_note: Option<String>,
+    pub(crate) retained_tool_output: Option<pa_core::session_engine::ToolOutputStats>,
 }
 
 impl SummaryInputs {
@@ -446,6 +447,7 @@ impl SummaryInputs {
             quota_parked: engine.is_quota_parked(),
             subagents_running: engine.has_running_subagents(),
             progress_note: engine.progress_note(),
+            retained_tool_output: engine.retained_tool_output(),
         }
     }
 }
@@ -583,6 +585,22 @@ pub(crate) fn session_summary(core: &SessionCore, inputs: SummaryInputs) -> Sess
         first_message: store.and_then(crate::session_store::SessionFile::first_message),
         progress_note: inputs.progress_note,
         tool_use_count: (core.tool_use_count > 0).then_some(core.tool_use_count),
+        context_health: store.map(|_| {
+            let (active_ms_since_compaction, accruing_as_of_ms) = core.compaction_clock();
+            crate::types::ContextHealthSnapshot {
+                tool_output_tokens: inputs.retained_tool_output.map(|usage| usage.tokens),
+                tool_results_since_release: inputs
+                    .retained_tool_output
+                    .map(|s| s.results_since_release),
+                last_release_kind: inputs
+                    .retained_tool_output
+                    .and_then(|s| s.last_release)
+                    .map(Into::into),
+                active_ms_since_compaction,
+                accruing_as_of_ms,
+                compaction_epoch: core.compaction_epoch().map(str::to_owned),
+            }
+        }),
         parent_session_path: store.and_then(|store| store.header.parent_session.clone()),
         parent_active_session_id: core.parent_active_session_id.clone(),
         parent_session_id: core.parent_session_id.clone(),

@@ -44,6 +44,24 @@ pub fn message_timestamp_ms(message: &Value) -> Option<u64> {
     message.get("timestamp").and_then(Value::as_u64)
 }
 
+/// Content-free worker counters. The supervisor can advance an open work interval
+/// between roster updates without polling the worker or reading its transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextHealthSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_results_since_release: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_release_kind: Option<std::borrow::Cow<'static, str>>,
+    pub active_ms_since_compaction: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accruing_as_of_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_epoch: Option<String>,
+}
+
 /// The lightweight session shape for list/create/rename/attach/state responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +123,8 @@ pub struct SessionSummary {
     /// file when a worker opens it so a revived child never resets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_use_count: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_health: Option<ContextHealthSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_path: Option<String>,
     /// The parent's live active-session id (subagent summaries).

@@ -34,6 +34,7 @@ impl Supervisor {
             from_active_session_id,
             delivery_mode,
             priority,
+            rest,
             ..
         } = command
         else {
@@ -52,40 +53,60 @@ impl Supervisor {
         // The source summary, once read (the wake reads it for its scope;
         // the sender endpoint reuses it).
         let mut source_summary: Option<Value> = None;
-        let target = match self.registry.resolve(target_active_session_id).await {
-            Ok(resident) => resident,
-            Err(error) => {
-                // The wake scope needs the source summary (its cwd filters
-                // the catalog's local pass); a woken target is never the
-                // source, so the read precedes the self-target guard.
-                let wake_source = match &source {
-                    Some(source) => match self.source_worker_summary(source).await {
-                        Ok(summary) => Some((Arc::clone(source), summary)),
-                        Err(error) => return fail(format!("{error:#}")),
-                    },
-                    None => None,
-                };
-                let woken_summary = wake_source.as_ref().map(|(_, summary)| summary.clone());
-                match self
-                    .wake_saved_target(
-                        &error,
-                        target_active_session_id,
-                        wake_source
-                            .as_ref()
-                            .map(|(resident, summary)| (resident, summary)),
-                    )
-                    .await
-                {
-                    WakeOutcome::Woken(resident) => {
-                        source_summary = woken_summary;
-                        resident
+        let exact_resident_only = rest
+            .get("exactResidentOnly")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let inbox_only = rest
+            .get("inboxOnly")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let target = if exact_resident_only {
+            match self.registry.get(target_active_session_id).await {
+                Some(resident) if !resident.identity_quarantined() => resident,
+                _ => {
+                    return fail(format!(
+                        "No active resident session exactly matches: {target_active_session_id}"
+                    ))
+                }
+            }
+        } else {
+            match self.registry.resolve(target_active_session_id).await {
+                Ok(resident) => resident,
+                Err(error) => {
+                    // The wake scope needs the source summary (its cwd filters
+                    // the catalog's local pass); a woken target is never the
+                    // source, so the read precedes the self-target guard.
+                    let wake_source = match &source {
+                        Some(source) => match self.source_worker_summary(source).await {
+                            Ok(summary) => Some((Arc::clone(source), summary)),
+                            Err(error) => return fail(format!("{error:#}")),
+                        },
+                        None => None,
+                    };
+                    let woken_summary =
+                        wake_source.as_ref().map(|(_, summary)| summary.clone());
+                    match self
+                        .wake_saved_target(
+                            &error,
+                            target_active_session_id,
+                            wake_source
+                                .as_ref()
+                                .map(|(resident, summary)| (resident, summary)),
+                        )
+                        .await
+                    {
+                        WakeOutcome::Woken(resident) => {
+                            source_summary = woken_summary;
+                            resident
+                        }
+                        WakeOutcome::Unknown => {
+                            return fail(format!(
+                                "Unknown active session: {target_active_session_id}"
+                            ))
+                        }
+                        WakeOutcome::Failed(error) => return fail(error),
                     }
-                    WakeOutcome::Unknown => {
-                        return fail(format!(
-                            "Unknown active session: {target_active_session_id}"
-                        ))
-                    }
-                    WakeOutcome::Failed(error) => return fail(error),
                 }
             }
         };
@@ -112,6 +133,10 @@ impl Supervisor {
             // the client id (`createAgentSessionMessageSender`).
             None => json!({ "clientId": client_id }),
         };
+        let mut delivery_rest = Map::default();
+        if inbox_only {
+            delivery_rest.insert("inboxOnly".to_string(), Value::Bool(true));
+        }
         let delivery = DaemonWorkerCommand::WorkerDeliverMessage {
             id: None,
             target_active_session_id: target.worker_id.clone(),
@@ -119,7 +144,7 @@ impl Supervisor {
             sender,
             delivery_mode: delivery_mode.clone(),
             priority: priority.clone(),
-            rest: Map::default(),
+            rest: delivery_rest,
         };
         let payload = match serde_json::to_value(&delivery) {
             Ok(payload) => payload,
@@ -601,6 +626,19 @@ mod tests {
         }
     }
 
+    fn exact_resident_send_command(target: &str) -> DaemonCommand {
+        DaemonCommand::SendMessage {
+            id: Some("m1".to_string()),
+            target_active_session_id: target.to_string(),
+            message: "context advisory".to_string(),
+            from_active_session_id: None,
+            agent_origin: Some(true),
+            delivery_mode: None,
+            priority: Some("low".to_string()),
+            rest: Map::from_iter([("exactResidentOnly".to_string(), Value::Bool(true))]),
+        }
+    }
+
     #[tokio::test]
     async fn unknown_target_answers_with_the_ts_error() {
         let supervisor = supervisor();
@@ -641,6 +679,38 @@ mod tests {
         assert_eq!(
             response.error.as_deref(),
             Some("Agent messaging cannot target the sending session")
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_resident_send_rejects_suffixes_without_waking() {
+        let supervisor = supervisor();
+        supervisor.registry.insert(resident("prefix-target-1")).await;
+
+        let suffix = supervisor
+            .handle_send_message(
+                "m1",
+                "agent",
+                &exact_resident_send_command("target-1"),
+            )
+            .await;
+        assert!(!suffix.success, "{suffix:?}");
+        assert_eq!(
+            suffix.error.as_deref(),
+            Some("No active resident session exactly matches: target-1")
+        );
+
+        let exact = supervisor
+            .handle_send_message(
+                "m1",
+                "agent",
+                &exact_resident_send_command("prefix-target-1"),
+            )
+            .await;
+        assert!(!exact.success, "{exact:?}");
+        assert_eq!(
+            exact.error.as_deref(),
+            Some("Session worker is not connected")
         );
     }
 

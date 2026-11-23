@@ -220,6 +220,42 @@ impl AgentMessageController for LinkAgentMessageController {
         };
         Ok(receipt)
     }
+
+    async fn remind_context(
+        &self,
+        target: String,
+        reason: pa_core::session_engine::agent_messaging::AgentContextReminderReason,
+    ) -> anyhow::Result<AgentMessageReceipt> {
+        if target == self.active_session_id {
+            anyhow::bail!("Agent messaging cannot target the sending session");
+        }
+        let input = AgentMessageSendInput {
+            target: target.clone(),
+            message: reason.message().to_string(),
+            receiver_role: None,
+            // Low-priority inbox arrivals are durable but do not wake an idle
+            // resident session merely to process the advisory.
+            priority: "low".to_string(),
+        };
+        let data = self
+            .link
+            .request_success(
+                json!({
+                    "type": "send_message",
+                    "targetActiveSessionId": target,
+                    "message": input.message,
+                    "fromActiveSessionId": self.active_session_id,
+                    "agentOrigin": true,
+                    "priority": input.priority,
+                    "exactResidentOnly": true,
+                    "inboxOnly": true,
+                }),
+                std::time::Duration::from_secs(30),
+            )
+            .await?;
+        receipt_from_wire(&data, input)
+            .ok_or_else(|| anyhow::anyhow!("Supervisor returned an invalid agent-message receipt"))
+    }
 }
 
 /// The outcome of the direct-delivery attempt.

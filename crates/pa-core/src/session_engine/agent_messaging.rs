@@ -23,7 +23,28 @@ pub const DEFAULT_AGENT_MESSAGE_RATE_LIMIT_REFILL_MS: u64 = 1_000;
 /// Sender-controlled delivery urgency. Missing priority preserves the historical
 /// default behavior.
 pub const AGENT_MESSAGE_PRIORITIES: [&str; 4] = ["low", "default", "medium", "high"];
+/// The only context-maintenance advisories the janitor may send. Each reason
+/// maps to fixed text so this narrow API cannot carry arbitrary cross-family
+/// messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentContextReminderReason {
+    Compact,
+    Release,
+}
 
+impl AgentContextReminderReason {
+    #[must_use]
+    pub fn message(self) -> &'static str {
+        match self {
+            AgentContextReminderReason::Compact => {
+                "Context advisory: when safe, consider choosing a useful checkpoint and running a full compaction."
+            }
+            AgentContextReminderReason::Release => {
+                "Context advisory: review expendable tool outputs where useful. Prefer consuming the immediately preceding result in the next useful cell, then taking a fresh checkpoint and calling rlm.release(); use rlm.release('tail') if the whole exchange is spent, and reserve rlm.release('all') for occasional cleanup."
+            }
+        }
+    }
+}
 
 pub const AGENT_OBSERVE_PREVIEW_MAX_CHARS: usize = 240;
 pub const AGENT_OBSERVE_IMPORT_NAME: &str = "agent_observe";
@@ -143,6 +164,18 @@ pub trait AgentMessageController: Send + Sync {
         &self,
         input: AgentMessageSendInput,
     ) -> impl Future<Output = anyhow::Result<AgentMessageReceipt>> + Send;
+    /// Send one fixed context-maintenance advisory to an exact live resident
+    /// active-session id. Implementations must not resolve names, suffixes, or
+    /// durable ids, and must not wake a non-resident session.
+    fn remind_context(
+        &self,
+        _target: String,
+        _reason: AgentContextReminderReason,
+    ) -> impl Future<Output = anyhow::Result<AgentMessageReceipt>> + Send {
+        std::future::ready(Err(anyhow::anyhow!(
+            "Context reminders are unavailable in this runtime"
+        )))
+    }
 }
 
 /// Message payload for the rendered `[agent-message from ...]` prompt.
@@ -401,6 +434,37 @@ pub fn register_agent_message_host_handlers<C: AgentMessageController + 'static>
             })
         }),
     );
+    let reminder_controller = controller.clone();
+    handlers.register(
+        "agent_message.remind_context",
+        host_handler(move |payload| {
+            let controller = reminder_controller.clone();
+            Box::pin(async move {
+                let data = payload.data;
+                let target = match data.get("target").and_then(Value::as_str) {
+                    Some(target) if !target.is_empty() && target.trim() == target => target,
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "agent_message.remind_context target must be an exact active session id"
+                        ))
+                    }
+                };
+                let reason = match data.get("reason").and_then(Value::as_str) {
+                    Some("compact") => AgentContextReminderReason::Compact,
+                    Some("release") => AgentContextReminderReason::Release,
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "agent_message.remind_context reason must be \"compact\" or \"release\""
+                        ))
+                    }
+                };
+                let receipt = controller
+                    .remind_context(target.to_string(), reason)
+                    .await?;
+                Ok(receipt_value(&receipt))
+            })
+        }),
+    );
     handlers.register(
         "agent_message.send",
         host_handler(move |payload| {
@@ -552,9 +616,9 @@ pub fn register_agent_message_host_handlers<C: AgentMessageController + 'static>
 mod observe;
 pub use observe::{
     create_agent_observe_message_preview, normalize_observe_limit, normalize_observe_max_chars,
-    register_agent_observe_host_handlers, AgentFamilyStatus, AgentObserveActivity,
-    AgentObserveController, AgentObserveListResult, AgentObserveMessagePreview,
-    AgentObserveRecentMessagesResult, AgentObserveSummary,
+    register_agent_observe_host_handlers, AgentContextHealth, AgentFamilyStatus,
+    AgentObserveActivity, AgentObserveController, AgentObserveListResult,
+    AgentObserveMessagePreview, AgentObserveRecentMessagesResult, AgentObserveSummary,
 };
 
 #[cfg(test)]

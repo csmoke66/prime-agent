@@ -1,6 +1,6 @@
 //! Kernel `agent_message`/`agent_observe` controllers for daemon workers:
-//! the supervisor-link family roster, worker-to-worker direct peer delivery
-//! with the supervisor-routed fallback, and the wire receipt mapping.
+//! family-scoped messaging and transcript observation plus the authenticated,
+//! content-free resident context-health view.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -8,10 +8,11 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use pa_core::session_engine::agent_messaging::{
-    AgentFamilyMember, AgentFamilyRelationship, AgentFamilyStatus, AgentMessageController,
-    AgentMessageDeliveryStatus, AgentMessageReceipt, AgentMessageSendInput, AgentObserveActivity,
-    AgentObserveController, AgentObserveListResult, AgentObserveMessagePreview,
-    AgentObserveRecentMessagesResult, AgentObserveSummary, AGENT_OBSERVE_PREVIEW_MAX_CHARS,
+    AgentContextHealth, AgentFamilyMember, AgentFamilyRelationship, AgentFamilyStatus,
+    AgentMessageController, AgentMessageDeliveryStatus, AgentMessageReceipt, AgentMessageSendInput,
+    AgentObserveActivity, AgentObserveController, AgentObserveListResult,
+    AgentObserveMessagePreview, AgentObserveRecentMessagesResult, AgentObserveSummary,
+    AGENT_OBSERVE_PREVIEW_MAX_CHARS,
 };
 
 use crate::supervisor_link::SupervisorLink;
@@ -52,6 +53,18 @@ impl FamilyIdentity {
             parent_session_id: non_empty(summary_ref, "parentSessionId"),
             parent_session_path: summary_ref.and_then(parent_binding).map(str::to_string),
             rlm_depth: summary_ref.map_or(0, row_depth),
+        }
+    }
+
+    pub(crate) fn relationship_to(&self, row: &Value) -> Option<AgentFamilyRelationship> {
+        if row_is_child(row, self) {
+            Some(AgentFamilyRelationship::Child)
+        } else if row_is_parent(row, self) {
+            Some(AgentFamilyRelationship::Parent)
+        } else if row_is_sibling(row, self) {
+            Some(AgentFamilyRelationship::Sibling)
+        } else {
+            None
         }
     }
 

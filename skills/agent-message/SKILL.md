@@ -1,14 +1,16 @@
 ---
 name: agent-message
-description: Message an agent's parent, siblings, or direct children through the daemon. Discover reachable agents with agent_observe.list_agents, then send direct text without spoofing sender identity.
+description: Message an agent's parent, siblings, or direct children, or send a fixed context advisory to one exact resident session ID. Sender identity is daemon-derived.
 ---
 
 # Agent Message
 
-Send direct messages within the current agent's nuclear family through the
-local daemon: parent, siblings, and direct children only. Roots are siblings.
-The daemon derives your sender identity from the current session; do not try
-to include a `from` field.
+`send` delivers direct messages within the current agent's nuclear family
+(parent, siblings, and direct children; roots are siblings).
+`remind_context` is a separate narrow janitor surface for a fixed advisory to
+one exact live resident session ID, including an unrelated subagent. The daemon
+derives your sender identity from the current session; do not try to include a
+`from` field.
 
 Call directly from the kernel:
 
@@ -53,6 +55,22 @@ if child is not None:
   deliver when the target's current work allows (`send` does not block waiting
   for that). Delivered receipts carry `deliveredAt`, queued receipts carry
   `queuedAt`.
+- `await agent_message.remind_context(active_session_id, reason="compact" | "release")`
+  sends one fixed, low-priority context-maintenance advisory to the exact live
+  resident ID returned by `agent_observe.context_health`; it does not accept a
+  name, suffix, durable ID, custom text, broadcast, or priority. `"compact"`
+  suggests choosing a useful checkpoint and fully compacting when safe.
+  `"release"` suggests reviewing expendable tool outputs: consume the
+  immediately preceding result in the next useful cell, then take a fresh
+  checkpoint and call `rlm.release()`; use `rlm.release("tail")` when the
+  whole exchange is spent, and reserve `rlm.release("all")` for occasional
+  cleanup. The target decides whether and when to act. Delivery uses the
+  ordinary attributed inbox path and returns its regular receipt. A stale or
+  passivated target, or one whose inbox is disabled or full, is rejected rather
+  than woken; a
+  low-priority reminder waits silently in an idle resident's inbox until
+  unrelated work wakes it.
+
 ## Safety
 
 - Do not delete a child immediately after `send`: delivered follow-ups may still
@@ -64,3 +82,6 @@ if child is not None:
 - Sender identity is daemon-derived and cannot be spoofed from Python.
 - The daemon enforces message size, rate, and pending-queue limits before
   accepting delivery.
+- Context reminders are canned advisories, not arbitrary cross-family
+  messaging or an instruction to compact. They cannot force compaction,
+  escalate priority, wake a saved session, or spoof their sender.

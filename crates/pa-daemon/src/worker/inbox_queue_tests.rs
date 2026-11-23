@@ -2385,6 +2385,58 @@ async fn a_clear_drops_unread_agent_messages_and_their_wake_rows() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A context advisory is durable inbox mail only: it creates no wake row, and
+/// a full inbox refuses the next advisory rather than flushing into a paid turn.
+#[tokio::test]
+async fn context_advisory_never_wakes_or_flushes_a_full_inbox() {
+    let (worker, inbox, dir) = faux_worker_with_inbox();
+    worker.dispatch("clear_queue", &json!({})).await;
+    let delivered = worker
+        .dispatch(
+            "worker_deliver_message",
+            &json!({
+                "targetActiveSessionId": "target-session",
+                "message": "consider compacting",
+                "sender": { "activeSessionId": "janitor-1" },
+                "priority": "low",
+                "inboxOnly": true,
+            }),
+        )
+        .await;
+    assert!(delivered.success, "{delivered:?}");
+    assert_eq!(inbox.count().0, 1);
+    assert!(steering_rows(&worker).is_empty());
+
+    for index in 1..DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION {
+        inbox.push(
+            inbox_notice(
+                pa_core::session_engine::inbox::INBOX_CLASS_AGENT_MESSAGE,
+                &format!("waiting {index}"),
+            ),
+            1_000 + index as u64,
+        );
+    }
+    let refused = worker
+        .dispatch(
+            "worker_deliver_message",
+            &json!({
+                "targetActiveSessionId": "target-session",
+                "message": "still consider compacting",
+                "sender": { "activeSessionId": "janitor-1" },
+                "priority": "low",
+                "inboxOnly": true,
+            }),
+        )
+        .await;
+    assert!(!refused.success, "{refused:?}");
+    assert_eq!(
+        inbox.count().0,
+        DEFAULT_AGENT_MESSAGE_MAX_PENDING_PER_SESSION
+    );
+    assert!(steering_rows(&worker).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A recovered full inbox must not strand the next sender.
 #[tokio::test]
 async fn a_full_agent_message_inbox_delivers_every_body_and_accepts_new_mail() {

@@ -158,6 +158,9 @@ pub struct SessionEngine {
     /// loops the graph and keeps a dropped session's kernel process alive
     /// until the process exits.
     pub(crate) provisioner: std::sync::Arc<crate::kernel::provisioner::IpythonKernelProvisioner>,
+    /// Retained tool-output snapshot, updated incrementally as results land
+    /// and eagerly rebuilt when the live transcript is replaced.
+    tool_output_stats: std::sync::Arc<std::sync::RwLock<super::ToolOutputStats>>,
 }
 
 /// Skill overrides for built-in integrations the user is not logged into,
@@ -723,6 +726,9 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
         }
         None => timing_stream_fn,
     };
+    let tool_output_accounting =
+        super::tool_output_reminder::accounting(Arc::clone(&reminder_percent));
+    let tool_output_stats = std::sync::Arc::clone(&tool_output_accounting.stats);
     let agent = Agent::new(AgentOptions {
         // Every request in the session carries this identity: providers key prompt caching
         // (`prompt_cache_key`), session headers, and WebSocket/`previous_response_id` reuse on it
@@ -736,7 +742,8 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             messages: initial_messages,
         },
         stream_fn: Some(agent_stream_fn),
-        tool_result_landing: Some(super::tool_output_reminder::landing(Arc::clone(&reminder_percent))),
+        tool_result_landing: Some(tool_output_accounting.landing),
+        message_history_changed: Some(tool_output_accounting.history_changed),
         // The session conversion rules apply at the loop's LLM boundary
         // (TS `convertToLlm`): bookkeeping custom rows drop, everything
         // else (the harness digest included) becomes a user turn.
@@ -982,10 +989,23 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
         factory_host,
         rlm_progress_notes: Arc::clone(&wiring.rlm.notes),
         provisioner,
+        tool_output_stats,
     })
 }
 
 impl SessionEngine {
+    /// Cheap snapshot of retained tool output in the model-visible context.
+    ///
+    /// The accounting is shared with the pressure reminder and rebuilt eagerly
+    /// on explicit history replacement, so this never scans transcript text.
+    #[must_use]
+    pub fn retained_tool_output(&self) -> super::ToolOutputStats {
+        *self
+            .tool_output_stats
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// After a model switch, the `model.info` handler and the usage
     /// estimate's context window follow the model the session now runs.
     pub fn update_model_facts(&self, model: &pa_types::ai::Model) {

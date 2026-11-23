@@ -163,6 +163,13 @@ pub enum DaemonCommand {
         /// token is an auth failure, not a parse one).
         #[serde(default)]
         worker_token: String,
+        /// `context_health` requests only the live context-maintenance metrics.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        view: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min_tool_percent: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min_active_seconds: Option<u64>,
         #[serde(flatten)]
         rest: JsonMap,
     },

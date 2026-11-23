@@ -47,6 +47,28 @@ async fn spawn_fake_supervisor(
                     let command = value["command"].clone();
                     let command_type = command["type"].as_str().unwrap_or_default().to_string();
                     let response = match command_type.as_str() {
+                        "list_agent_peers"
+                            if command["view"].as_str() == Some("context_health") => {
+                            if command["workerToken"].as_str() != Some("tok-a") {
+                                response_failure(
+                                    Some(&id),
+                                    "list_agent_peers",
+                                    "Worker authentication failed",
+                                    None,
+                                )
+                            } else {
+                                response_success(
+                                    Some(&id),
+                                    "list_agent_peers",
+                                    Some(
+                                        roster
+                                            .get("contextHealthResponse")
+                                            .cloned()
+                                            .unwrap_or_else(|| json!({ "agents": [] })),
+                                    ),
+                                )
+                            }
+                        },
                         "list_agent_peers" => response_success(
                             Some(&id),
                             "list_agent_peers",
@@ -172,6 +194,7 @@ fn observe_controller(socket: std::path::PathBuf) -> LinkAgentObserveController 
     LinkAgentObserveController::new(
         Arc::new(SupervisorLink::new(socket)),
         "aaa111".to_string(),
+        "tok-a".to_string(),
         Arc::new(std::sync::Mutex::new(own_summary())),
         None,
     )
@@ -360,6 +383,72 @@ async fn family_keeps_off_roster_children_addressable() {
     assert_eq!(family[0].id, "sess-e");
     assert_eq!(family[0].name.as_deref(), Some("worker-b"));
     assert_eq!(family[0].aliases, vec!["sub-kid2", "sess-e", "eee555"]);
+}
+
+#[tokio::test]
+async fn context_reminder_uses_exact_resident_supervisor_route() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let socket = dir.path().join("sup.sock");
+    let listener = bind_transport(&socket).await.unwrap();
+    let (sent_tx, sent_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let stream = listener.accept().await.unwrap();
+        let (reader, mut writer) = stream.split();
+        let mut reader = BufReader::new(reader);
+        writer
+            .write_all(
+                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+            )
+            .await
+            .unwrap();
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        let envelope: Value = serde_json::from_str(line.trim()).unwrap();
+        let id = envelope["id"].as_str().unwrap();
+        let command = envelope["command"].clone();
+        let response = response_success(
+            Some(id),
+            "send_message",
+            Some(json!({
+                "id": "agentmsg_reminder",
+                "source": "agent_message",
+                "target": {
+                    "activeSessionId": "foreign222",
+                    "sessionId": "sess-foreign",
+                    "runtimeKind": "subagent",
+                },
+                "message": command["message"].clone(),
+                "deliveryStatus": "delivered",
+                "deliveredAt": "2026-01-01T00:00:00.000Z",
+                "deliveryMode": "steer",
+            })),
+        );
+        let mut response_line = serde_json::to_string(&response).unwrap();
+        response_line.push('\n');
+        writer.write_all(response_line.as_bytes()).await.unwrap();
+        sent_tx.send(command).unwrap();
+    });
+
+    let receipt = controller(socket, own_summary())
+        .remind_context(
+            "foreign222".to_string(),
+            pa_core::session_engine::agent_messaging::AgentContextReminderReason::Release,
+        )
+        .await
+        .unwrap();
+    let command = sent_rx.await.unwrap();
+    assert_eq!(command["type"], "send_message");
+    assert_eq!(command["targetActiveSessionId"], "foreign222");
+    assert_eq!(command["fromActiveSessionId"], "aaa111");
+    assert_eq!(command["exactResidentOnly"], true);
+    assert_eq!(command["inboxOnly"], true);
+    assert_eq!(command["priority"], "low");
+    assert_eq!(
+        command["message"],
+        pa_core::session_engine::agent_messaging::AgentContextReminderReason::Release.message()
+    );
+    assert_eq!(receipt.target, "foreign222");
+    assert_eq!(receipt.receiver_role, None);
 }
 
 #[tokio::test]
@@ -1074,6 +1163,77 @@ async fn recent_messages_resolves_by_name_and_reports_the_envelope() {
     assert_eq!(error.to_string(), "agent ghost is not reachable");
 }
 
+#[tokio::test]
+async fn context_health_uses_authenticated_peer_view_and_rejects_malformed_responses() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let socket = dir.path().join("health.sock");
+    spawn_fake_supervisor(
+        socket.clone(),
+        json!({
+            "sessions": [],
+            "contextHealthResponse": {"agents": [{
+                "activeSessionId": "bbb222",
+                "sessionId": "sess-b",
+                "firstMessage": "private transcript content",
+                "cwd": "/private/path",
+                "sessionName": "beta",
+                "parentActiveSessionId": null,
+                "relationship": "sibling",
+                "isStreaming": false,
+                "isCompacting": false,
+                "toolOutputTokens": 3_000,
+                "contextWindow": 10_000,
+                "toolOutputPercent": 30.0,
+                "lastReleaseKind": "all",
+                "toolResultsSinceRelease": 1,
+                "activeSecondsSinceCompaction": 10_800,
+                "compactionEpoch": null
+            }]}
+        }),
+        None,
+    )
+    .await;
+    let health = observe_controller(socket)
+        .context_health(Some(30.0), Some(3 * 3600))
+        .await
+        .unwrap();
+    assert_eq!(
+        health,
+        vec![AgentContextHealth {
+            active_session_id: "bbb222".to_string(),
+            session_id: Some("sess-b".to_string()),
+            session_name: Some("beta".to_string()),
+            parent_active_session_id: None,
+            relationship: Some(AgentFamilyRelationship::Sibling),
+            is_streaming: false,
+            is_compacting: false,
+            tool_output_tokens: Some(3_000),
+            context_window: Some(10_000),
+            tool_output_percent: Some(30.0),
+            last_release_kind: Some("all".to_string()),
+            tool_results_since_release: Some(1),
+            active_seconds_since_compaction: Some(10_800),
+            compaction_epoch: None,
+        }]
+    );
+
+    let malformed_socket = dir.path().join("malformed-health.sock");
+    spawn_fake_supervisor(
+        malformed_socket.clone(),
+        json!({"sessions": [], "contextHealthResponse": {"peers": []}}),
+        None,
+    )
+    .await;
+    let error = observe_controller(malformed_socket)
+        .context_health(None, None)
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("update or restart Prime Agent"),
+        "{error:#}"
+    );
+}
+
 /// The display reader keeps a custom row's stored ISO timestamp. Its
 /// public observe preview must preserve that timestamp as epoch milliseconds.
 #[tokio::test]
@@ -1158,6 +1318,7 @@ async fn recent_messages_reads_a_degraded_live_sibling_but_not_a_foreign_stub() 
     let observer = LinkAgentObserveController::new(
         Arc::new(SupervisorLink::new(socket)),
         "aaa111".to_string(),
+        "tok-a".to_string(),
         Arc::new(std::sync::Mutex::new(Some(json!({
             "activeSessionId": "aaa111", "sessionId": "sess-a",
             "parentActiveSessionId": "parent", "parentSessionId": "sess-parent",

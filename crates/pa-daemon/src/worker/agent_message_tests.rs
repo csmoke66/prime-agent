@@ -99,6 +99,30 @@ async fn deliver_message_answers_the_ts_receipt_shape() {
     assert!(queue_texts(&worker.core, Lane::FollowUp).is_empty());
 }
 
+#[tokio::test]
+async fn context_advisory_rejects_a_target_with_inbox_disabled() {
+    let worker = created_worker().await;
+    let response = worker
+        .dispatch(
+            "worker_deliver_message",
+            &json!({
+                "targetActiveSessionId": "target-session",
+                "message": "consider compacting",
+                "sender": { "activeSessionId": "janitor-1" },
+                "priority": "low",
+                "inboxOnly": true,
+            }),
+        )
+        .await;
+    assert!(!response.success, "{response:?}");
+    assert_eq!(
+        response.error.as_deref(),
+        Some("Target session inbox is disabled")
+    );
+    assert!(queue_texts(&worker.core, Lane::Steering).is_empty());
+    assert!(queue_texts(&worker.core, Lane::FollowUp).is_empty());
+}
+
 /// The row's content is the rendered prompt; the details carry the identity the
 /// collapsed card reads, and the marker still targets `agent_messages_clear`/`pause`.
 #[tokio::test]

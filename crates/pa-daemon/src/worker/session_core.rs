@@ -99,6 +99,13 @@ pub(crate) struct SessionCore {
     /// (`preparing` at pickup, `committing` at the first row, `running` at the
     /// first assistant frame) and clears it once the turn settles.
     pub(crate) active_action: Option<crate::types::SessionActionActive>,
+    /// Settled executing-turn milliseconds since the active branch's latest
+    /// successful full compaction. The optional instant adds the resident
+    /// turn's live segment without writing progress checkpoints.
+    pub(super) compaction_active_ms: u64,
+    pub(super) compaction_active_since: Option<std::time::Instant>,
+    /// Durable id of the latest full-compaction row on the active branch.
+    pub(super) compaction_epoch: Option<String>,
 }
 
 impl SessionCore {
@@ -108,10 +115,101 @@ impl SessionCore {
         self.busy || self.compacting || !self.steering.is_empty() || !self.follow_up.is_empty()
     }
 
+    /// Snapshot the working-runtime clock. While a turn is executing, the
+    /// wall sample lets a cached reader extrapolate until the next roster row.
+    #[must_use]
+    pub(crate) fn compaction_clock(&self) -> (u64, Option<u64>) {
+        self.compaction_clock_at(std::time::Instant::now(), crate::util::now_ms())
+    }
+
+    /// The active branch's latest successful full-compaction entry id.
+    #[must_use]
+    pub(crate) fn compaction_epoch(&self) -> Option<&str> {
+        self.compaction_epoch.as_deref()
+    }
+
+    pub(crate) fn start_compaction_clock(&mut self) {
+        self.start_compaction_clock_at(std::time::Instant::now());
+    }
+
+    /// End the resident turn segment and durably checkpoint settled work.
+    pub(crate) fn settle_compaction_clock(&mut self) -> anyhow::Result<()> {
+        self.stop_compaction_clock_at(std::time::Instant::now());
+        let active_ms = self.compaction_active_ms;
+        let compaction_epoch = self.compaction_epoch.as_deref();
+        if let Some(store) = self.store.as_mut() {
+            store.persist_compaction_clock(active_ms, compaction_epoch)?;
+        }
+        Ok(())
+    }
+
+    /// A successful full compaction starts a fresh epoch. An executing turn
+    /// continues accruing from the reset boundary rather than stopping.
+    pub(crate) fn reset_compaction_clock(&mut self, epoch: Option<String>) {
+        self.reset_compaction_clock_at(epoch, std::time::Instant::now());
+    }
+
+    /// Rebind to a store/branch. Resident elapsed time never crosses this
+    /// boundary, so an overnight restore cannot be mistaken for active work.
+    pub(crate) fn restore_compaction_clock(
+        &mut self,
+        active_ms: u64,
+        epoch: Option<String>,
+    ) {
+        self.compaction_active_ms = active_ms;
+        self.compaction_active_since = None;
+        self.compaction_epoch = epoch;
+    }
+
+    fn start_compaction_clock_at(&mut self, now: std::time::Instant) {
+        if self.compaction_active_since.is_none() {
+            self.compaction_active_since = Some(now);
+        }
+    }
+
+    fn stop_compaction_clock_at(&mut self, now: std::time::Instant) {
+        if let Some(started) = self.compaction_active_since.take() {
+            self.compaction_active_ms = self
+                .compaction_active_ms
+                .saturating_add(duration_ms(now.saturating_duration_since(started)));
+        }
+    }
+
+    fn reset_compaction_clock_at(
+        &mut self,
+        epoch: Option<String>,
+        now: std::time::Instant,
+    ) {
+        self.compaction_active_ms = 0;
+        if self.compaction_active_since.is_some() {
+            self.compaction_active_since = Some(now);
+        }
+        self.compaction_epoch = epoch;
+    }
+
+    fn compaction_clock_at(
+        &self,
+        monotonic_now: std::time::Instant,
+        wall_now_ms: u64,
+    ) -> (u64, Option<u64>) {
+        match self.compaction_active_since {
+            Some(started) => (
+                self.compaction_active_ms.saturating_add(duration_ms(
+                    monotonic_now.saturating_duration_since(started),
+                )),
+                Some(wall_now_ms),
+            ),
+            None => (self.compaction_active_ms, None),
+        }
+    }
+
     /// A created session core for command modules' unit tests (the private
     /// bookkeeping fields stay owned here).
     #[cfg(test)]
     pub(crate) fn test_core(store: Option<SessionFile>, cwd: String) -> Self {
+        let (compaction_active_ms, compaction_epoch) = store
+            .as_ref()
+            .map_or((0, None), SessionFile::compaction_clock_state);
         SessionCore {
             active_session_id: store.as_ref().map_or_else(
                 || "test-session".to_string(),
@@ -154,6 +252,68 @@ impl SessionCore {
             queued_input_suspended: false,
             pending_next_turn: Vec::new(),
             active_action: None,
+            compaction_active_ms,
+            compaction_active_since: None,
+            compaction_epoch,
         }
+    }
+}
+
+fn duration_ms(duration: std::time::Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn working_clock_counts_only_live_turn_segments_and_resets_in_place() {
+        let base = std::time::Instant::now();
+        let mut core = SessionCore::test_core(None, String::new());
+        core.restore_compaction_clock(40, Some("old-compaction".to_string()));
+
+        core.start_compaction_clock_at(base);
+        assert_eq!(
+            core.compaction_clock_at(base + std::time::Duration::from_millis(10), 1_000),
+            (50, Some(1_000))
+        );
+        core.stop_compaction_clock_at(base + std::time::Duration::from_millis(15));
+        assert_eq!(
+            core.compaction_clock_at(base + std::time::Duration::from_secs(10), 11_000),
+            (55, None),
+        );
+
+        let resumed = base + std::time::Duration::from_secs(20);
+        core.start_compaction_clock_at(resumed);
+        core.reset_compaction_clock_at(
+            Some("new-compaction".to_string()),
+            resumed + std::time::Duration::from_millis(7),
+        );
+        assert_eq!(core.compaction_epoch(), Some("new-compaction"));
+        assert_eq!(
+            core.compaction_clock_at(
+                resumed + std::time::Duration::from_millis(12),
+                21_000,
+            ),
+            (5, Some(21_000)),
+        );
+        core.stop_compaction_clock_at(resumed + std::time::Duration::from_millis(17));
+        assert_eq!(core.compaction_clock_at(resumed, 0), (10, None));
+    }
+
+    #[test]
+    fn restore_never_accrues_the_gap_while_the_worker_was_absent() {
+        let base = std::time::Instant::now();
+        let mut core = SessionCore::test_core(None, String::new());
+        core.start_compaction_clock_at(base);
+        core.stop_compaction_clock_at(base + std::time::Duration::from_millis(25));
+
+        core.restore_compaction_clock(25, None);
+
+        assert_eq!(
+            core.compaction_clock_at(base + std::time::Duration::from_secs(86_400), 86_400_000),
+            (25, None),
+        );
     }
 }

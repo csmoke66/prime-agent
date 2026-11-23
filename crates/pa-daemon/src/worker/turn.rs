@@ -96,6 +96,7 @@ impl TurnRunner {
                         .filter_map(|item| item.admission_id.clone())
                         .collect();
                     core.busy = true;
+                    core.start_compaction_clock();
                     core.abort_requested = false;
                     core.retry_abort_requested = false;
                     core.running_tool_calls.clear();
@@ -109,6 +110,7 @@ impl TurnRunner {
                         .collect();
                     core.busy = true;
                     core.abort_requested = false;
+                    core.start_compaction_clock();
                     core.retry_abort_requested = false;
                     core.running_tool_calls.clear();
                     Some((Lane::FollowUp, items))
@@ -695,17 +697,31 @@ impl TurnRunner {
                         }
                     }
                     EngineEvent::Compaction { entry, .. } => {
-                        // A skipped compaction carries a null entry:
-                        // publish the event, never persist it.
-                        if let Some(store) = core.store.as_mut().filter(|_| !entry.is_null()) {
-                            let persist_started = std::time::Instant::now();
-                            let _ = store.persist_entry("compaction", entry.clone());
-                            pa_core::session_engine::compaction_trace::trace(
-                                "emit.compaction_persist",
-                                &serde_json::json!({
-                                    "micros": persist_started.elapsed().as_micros(),
-                                }),
-                            );
+                        // A skipped compaction carries a null entry: publish
+                        // it without resetting the working-runtime epoch.
+                        if !entry.is_null() {
+                            let epoch = if let Some(store) = core.store.as_mut() {
+                                let persist_started = std::time::Instant::now();
+                                let persisted = store.persist_entry("compaction", entry.clone());
+                                pa_core::session_engine::compaction_trace::trace(
+                                    "emit.compaction_persist",
+                                    &serde_json::json!({
+                                        "micros": persist_started.elapsed().as_micros(),
+                                    }),
+                                );
+                                match persisted {
+                                    Ok(id) => Some(id),
+                                    Err(error) => {
+                                        eprintln!(
+                                            "pa-daemon: automatic compaction persistence failed: {error:#}"
+                                        );
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            core.reset_compaction_clock(epoch);
                         }
                     }
                     // The durable mirror of a goal-state change: each row is the new state.
@@ -1189,6 +1205,9 @@ impl TurnRunner {
             // this settle. Recheck the lanes even when that frame was observed.
             if !more_queued {
                 settle_engine.clear_progress_note();
+            }
+            if let Err(error) = core.settle_compaction_clock() {
+                eprintln!("pa-daemon: compaction clock checkpoint failed: {error:#}");
             }
             core.busy = false;
             core.active_action = None;

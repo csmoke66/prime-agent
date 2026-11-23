@@ -523,6 +523,7 @@ impl Worker {
         // record only once the disclosure is durable (a requested record with no
         // disclosure row is vacuously durable; no requested record adds no key).
         let mut interrupted_compaction_persisted = interrupted_compaction_requested;
+        let (compaction_active_ms, compaction_epoch) = store.compaction_clock_state();
         // The core lock stays inside this block: everything after it may await,
         // and a std MutexGuard must never ride an await point.
         let (summary, rlm_depth) = {
@@ -536,6 +537,7 @@ impl Worker {
             // A resumed session's tool counter re-seeds from its file: a
             // revived worker keeps the count its roster rows carried.
             core.tool_use_count = store.tool_call_count();
+            core.restore_compaction_clock(compaction_active_ms, compaction_epoch);
             core.store = Some(store);
             if let Some(disclosure) = &interrupted_compaction {
                 if let Some(store) = core.store.as_mut() {

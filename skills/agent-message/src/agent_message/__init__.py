@@ -12,6 +12,29 @@ from rlm import host_request
 
 ReceiverRole = Literal["parent", "sibling", "child"]
 MessagePriority = Literal["low", "default", "medium", "high"]
+ContextReminderReason = Literal["compact", "release"]
+
+
+async def remind_context(
+    target: str,
+    *,
+    reason: ContextReminderReason | str = "compact",
+) -> dict[str, Any]:
+    """Send a fixed context-maintenance advisory to one exact resident session."""
+    if not isinstance(target, str):
+        raise TypeError(f"target must be str, got {type(target).__name__}")
+    if not target or target != target.strip():
+        raise ValueError("target must be an exact active session id")
+    if reason not in ("compact", "release"):
+        raise ValueError('reason must be "compact" or "release"')
+    receipt = await host_request(
+        "agent_message.remind_context",
+        {"target": target, "reason": reason},
+    )
+    _emit_sent_message(receipt)
+    return receipt
+
+
 _MESSAGE_DISPLAY_MIME = "application/vnd.prime-agent.agent-message+json"
 
 

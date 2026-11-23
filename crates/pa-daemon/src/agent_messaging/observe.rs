@@ -1,21 +1,22 @@
-//! The `agent_observe.*` controller: message previews and full session
-//! summaries from the supervisor, the nuclear-family roster derivation, and
-//! the preview text helpers.
+//! The `agent_observe.*` controller: family summaries, content-free context
+//! health from the authenticated supervisor peer view, and bounded message
+//! previews.
 use super::{
-    json, row_is_child, row_is_parent, row_is_sibling, row_str, AgentFamilyRelationship,
-    AgentFamilyStatus, AgentObserveActivity, AgentObserveController, AgentObserveListResult,
+    json, row_str, AgentContextHealth, AgentFamilyRelationship, AgentFamilyStatus,
+    AgentObserveActivity, AgentObserveController, AgentObserveListResult,
     AgentObserveMessagePreview, AgentObserveRecentMessagesResult, AgentObserveSummary, Arc,
     FamilyIdentity, SupervisorLink, Value, AGENT_OBSERVE_PREVIEW_MAX_CHARS,
 };
 
-/// `agent_observe.*` controller for daemon workers: message previews and
-/// full session summaries from the supervisor. The roster this controller
-/// reports is the caller's NUCLEAR FAMILY, derived from the same durable
-/// parent edges `agent_message.send` resolves through — never the whole daemon.
+/// `agent_observe.*` controller for daemon workers. Family summaries and
+/// transcript previews retain nuclear-family permissions; context health uses
+/// the separate content-free authenticated peer view.
 pub struct LinkAgentObserveController {
     link: Arc<SupervisorLink>,
     /// This worker's live active session id (the family-scope anchor).
     active_session_id: String,
+    /// Authenticates the context-health peer roster request.
+    worker_token: String,
     /// This worker's own session summary, pushed at create and rename.
     own_summary: Arc<std::sync::Mutex<Option<Value>>>,
     /// This session's resident RLM children (the registry join for Child
@@ -27,12 +28,14 @@ impl LinkAgentObserveController {
     pub fn new(
         link: Arc<SupervisorLink>,
         active_session_id: String,
+        worker_token: String,
         own_summary: Arc<std::sync::Mutex<Option<Value>>>,
         children: Option<Arc<crate::rlm_children::SupervisorChildSessions>>,
     ) -> Self {
         LinkAgentObserveController {
             link,
             active_session_id,
+            worker_token,
             own_summary,
             children,
         }
@@ -210,6 +213,115 @@ impl AgentObserveController for LinkAgentObserveController {
         })
     }
 
+    async fn context_health(
+        &self,
+        min_tool_percent: Option<f64>,
+        min_active_seconds: Option<u64>,
+    ) -> anyhow::Result<Vec<AgentContextHealth>> {
+        let mut command = json!({
+            "type": "list_agent_peers",
+            "workerToken": self.worker_token,
+            "view": "context_health",
+        });
+        if let Some(percent) = min_tool_percent {
+            command["minToolPercent"] = json!(percent);
+        }
+        if let Some(seconds) = min_active_seconds {
+            command["minActiveSeconds"] = json!(seconds);
+        }
+        let data = self
+            .link
+            .request_success(command, std::time::Duration::from_secs(5))
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "agent_observe.context_health is unavailable; update or restart Prime Agent: {error}"
+                )
+            })?;
+        let rows = data
+            .get("agents")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "agent_observe.context_health is unavailable; update or restart Prime Agent: supervisor returned no agents array"
+                )
+            })?;
+        rows.iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let malformed = |field: &str| {
+                    anyhow::anyhow!(
+                        "agent_observe.context_health is unavailable; update or restart Prime Agent: malformed agents[{index}].{field}"
+                    )
+                };
+                let nullable_string = |field: &str| match row.get(field) {
+                    Some(Value::Null) => Ok(None),
+                    Some(Value::String(value)) => Ok(Some(value.clone())),
+                    _ => Err(malformed(field)),
+                };
+                let nullable_u64 = |field: &str| match row.get(field) {
+                    Some(Value::Null) => Ok(None),
+                    Some(Value::Number(value)) => value
+                        .as_u64()
+                        .map(Some)
+                        .ok_or_else(|| malformed(field)),
+                    _ => Err(malformed(field)),
+                };
+                let nullable_f64 = |field: &str| match row.get(field) {
+                    Some(Value::Null) => Ok(None),
+                    Some(Value::Number(value)) => value
+                        .as_f64()
+                        .filter(|number| number.is_finite() && *number >= 0.0)
+                        .map(Some)
+                        .ok_or_else(|| malformed(field)),
+                    _ => Err(malformed(field)),
+                };
+                let relationship = match nullable_string("relationship")?.as_deref() {
+                    None => None,
+                    Some("parent") => Some(AgentFamilyRelationship::Parent),
+                    Some("sibling") => Some(AgentFamilyRelationship::Sibling),
+                    Some("child") => Some(AgentFamilyRelationship::Child),
+                    Some(_) => return Err(malformed("relationship")),
+                };
+                let last_release_kind = nullable_string("lastReleaseKind")?;
+                if last_release_kind.as_deref().is_some_and(|kind| {
+                    !matches!(kind, "last" | "current" | "tail" | "all" | "explicit")
+                }) {
+                    return Err(malformed("lastReleaseKind"));
+                }
+                Ok(AgentContextHealth {
+                    active_session_id: row
+                        .get("activeSessionId")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                        .ok_or_else(|| malformed("activeSessionId"))?
+                        .to_string(),
+                    session_id: nullable_string("sessionId")?,
+                    session_name: nullable_string("sessionName")?,
+                    parent_active_session_id: nullable_string("parentActiveSessionId")?,
+                    relationship,
+                    is_streaming: row
+                        .get("isStreaming")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(|| malformed("isStreaming"))?,
+                    is_compacting: row
+                        .get("isCompacting")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(|| malformed("isCompacting"))?,
+                    tool_output_tokens: nullable_u64("toolOutputTokens")?,
+                    context_window: nullable_u64("contextWindow")?,
+                    tool_output_percent: nullable_f64("toolOutputPercent")?,
+                    last_release_kind,
+                    tool_results_since_release: nullable_u64("toolResultsSinceRelease")?,
+                    active_seconds_since_compaction: nullable_u64(
+                        "activeSecondsSinceCompaction",
+                    )?,
+                    compaction_epoch: nullable_string("compactionEpoch")?,
+                })
+            })
+            .collect()
+    }
+
     async fn get_agent(&self, target: &str) -> anyhow::Result<Option<AgentObserveSummary>> {
         find_target(self.family_summaries().await?, target)
     }
@@ -323,13 +435,10 @@ pub(super) fn summaries_from_roster(
             } else if registry_child_active_ids
                 .iter()
                 .any(|child| child == &active_session_id)
-                || row_is_child(&session, identity)
             {
                 Some(AgentFamilyRelationship::Child)
-            } else if row_is_parent(&session, identity) {
-                Some(AgentFamilyRelationship::Parent)
-            } else if row_is_sibling(&session, identity) {
-                Some(AgentFamilyRelationship::Sibling)
+            } else if let Some(relationship) = identity.relationship_to(&session) {
+                Some(relationship)
             } else {
                 // Outside the nuclear family: not a family row at all.
                 return None;

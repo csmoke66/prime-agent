@@ -1524,6 +1524,7 @@ fn observe_handlers(
     let controller = Arc::new(LinkAgentObserveController::new(
         Arc::clone(link),
         active_session_id,
+        String::new(),
         Arc::new(std::sync::Mutex::new(Some(own_summary))),
         children,
     ));

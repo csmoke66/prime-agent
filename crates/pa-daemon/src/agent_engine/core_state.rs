@@ -26,6 +26,8 @@ pub(crate) struct BuiltHandles {
     /// The stop-with-snapshot kernel release over a weak provisioner
     /// reference (the park arm never takes the session mutex).
     pub(crate) kernel_release: SettledKernelRelease,
+    /// Access to the context meter without retaining the engine or taking its turn lock.
+    pub(crate) session: std::sync::Weak<CoreSessionEngine>,
     pub(crate) progress_notes: Arc<pa_core::session_engine::rlm_host::RlmProgressNotes>,
     /// The last emitted `goal_update`; unchanged states stay silent.
     pub(crate) published_goal: Mutex<Option<pa_core::goals::GoalState>>,
@@ -66,6 +68,7 @@ impl BuiltHandles {
                     }
                 })
             }),
+            session: Arc::downgrade(built),
             progress_notes: Arc::clone(&built.rlm_progress_notes),
             published_goal: Mutex::new(None),
         }
@@ -201,6 +204,7 @@ impl AgentSessionEngine {
             background_bash_probe: background_bash
                 .unwrap_or_else(|| Arc::clone(&handles.background_bash_probe)),
             kernel_release: kernel_release.unwrap_or_else(|| Arc::clone(&handles.kernel_release)),
+            session: handles.session.clone(),
             progress_notes: Arc::clone(&handles.progress_notes),
             published_goal: Mutex::new(published_goal),
         }));

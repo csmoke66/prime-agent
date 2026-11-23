@@ -267,6 +267,26 @@ impl AgentMessageController for RecordingMessageController {
             queued_at: None,
         }))
     }
+
+    fn remind_context(
+        &self,
+        target: String,
+        reason: AgentContextReminderReason,
+    ) -> impl std::future::Future<Output = anyhow::Result<AgentMessageReceipt>> {
+        std::future::ready(Ok(AgentMessageReceipt {
+            id: create_agent_session_message_id(),
+            target_session_id: Some(format!("{target}-session")),
+            target,
+            target_session_name: None,
+            target_runtime_kind: Some("subagent".to_string()),
+            message: reason.message().to_string(),
+            delivery_status: AgentMessageDeliveryStatus::Delivered,
+            delivery_mode: Some("steer"),
+            receiver_role: None,
+            delivered_at: Some("2024-01-01T00:00:00.000Z".to_string()),
+            queued_at: None,
+        }))
+    }
 }
 
 fn send_request(send: &crate::kernel::shared::HostHandlerFn, data: Value) -> anyhow::Result<Value> {
@@ -390,6 +410,54 @@ async fn message_host_handler_round_trip() {
     ));
 }
 
+#[test]
+fn context_reminder_handler_uses_exact_ids_and_fixed_advisories() {
+    let mut handlers = HostRequestHandlers::default();
+    register_agent_message_host_handlers(
+        std::sync::Arc::new(RecordingMessageController),
+        &mut handlers,
+    );
+    let remind = handlers
+        .get("agent_message.remind_context")
+        .unwrap()
+        .clone();
+
+    let compact = send_request(
+        &remind,
+        json!({ "target": "resident-1", "reason": "compact" }),
+    )
+    .unwrap();
+    assert_eq!(compact["target"]["activeSessionId"], "resident-1");
+    assert_eq!(
+        compact["message"],
+        AgentContextReminderReason::Compact.message()
+    );
+    assert_eq!(compact["receiverRole"], Value::Null);
+
+    let release = send_request(
+        &remind,
+        json!({ "target": "resident-2", "reason": "release" }),
+    )
+    .unwrap();
+    assert_eq!(
+        release["message"],
+        AgentContextReminderReason::Release.message()
+    );
+
+    for (data, error) in [
+        (
+            json!({ "target": " resident-1", "reason": "compact" }),
+            "agent_message.remind_context target must be an exact active session id",
+        ),
+        (
+            json!({ "target": "resident-1", "reason": "other" }),
+            "agent_message.remind_context reason must be \"compact\" or \"release\"",
+        ),
+    ] {
+        assert_eq!(send_request(&remind, data).unwrap_err().to_string(), error);
+    }
+}
+
 #[tokio::test]
 async fn broadcast_without_family_is_empty_and_failures_settle() {
     struct NoFamilyController;
@@ -510,6 +578,31 @@ impl AgentObserveController for StaticObserveController {
         }))
     }
 
+    fn context_health(
+        &self,
+        min_tool_percent: Option<f64>,
+        min_active_seconds: Option<u64>,
+    ) -> impl Future<Output = anyhow::Result<Vec<AgentContextHealth>>> + Send {
+        assert_eq!(min_tool_percent, Some(25.0));
+        assert_eq!(min_active_seconds, Some(10_800));
+        std::future::ready(Ok(vec![AgentContextHealth {
+            active_session_id: "other-1".to_string(),
+            session_id: Some("sess-other-1".to_string()),
+            session_name: Some("other".to_string()),
+            parent_active_session_id: None,
+            relationship: Some(AgentFamilyRelationship::Sibling),
+            is_streaming: false,
+            is_compacting: false,
+            tool_output_tokens: Some(4_000),
+            context_window: Some(10_000),
+            tool_output_percent: Some(40.0),
+            last_release_kind: Some("all".to_string()),
+            tool_results_since_release: Some(2),
+            active_seconds_since_compaction: Some(10_800),
+            compaction_epoch: None,
+        }]))
+    }
+
     fn get_agent(
         &self,
         target: &str,
@@ -579,6 +672,53 @@ async fn observe_list_returns_current_and_family_without_self() {
     assert_eq!(current["activeSessionId"], "me-1");
     assert_eq!(current["isCurrent"], true);
     assert_eq!(current["relationship"], Value::Null);
+}
+
+#[tokio::test]
+async fn observe_context_health_validates_thresholds_and_returns_only_health_rows() {
+    let mut handlers = HostRequestHandlers::default();
+    register_agent_observe_host_handlers(
+        std::sync::Arc::new(StaticObserveController),
+        &mut handlers,
+    );
+    let health = handlers
+        .get("agent_observe.context_health")
+        .unwrap()
+        .clone();
+    let response = send_request(
+        &health,
+        json!({ "min_tool_percent": 25.0, "min_active_seconds": 3 * 3600 }),
+    )
+    .unwrap();
+    assert_eq!(
+        response,
+        json!({"agents": [{
+            "activeSessionId": "other-1",
+            "sessionId": "sess-other-1",
+            "sessionName": "other",
+            "parentActiveSessionId": null,
+            "relationship": "sibling",
+            "isStreaming": false,
+            "isCompacting": false,
+            "toolOutputTokens": 4_000,
+            "contextWindow": 10_000,
+            "toolOutputPercent": 40.0,
+            "lastReleaseKind": "all",
+            "toolResultsSinceRelease": 2,
+            "activeSecondsSinceCompaction": 10_800,
+            "compactionEpoch": null,
+        }]})
+    );
+    let error = send_request(&health, json!({ "min_tool_percent": -1 })).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "agent_observe.context_health min_tool_percent must be a finite nonnegative number"
+    );
+    let error = send_request(&health, json!({ "min_active_seconds": 1.5 })).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "agent_observe.context_health min_active_seconds must be an unsigned integer when provided"
+    );
 }
 
 /// TS `AgentObserveRecentMessagesResult`: the preview window rides with

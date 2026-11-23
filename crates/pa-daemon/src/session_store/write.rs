@@ -161,6 +161,22 @@ impl SessionFile {
         self.persist_entry_at(entry_type, fields, &crate::util::now_iso())
     }
 
+    /// Persist one settled-turn checkpoint. A crash can lose only the live
+    /// turn segment; idle wall time is never reconstructed from timestamps.
+    pub(crate) fn persist_compaction_clock(
+        &mut self,
+        active_ms: u64,
+        compaction_epoch: Option<&str>,
+    ) -> Result<String> {
+        self.persist_entry(
+            super::SESSION_WORK_CLOCK_ENTRY_TYPE,
+            json!({
+                "activeMsSinceCompaction": active_ms,
+                "compactionEpoch": compaction_epoch,
+            }),
+        )
+    }
+
     /// Durably mark that this session has drawn the Anthropic subscription
     /// ban-risk warning (the once-per-session-lifecycle gate, operator
     /// directive 2026-09-29): append the

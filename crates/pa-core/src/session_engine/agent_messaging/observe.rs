@@ -1,6 +1,6 @@
-//! The agent-observe half: the family status and activity enums, the
-//! observe summary and preview types, the controller trait, the limit
-//! clamps, and the host-handler registration.
+//! The agent-observe half: family status and activity, content-free context
+//! health, bounded previews, the controller trait, validation, and host-handler
+//! registration.
 use super::{host_handler, json, AgentFamilyRelationship, Future, HostRequestHandlers, Value};
 
 /// The family lifecycle status every observation row carries: `running`
@@ -141,6 +141,47 @@ pub struct AgentObserveListResult {
     pub agents: Vec<AgentObserveSummary>,
 }
 
+/// One content-free context-maintenance snapshot for another resident
+/// daemon session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentContextHealth {
+    pub active_session_id: String,
+    pub session_id: Option<String>,
+    pub session_name: Option<String>,
+    pub parent_active_session_id: Option<String>,
+    pub relationship: Option<AgentFamilyRelationship>,
+    pub is_streaming: bool,
+    pub is_compacting: bool,
+    pub tool_output_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+    pub tool_output_percent: Option<f64>,
+    pub last_release_kind: Option<String>,
+    pub tool_results_since_release: Option<u64>,
+    pub active_seconds_since_compaction: Option<u64>,
+    pub compaction_epoch: Option<String>,
+}
+
+impl AgentContextHealth {
+    pub(super) fn to_value(&self) -> Value {
+        json!({
+            "activeSessionId": self.active_session_id,
+            "sessionId": self.session_id,
+            "sessionName": self.session_name,
+            "parentActiveSessionId": self.parent_active_session_id,
+            "relationship": self.relationship.map(|relationship| relationship.as_str()),
+            "isStreaming": self.is_streaming,
+            "isCompacting": self.is_compacting,
+            "toolOutputTokens": self.tool_output_tokens,
+            "contextWindow": self.context_window,
+            "toolOutputPercent": self.tool_output_percent,
+            "lastReleaseKind": self.last_release_kind,
+            "toolResultsSinceRelease": self.tool_results_since_release,
+            "activeSecondsSinceCompaction": self.active_seconds_since_compaction,
+            "compactionEpoch": self.compaction_epoch,
+        })
+    }
+}
+
 /// TS `AgentObserveRecentMessagesResult`: the target's summary plus the
 /// bounded preview window and the clamped bounds.
 #[derive(Debug, Clone)]
@@ -169,6 +210,12 @@ pub struct AgentObserveMessagePreview {
 /// The controller the daemon supplies for `agent_observe.*` requests.
 pub trait AgentObserveController: Send + Sync {
     fn list_agents(&self) -> impl Future<Output = anyhow::Result<AgentObserveListResult>> + Send;
+    /// Content-free maintenance counters for other live daemon sessions.
+    fn context_health(
+        &self,
+        min_tool_percent: Option<f64>,
+        min_active_seconds: Option<u64>,
+    ) -> impl Future<Output = anyhow::Result<Vec<AgentContextHealth>>> + Send;
     fn get_agent(
         &self,
         target: &str,
@@ -227,10 +274,22 @@ fn optional_integer(value: Option<&Value>, label: &str) -> anyhow::Result<Option
             if let Some(integer) = number.as_u64() {
                 Ok(Some(integer))
             } else {
-                anyhow::bail!("{label} must be an integer when provided")
+                anyhow::bail!("{label} must be an unsigned integer when provided")
             }
         }
-        Some(_) => anyhow::bail!("{label} must be an integer when provided"),
+        Some(_) => anyhow::bail!("{label} must be an unsigned integer when provided"),
+    }
+}
+
+fn optional_nonnegative_number(value: Option<&Value>, label: &str) -> anyhow::Result<Option<f64>> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(number)) => number
+            .as_f64()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("{label} must be a finite nonnegative number")),
+        Some(_) => anyhow::bail!("{label} must be a finite nonnegative number"),
     }
 }
 
@@ -365,6 +424,37 @@ pub fn register_agent_observe_host_handlers<C: AgentObserveController + 'static>
                     Ok(json!({
                         "current": list.current.to_value(),
                         "agents": list.agents.iter().map(AgentObserveSummary::to_value).collect::<Vec<_>>(),
+                    }))
+                })
+            }
+        }),
+    );
+    handlers.register(
+        "agent_observe.context_health",
+        host_handler({
+            let controller = controller.clone();
+            move |payload| {
+                let controller = controller.clone();
+                Box::pin(async move {
+                    let min_tool_percent = optional_nonnegative_number(
+                        payload
+                            .data
+                            .get("min_tool_percent")
+                            .or_else(|| payload.data.get("minToolPercent")),
+                        "agent_observe.context_health min_tool_percent",
+                    )?;
+                    let min_active_seconds = optional_integer(
+                        payload
+                            .data
+                            .get("min_active_seconds")
+                            .or_else(|| payload.data.get("minActiveSeconds")),
+                        "agent_observe.context_health min_active_seconds",
+                    )?;
+                    let agents = controller
+                        .context_health(min_tool_percent, min_active_seconds)
+                        .await?;
+                    Ok(json!({
+                        "agents": agents.iter().map(AgentContextHealth::to_value).collect::<Vec<_>>(),
                     }))
                 })
             }

@@ -741,6 +741,77 @@ pub(crate) fn admit_inbox_notice(
     ) -> Option<String>,
     engine: Option<&crate::agent_engine::AgentSessionEngine>,
 ) -> Result<bool, String> {
+    admit_inbox_notice_with_policy(
+        recovery,
+        core,
+        work_notify,
+        inbox,
+        arrivals,
+        notice,
+        lane,
+        session_is_closed,
+        capacity_error,
+        engine,
+        InboxWakePolicy::Normal,
+    )
+}
+
+/// Admit a low-priority advisory to the durable inbox without ever creating a
+/// lane row or notifying the runner; a full inbox is refused rather than woken.
+#[allow(clippy::too_many_arguments)] // mirrors the normal admission seam with one fixed policy
+pub(crate) fn admit_inbox_notice_without_wake(
+    recovery: &std::sync::Mutex<Option<WorkerRecoveryJournal>>,
+    core: &Arc<Mutex<SessionCore>>,
+    work_notify: &Arc<Notify>,
+    inbox: &std::sync::Arc<pa_core::session_engine::inbox::SessionInbox>,
+    arrivals: &pa_core::session_engine::inbox::InboxArrivals,
+    notice: pa_core::session_engine::inbox::InboxNotice,
+    lane: Lane,
+    session_is_closed: impl Fn() -> bool,
+    capacity_error: impl Fn(
+        &std::collections::VecDeque<QueuedItem>,
+        &std::collections::VecDeque<QueuedItem>,
+    ) -> Option<String>,
+    engine: Option<&crate::agent_engine::AgentSessionEngine>,
+) -> Result<bool, String> {
+    admit_inbox_notice_with_policy(
+        recovery,
+        core,
+        work_notify,
+        inbox,
+        arrivals,
+        notice,
+        lane,
+        session_is_closed,
+        capacity_error,
+        engine,
+        InboxWakePolicy::Never,
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InboxWakePolicy {
+    Normal,
+    Never,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn admit_inbox_notice_with_policy(
+    recovery: &std::sync::Mutex<Option<WorkerRecoveryJournal>>,
+    core: &Arc<Mutex<SessionCore>>,
+    work_notify: &Arc<Notify>,
+    inbox: &std::sync::Arc<pa_core::session_engine::inbox::SessionInbox>,
+    arrivals: &pa_core::session_engine::inbox::InboxArrivals,
+    notice: pa_core::session_engine::inbox::InboxNotice,
+    lane: Lane,
+    session_is_closed: impl Fn() -> bool,
+    capacity_error: impl Fn(
+        &std::collections::VecDeque<QueuedItem>,
+        &std::collections::VecDeque<QueuedItem>,
+    ) -> Option<String>,
+    engine: Option<&crate::agent_engine::AgentSessionEngine>,
+    wake_policy: InboxWakePolicy,
+) -> Result<bool, String> {
     // The busy sample, the batch, and the push share ONE critical
     // section, like the notice admission below: a turn starting between
     // them would queue an invisible row for a busy session.
@@ -759,7 +830,8 @@ pub(crate) fn admit_inbox_notice(
     // lengths it reads here: concurrent arrivals can never pass one
     // stale sample together.
     if let Some(error) = capacity_error(&core_guard.steering, &core_guard.follow_up) {
-        if engine.is_some_and(|engine| !engine.is_live_inbox(inbox))
+        if wake_policy == InboxWakePolicy::Never
+            || engine.is_some_and(|engine| !engine.is_live_inbox(inbox))
             || !recovery_guard
                 .as_deref_mut()
                 .and_then(Option::as_mut)
@@ -790,32 +862,36 @@ pub(crate) fn admit_inbox_notice(
     // follows THIS read (one critical section), never an earlier sample
     // taken outside the lock.
     let queued = core_guard.busy;
-    let flush_all = recovery_guard
-        .as_deref_mut()
-        .and_then(Option::as_mut)
-        .and_then(|journal| {
-            if flush_full_inbox(&mut core_guard, inbox, journal) {
-                return Some(true);
-            }
-            if priority != pa_core::session_engine::inbox::InboxPriority::High
-                || !flush_high_inbox(&mut core_guard, inbox, journal)
-            {
-                return None;
-            }
-            refresh_inbox_wake_rows_locked(&mut core_guard, arrivals, inbox);
-            let lanes = queue_lanes(&core_guard);
-            let _ = journal.record_queue_checkpoint(
-                &core_guard.active_session_id,
-                core_guard.store.as_ref().map_or("", |store| store.session_id()),
-                core_guard.store.as_ref().and_then(|store| store.path.to_str()),
-                true,
-                "queue_mutated",
-                &lanes.steering,
-                &lanes.follow_up,
-                core_guard.queued_input_suspended,
-            );
-            Some(false)
-        });
+    let flush_all = (wake_policy == InboxWakePolicy::Normal)
+        .then(|| {
+            recovery_guard
+                .as_deref_mut()
+                .and_then(Option::as_mut)
+                .and_then(|journal| {
+                    if flush_full_inbox(&mut core_guard, inbox, journal) {
+                        return Some(true);
+                    }
+                    if priority != pa_core::session_engine::inbox::InboxPriority::High
+                        || !flush_high_inbox(&mut core_guard, inbox, journal)
+                    {
+                        return None;
+                    }
+                    refresh_inbox_wake_rows_locked(&mut core_guard, arrivals, inbox);
+                    let lanes = queue_lanes(&core_guard);
+                    let _ = journal.record_queue_checkpoint(
+                        &core_guard.active_session_id,
+                        core_guard.store.as_ref().map_or("", |store| store.session_id()),
+                        core_guard.store.as_ref().and_then(|store| store.path.to_str()),
+                        true,
+                        "queue_mutated",
+                        &lanes.steering,
+                        &lanes.follow_up,
+                        core_guard.queued_input_suspended,
+                    );
+                    Some(false)
+                })
+        })
+        .flatten();
     if let Some(flush_all) = flush_all {
         if flush_all {
             arrivals.lock().unwrap().clear();

@@ -122,6 +122,28 @@ impl SessionFile {
         path
     }
 
+    /// Restore the executing-turn runtime checkpoint for the active branch.
+    /// Old sessions have no checkpoint and start at zero, but their latest
+    /// compaction row still supplies the reminder epoch immediately.
+    #[must_use]
+    pub(crate) fn compaction_clock_state(&self) -> (u64, Option<String>) {
+        // Both kinds of row are absolute checkpoints on this branch. The newest
+        // one suffices even when a windowed open no longer holds the epoch's start.
+        self.walk_back(self.branch_leaf())
+            .find_map(|position| {
+                let entry = &self.entries[position];
+                match entry.type_.as_str() {
+                    "compaction" => Some((0, Some(entry.id.clone()))),
+                    super::SESSION_WORK_CLOCK_ENTRY_TYPE => Some((
+                        entry.fields["activeMsSinceCompaction"].as_u64()?,
+                        entry.fields["compactionEpoch"].as_str().map(str::to_owned),
+                    )),
+                    _ => None,
+                }
+            })
+            .unwrap_or_default()
+    }
+
     /// Whether a windowed store's branch walk stops at `position`: a loaded row
     /// outside the retained window.
     fn window_excludes(&self, position: usize) -> bool {

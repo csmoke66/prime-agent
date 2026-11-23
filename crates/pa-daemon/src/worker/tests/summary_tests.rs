@@ -10,6 +10,7 @@ fn inputs() -> SummaryInputs {
         quota_parked: false,
         subagents_running: false,
         progress_note: None,
+        retained_tool_output: None,
     }
 }
 

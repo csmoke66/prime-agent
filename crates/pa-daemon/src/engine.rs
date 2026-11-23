@@ -197,6 +197,13 @@ pub trait SessionEngine: Send + Sync {
     fn model_context_window(&self) -> Option<u64> {
         None
     }
+    /// Cheap retained-tool snapshot for the model-visible active context.
+    ///
+    /// `None` means the engine has not built a session or cannot provide the
+    /// meter. A returned snapshot may contain a real zero-token numerator.
+    fn retained_tool_output(&self) -> Option<pa_core::session_engine::ToolOutputStats> {
+        None
+    }
     /// The worker's turn loop started: engines hosting RLM children hold
     /// the task prompts of children spawned from here until `on_turn_done`.
     fn on_turn_start(&self) {}

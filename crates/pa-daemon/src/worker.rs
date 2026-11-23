@@ -27,15 +27,15 @@ mod queue;
 pub use queue::Lane;
 pub use queue::QueuePriority;
 pub(crate) use queue::{
-    admit_autonomous_follow_up, admit_goal_follow_up, admit_inbox_notice, admit_inbox_reminder,
-    admit_kernel_notice, checkpoint_queue_recovery, clear_withdrawn_progress_note,
-    enqueue_priority, gather_delivery_batch, parse_custom_message, parse_prompt_images,
-    queue_lanes, queued_bash_completion_notices, refresh_inbox_wake_rows_locked,
-    restore_queue_snapshot, restored_turn_policy, take_held_low_notice,
-    withdraw_bash_completion_notice, withdraw_drained_inbox_notice, QueueCheckpoint, QueueLanes,
-    QueuedItem, TurnPolicy, TurnSettle,
-    ABORTED_TURN_SETTLE_ERROR, INBOX_ARRIVAL_QUEUE_KEY, INBOX_LOW_PIGGYBACK_QUEUE_KEY,
-    INBOX_REMINDER_QUEUE_KEY,
+    admit_autonomous_follow_up, admit_goal_follow_up, admit_inbox_notice,
+    admit_inbox_notice_without_wake, admit_inbox_reminder, admit_kernel_notice,
+    checkpoint_queue_recovery, clear_withdrawn_progress_note, enqueue_priority,
+    gather_delivery_batch, parse_custom_message, parse_prompt_images, queue_lanes,
+    queued_bash_completion_notices, refresh_inbox_wake_rows_locked, restore_queue_snapshot,
+    restored_turn_policy, take_held_low_notice, withdraw_bash_completion_notice,
+    withdraw_drained_inbox_notice, QueueCheckpoint, QueueLanes, QueuedItem, TurnPolicy,
+    TurnSettle, ABORTED_TURN_SETTLE_ERROR, INBOX_ARRIVAL_QUEUE_KEY,
+    INBOX_LOW_PIGGYBACK_QUEUE_KEY, INBOX_REMINDER_QUEUE_KEY,
     PROMPT_ABORTED_BEFORE_DELIVERY, QUEUED_INPUT_SUSPENDED, QUEUED_PROMPT_DELETED,
     SIDE_QUESTION_SETTLE_TIMEOUT,
 };
@@ -341,6 +341,9 @@ impl Worker {
             running_tool_calls: std::collections::HashSet::new(),
             running_admission_ids: std::collections::HashSet::new(),
             tool_use_count: 0,
+            compaction_active_ms: 0,
+            compaction_active_since: None,
+            compaction_epoch: None,
         };
         let active_session_id = config.active_session_id.clone();
         let script = config.script.clone();

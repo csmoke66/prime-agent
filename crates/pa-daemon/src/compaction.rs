@@ -196,6 +196,7 @@ impl CompactionManager {
         let mut core = self.core.lock().unwrap();
         let cwd = core.cwd.clone();
         let Some(store) = core.store.as_mut() else {
+            core.reset_compaction_clock(None);
             return;
         };
         let mut fields = if run.entry.is_object() {
@@ -247,7 +248,14 @@ impl CompactionManager {
                 .unwrap_or(first_kept_entry_id)
         };
         fields["firstKeptEntryId"] = json!(first_kept_entry_id);
-        let _ = store.persist_entry("compaction", fields);
+        let epoch = match store.persist_entry("compaction", fields) {
+            Ok(id) => Some(id),
+            Err(error) => {
+                eprintln!("pa-daemon: manual compaction persistence failed: {error:#}");
+                None
+            }
+        };
+        core.reset_compaction_clock(epoch);
     }
 
     /// Persist the post-compaction `ipython_state` row and broadcast its `message_start`/

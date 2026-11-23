@@ -315,6 +315,65 @@ fn marking_the_warning_persists_and_both_reopens_hydrate_it() {
         .anthropic_warning_shown());
 }
 
+#[test]
+fn compaction_clock_reopens_and_follows_branch_resets_without_wall_time() {
+    let dir = temp_dir();
+    let mut session = SessionFile::create("/repo", None, 0);
+    let path = dir.join(session_file_name(session.session_id()));
+    session.set_path(path.clone());
+    session.rewrite().unwrap();
+
+    // An old session needs no migration or compaction before new work accrues.
+    assert_eq!(session.compaction_clock_state(), (0, None));
+    let pre_compaction_clock = session.persist_compaction_clock(12, None).unwrap();
+    let compaction = session
+        .persist_entry(
+            "compaction",
+            json!({
+                "summary": "summary",
+                "firstKeptEntryId": "",
+                "tokensBefore": 1,
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        session.compaction_clock_state(),
+        (0, Some(compaction.clone())),
+    );
+    session
+        .persist_compaction_clock(7, Some(&compaction))
+        .unwrap();
+
+    assert_eq!(
+        SessionFile::open(&path).unwrap().compaction_clock_state(),
+        (7, Some(compaction.clone())),
+    );
+    assert_eq!(
+        SessionFile::open_windowed(&path)
+            .unwrap()
+            .compaction_clock_state(),
+        (7, Some(compaction)),
+    );
+
+    // Moving before the compaction restores that branch's checkpoint. The
+    // next append makes the reset branch durable for both reopen paths.
+    session.branch_to(Some(&pre_compaction_clock)).unwrap();
+    session
+        .persist_entry("message", json!({ "message": { "role": "user", "content": "reset" } }))
+        .unwrap();
+    assert_eq!(session.compaction_clock_state(), (12, None));
+    assert_eq!(
+        SessionFile::open(&path).unwrap().compaction_clock_state(),
+        (12, None),
+    );
+    assert_eq!(
+        SessionFile::open_windowed(&path)
+            .unwrap()
+            .compaction_clock_state(),
+        (12, None),
+    );
+}
+
 /// The bots' round on the full open (the PR's Medium): the gate rides
 /// the ACTIVE branch — a marker on an abandoned or sibling branch must
 /// never suppress the warning for the open leaf. The windowed walk

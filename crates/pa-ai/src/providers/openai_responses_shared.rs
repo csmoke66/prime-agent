@@ -389,6 +389,17 @@ pub fn convert_responses_messages(
     messages
 }
 
+/// Append a scratchpad or harness advisory after the latest conversation
+/// item, without attributing it to the user or changing the cached prefix.
+pub(super) fn append_tail_context(messages: &mut Vec<Value>, context: Option<&str>) {
+    if let Some(text) = context {
+        messages.push(json!({
+            "role": "developer",
+            "content": sanitize_surrogates(text),
+        }));
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ConvertResponsesToolsOptions {
     pub strict: Option<bool>,

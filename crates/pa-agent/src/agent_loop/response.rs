@@ -118,7 +118,8 @@ async fn stream_assistant_response_inner(
                 .as_ref()
                 .map_or_else(|| context.system_prompt.clone(), |hook| hook()),
         ),
-        messages: llm_messages,
+        messages: llm_messages.messages,
+        tail_context: llm_messages.tail_context,
         tools: context
             .tools
             .iter()

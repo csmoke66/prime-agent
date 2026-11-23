@@ -1,0 +1,1 @@
+- Context notes are request-local scratchpad context, not user messages. On Codex and OpenAI Responses, the latest note is appended after the conversation without rewriting its prefix.

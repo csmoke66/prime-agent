@@ -88,6 +88,8 @@ pub struct StreamOptions {
     pub service_tier: Option<ServiceTier>,
     pub cache_retention: Option<CacheRetention>,
     pub session_id: Option<String>,
+    /// Request-local context appended after conversation history by Responses providers.
+    pub tail_context: Option<String>,
     pub on_payload: Option<OnPayloadHook>,
     pub on_response: Option<OnResponseHook>,
     pub headers: Option<std::collections::HashMap<String, String>>,

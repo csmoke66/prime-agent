@@ -106,6 +106,8 @@ pub struct ToolDefinition {
 pub struct LlmContext {
     pub system_prompt: Option<String>,
     pub messages: Vec<crate::types::Message>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_context: Option<String>,
     pub tools: Vec<ToolDefinition>,
 }
 

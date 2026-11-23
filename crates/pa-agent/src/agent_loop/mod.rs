@@ -21,8 +21,17 @@ pub type AgentEventSink =
 /// before each call. Must not fail; a returned `Err` interrupts the loop like
 /// a `throw` in the TS reference.
 pub type ConvertToLlmFn = Arc<
-    dyn Fn(Vec<AgentMessage>) -> crate::BoxFut<'static, anyhow::Result<Vec<Message>>> + Send + Sync,
+    dyn Fn(Vec<AgentMessage>) -> crate::BoxFut<'static, anyhow::Result<ProviderMessages>>
+        + Send
+        + Sync,
 >;
+
+#[derive(Debug, Default, PartialEq)]
+pub struct ProviderMessages {
+    pub messages: Vec<Message>,
+    /// Request-local context; never a user utterance or part of the history.
+    pub tail_context: Option<String>,
+}
 
 /// AgentMessage-level transform applied before `convert_to_llm` (context
 /// pruning, external injection).
@@ -162,21 +171,16 @@ impl AgentLoopConfig {
     pub fn default_convert_to_llm() -> ConvertToLlmFn {
         Arc::new(|messages: Vec<AgentMessage>| {
             Box::pin(async move {
-                Ok(messages
-                    .into_iter()
-                    .filter(|m| {
-                        matches!(
-                            m,
-                            AgentMessage::Standard(
-                                Message::User(_) | Message::Assistant(_) | Message::ToolResult(_),
-                            )
-                        )
-                    })
-                    .map(|m| match m {
-                        AgentMessage::Standard(message) => message,
-                        AgentMessage::Custom(_) => unreachable!("filtered above"),
-                    })
-                    .collect())
+                Ok(ProviderMessages {
+                    messages: messages
+                        .into_iter()
+                        .filter_map(|message| match message {
+                            AgentMessage::Standard(message) => Some(message),
+                            AgentMessage::Custom(_) => None,
+                        })
+                        .collect(),
+                    tail_context: None,
+                })
             })
         })
     }

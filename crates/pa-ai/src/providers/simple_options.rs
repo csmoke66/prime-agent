@@ -55,6 +55,7 @@ pub fn build_base_options(
         service_tier: base.service_tier,
         cache_retention: base.cache_retention,
         session_id: base.session_id,
+        tail_context: base.tail_context,
         on_payload: base.on_payload,
         on_response: base.on_response,
         headers: base.headers,

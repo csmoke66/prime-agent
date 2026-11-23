@@ -82,20 +82,20 @@ pub(crate) fn convert_to_llm(
                     })
                     .collect()
             };
-            let mut messages = super::messages::loop_convert_to_llm(messages);
+            let mut projection = super::messages::loop_convert_to_llm(messages);
             if compaction_notice
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .take()
             {
-                messages.push(pa_agent::types::Message::User(pa_agent::types::UserMessage {
+                projection.messages.push(pa_agent::types::Message::User(pa_agent::types::UserMessage {
                     content: pa_agent::types::UserContent::Text(
                         "[pre-compaction] Automatic compaction is approaching. Save any findings you still need, then use rlm.release() in your next useful REPL cell to release spent tool results. Use rlm.release([tool_call_id, ...]) for specific older results. Keep raw output you still need.".into()
                     ),
                     timestamp: super::now_millis() as i64,
                 }));
             }
-            Ok(messages)
+            Ok(projection)
         })
     })
 }
@@ -129,8 +129,8 @@ mod tests {
         let margin = threshold - window / 10;
         let request = vec![super::super::session_message_to_loop(&user("continue")).unwrap()];
         let check = |tokens| notice.lock().unwrap().check(Some(tokens), window, threshold);
-        let has_notice = |messages| {
-            serde_json::to_string(&messages)
+        let has_notice = |messages: pa_agent::agent_loop::ProviderMessages| {
+            serde_json::to_string(&messages.messages)
                 .unwrap()
                 .contains("[pre-compaction]")
         };
@@ -139,7 +139,7 @@ mod tests {
         assert!(!has_notice(convert(request.clone()).await.unwrap()));
         assert!(!check(margin));
         let warned = convert(request.clone()).await.unwrap();
-        assert!(serde_json::to_string(&warned).unwrap().contains("rlm.release()"));
+        assert!(serde_json::to_string(&warned.messages).unwrap().contains("rlm.release()"));
         assert!(!check(threshold));
         assert!(!has_notice(convert(request.clone()).await.unwrap()));
         assert!(!check(margin - 1));
@@ -165,12 +165,12 @@ mod tests {
             super::super::session_message_to_loop(&user("[harness-digest] quoted user content"))
                 .unwrap();
         let messages = vec![digest.clone(), quote.clone()];
-        assert_eq!(convert(messages.clone()).await.unwrap().len(), 2);
+        assert_eq!(convert(messages.clone()).await.unwrap().messages.len(), 2);
         settings.set_harness_refinements(false).unwrap();
         let expected = super::super::messages::loop_convert_to_llm(vec![quote]);
         assert_eq!(convert(messages.clone()).await.unwrap(), expected);
         settings.set_harness_refinements(true).unwrap();
-        assert_eq!(convert(messages).await.unwrap().len(), 2);
+        assert_eq!(convert(messages).await.unwrap().messages.len(), 2);
     }
 
     #[tokio::test]
@@ -227,7 +227,7 @@ mod tests {
                 .is_none());
             let live = engine.session.agent().state().await.messages;
             assert_eq!(
-                super::super::messages::loop_convert_to_llm(live).len(),
+                super::super::messages::loop_convert_to_llm(live).messages.len(),
                 usize::from(resumed)
             );
             // Re-enable without a reload (the busy-session case): the next admission loads state.

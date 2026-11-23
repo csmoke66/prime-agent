@@ -686,13 +686,17 @@ fn build_request_body(
 ) -> Value {
     let cacheable_guidance = context.system_prompt.is_some()
         && super::openai_responses_shared::supports_message_cache_breakpoints(&model.id);
-    let messages = convert_responses_messages(
+    let mut messages = convert_responses_messages(
         model,
         context,
         &OPENAI_TOOL_CALL_PROVIDERS,
         ConvertResponsesMessagesOptions {
             include_system_prompt: cacheable_guidance,
         },
+    );
+    super::openai_responses_shared::append_tail_context(
+        &mut messages,
+        options.base.tail_context.as_deref(),
     );
 
     let mut body = Map::new();
@@ -1088,6 +1092,41 @@ mod tests {
             build_cached_websocket_request_body(Some(&continuation), &changed, 7),
             changed
         );
+    }
+
+    #[test]
+    fn codex_context_note_is_a_replaceable_developer_item_at_the_tail() {
+        let model = Model {
+            id: "gpt-6.2-astra".into(),
+            ..codex_wire_model()
+        };
+        let mut context = codex_test_context("real first request");
+        let mut options = OpenAICodexResponsesOptions::default();
+        options.base.tail_context = Some("old working note".into());
+        let first = build_request_body(&model, &context, &options);
+        assert_eq!(first["input"][1]["role"], "user");
+        assert_eq!(first["input"][2], json!({"role":"developer","content":"old working note"}));
+
+        let continuation = ContinuationState {
+            last_request_body: first,
+            last_response_id: "resp_note".into(),
+            last_response_items: vec![],
+            connection_id: 7,
+        };
+        context.messages.extend(codex_test_context("real next request").messages);
+        options.base.tail_context = Some("replacement working note".into());
+        let next = build_request_body(&model, &context, &options);
+        assert_eq!(next["input"][2]["role"], "user");
+        assert_eq!(next["input"][3], json!({"role":"developer","content":"replacement working note"}));
+        // A delta would inherit the stale note from the previous response.
+        let replay = build_cached_websocket_request_body(Some(&continuation), &next, 7);
+        assert_eq!(replay, next);
+        assert!(!replay.to_string().contains("old working note"));
+
+        options.base.tail_context = None;
+        let cleared = build_request_body(&model, &context, &options);
+        assert_eq!(cleared["input"].as_array().unwrap().len(), 3);
+        assert_eq!(build_cached_websocket_request_body(Some(&continuation), &cleared, 7), cleared);
     }
 
     fn followup_request_input(

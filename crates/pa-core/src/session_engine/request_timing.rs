@@ -283,10 +283,10 @@ pub fn instrument_convert_to_llm(
             let built = Instant::now();
             let phase_ms = round_ms(elapsed_ms(started_at, built));
             let timing = PromptBuildTiming {
-                messages_ptr: output.as_ptr() as usize,
+                messages_ptr: output.messages.as_ptr() as usize,
                 dispatched_at: started_at,
                 prompt_built_at: built,
-                context_entries: output.len(),
+                context_entries: output.messages.len(),
                 request_seq: wiring.next_request_seq(),
             };
             wiring.set_prompt_build(timing);

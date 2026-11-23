@@ -195,11 +195,15 @@ fn build_headers(
 }
 
 fn build_params(model: &Model, context: &Context, options: &OpenAIResponsesOptions) -> Value {
-    let messages = convert_responses_messages(
+    let mut messages = convert_responses_messages(
         model,
         context,
         &OPENAI_TOOL_CALL_PROVIDERS,
         ConvertResponsesMessagesOptions::include_system_prompt(),
+    );
+    super::openai_responses_shared::append_tail_context(
+        &mut messages,
+        options.base.tail_context.as_deref(),
     );
 
     let cache_retention = resolve_cache_retention(options.base.cache_retention);

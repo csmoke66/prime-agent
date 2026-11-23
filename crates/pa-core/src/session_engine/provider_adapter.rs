@@ -238,8 +238,23 @@ pub fn stream_once(
         .filter_map(json_round_trip)
         .collect();
     let tools: Vec<pa_types::ai::Tool> = context.tools.iter().filter_map(json_round_trip).collect();
+    let mut system_prompt = context.system_prompt;
+    let mut tail_context = context.tail_context;
+    if !matches!(model.api.as_str(), "openai-codex-responses" | "openai-responses") {
+        // Providers without an in-sequence developer role get system context,
+        // never a synthetic user turn or an assistant-prefill message.
+        if let Some(note) = tail_context.take() {
+            match &mut system_prompt {
+                Some(prompt) => {
+                    prompt.push_str("\n\n");
+                    prompt.push_str(&note);
+                }
+                None => system_prompt = Some(note),
+            }
+        }
+    }
     let ai_context = pa_types::ai::Context {
-        system_prompt: context.system_prompt,
+        system_prompt,
         messages,
         tools: Some(tools),
     };
@@ -258,6 +273,7 @@ pub fn stream_once(
             service_tier,
             cache_retention: None,
             session_id: options.session_id.clone(),
+            tail_context,
             // The loop-level request hooks cross the crate boundary here: the payload
             // hook may replace the wire payload, the response hook observes headers.
             on_payload: options.on_payload.map(agent_payload_hook_to_ai),

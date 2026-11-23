@@ -195,10 +195,13 @@ async fn run_timed_request(
         Arc::clone(&wiring),
         Arc::new(|_messages: Vec<AgentMessage>| {
             Box::pin(async move {
-                Ok(vec![Message::User(UserMessage {
-                    content: UserContent::Text("hello".to_string()),
-                    timestamp: 0,
-                })])
+                Ok(pa_agent::agent_loop::ProviderMessages {
+                    messages: vec![Message::User(UserMessage {
+                        content: UserContent::Text("hello".to_string()),
+                        timestamp: 0,
+                    })],
+                    tail_context: None,
+                })
             })
         }),
     );
@@ -211,7 +214,8 @@ async fn run_timed_request(
     };
     let context = LlmContext {
         system_prompt: None,
-        messages: llm_messages,
+        messages: llm_messages.messages,
+        tail_context: llm_messages.tail_context,
         tools: Vec::new(),
     };
     instrument_stream_fn(wiring, stream_fn)(test_model(), context, options).await
@@ -454,14 +458,17 @@ async fn a_cloned_stream_seam_never_steals_the_parent_correlation() {
         Arc::clone(&wiring),
         Arc::new(|_messages: Vec<AgentMessage>| {
             Box::pin(async move {
-                Ok(vec![Message::User(UserMessage {
-                    content: UserContent::Text("hello".to_string()),
-                    timestamp: 0,
-                })])
+                Ok(pa_agent::agent_loop::ProviderMessages {
+                    messages: vec![Message::User(UserMessage {
+                        content: UserContent::Text("hello".to_string()),
+                        timestamp: 0,
+                    })],
+                    tail_context: None,
+                })
             })
         }),
     );
-    let parent_messages = convert(vec![AgentMessage::user("hello")]).await.unwrap();
+    let parent_messages = convert(vec![AgentMessage::user("hello")]).await.unwrap().messages;
 
     // The side question: its own (never-marked) context through the
     // same wrapped stream seam.
@@ -472,6 +479,7 @@ async fn a_cloned_stream_seam_never_steals_the_parent_correlation() {
             timestamp: 0,
         })],
         tools: Vec::new(),
+        tail_context: None,
     };
     drain(
         instrument_stream_fn(Arc::clone(&wiring), Arc::clone(&provider))(
@@ -506,6 +514,7 @@ async fn a_cloned_stream_seam_never_steals_the_parent_correlation() {
                 system_prompt: None,
                 messages: parent_messages,
                 tools: Vec::new(),
+                tail_context: None,
             },
             StreamRequestOptions::default(),
         )

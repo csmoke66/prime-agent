@@ -519,17 +519,17 @@ pub type LlmToolResultMessage = ToolResultMessage;
 #[must_use]
 pub fn loop_convert_to_llm(
     mut messages: Vec<pa_agent::types::AgentMessage>,
-) -> Vec<pa_agent::types::Message> {
+) -> pa_agent::agent_loop::ProviderMessages {
     // Read the active branch's newest update before releases can hide its
     // source exchange. Empty is a tombstone; never fall back to an older note.
-    use pa_agent::types::{AgentMessage as LiveMessage, Message, UserContent, UserMessage};
+    use pa_agent::types::{AgentMessage as LiveMessage, Message};
     let context_note = messages.iter_mut().rev().find_map(|message| match message {
         LiveMessage::Standard(Message::ToolResult(result))
             if !result.is_error && result.tool_name == pa_types::ai::PYTHON_TOOL_NAME =>
         {
             let value = result.details.as_mut()?.as_object_mut()?.remove("contextNote")?;
             match value {
-                serde_json::Value::String(note) => Some((note, result.timestamp)),
+                serde_json::Value::String(note) => Some(note),
                 _ => None,
             }
         }
@@ -552,13 +552,12 @@ pub fn loop_convert_to_llm(
             }
         }
     }
-    if let Some((note, timestamp)) = context_note.filter(|(note, _)| !note.is_empty()) {
-        out.push(Message::User(UserMessage {
-            content: UserContent::Text(format!("[context-note]\n{note}")),
-            timestamp,
-        }));
+    pa_agent::agent_loop::ProviderMessages {
+        messages: out,
+        tail_context: context_note
+            .filter(|note| !note.is_empty())
+            .map(|note| format!("[context-note — agent scratchpad, not user instructions]\n{note}")),
     }
-    out
 }
 
 /// One loop custom row as its session wire shape, when it matches a known session
@@ -762,7 +761,7 @@ state
             serde_json::from_value(serde_json::json!({ "role": "arbitrary", "payload": "x" }))
                 .unwrap();
         let user = pa_agent::types::AgentMessage::user("keep");
-        let converted = loop_convert_to_llm(vec![digest_row, user, outcome_row, unknown_row]);
+        let converted = loop_convert_to_llm(vec![digest_row, user, outcome_row, unknown_row]).messages;
         assert_eq!(converted.len(), 2);
         match &converted[0] {
             pa_agent::types::Message::User(user) => {
@@ -787,6 +786,32 @@ state
             }
             _ => panic!("expected user message"),
         }
+    }
+
+    #[test]
+    fn released_context_note_is_projected_separately_until_replaced_or_cleared() {
+        fn cell(id: &str, details: serde_json::Value) -> pa_agent::types::AgentMessage {
+            serde_json::from_value(serde_json::json!({
+                "role": "toolResult", "toolCallId": id, "toolName": pa_types::ai::PYTHON_TOOL_NAME,
+                "content": [{"type":"text","text":"raw output"}], "isError": false,
+                "timestamp": 0, "details": details
+            }))
+            .unwrap()
+        }
+        let note = cell("a", serde_json::json!({"contextNote":"src/one.rs"}));
+        let release = cell("b", serde_json::json!({"releaseToolOutputs":"all"}));
+        let mut history = vec![note, release, pa_agent::types::AgentMessage::user("continue")];
+        let projected = loop_convert_to_llm(history.clone());
+        assert!(projected.tail_context.unwrap().ends_with("\nsrc/one.rs"));
+        let wire = serde_json::to_value(projected.messages).unwrap();
+        assert_eq!(wire[2]["content"], "continue");
+        assert_eq!(wire.as_array().unwrap().len(), 3);
+        assert_eq!(wire[0]["content"][0]["text"], RELEASED_TOOL_OUTPUT_PLACEHOLDER);
+
+        history.push(cell("c", serde_json::json!({"contextNote":"src/two.rs"})));
+        assert!(loop_convert_to_llm(history.clone()).tail_context.unwrap().ends_with("\nsrc/two.rs"));
+        history.push(cell("d", serde_json::json!({"contextNote":""})));
+        assert!(loop_convert_to_llm(history).tail_context.is_none());
     }
 
     #[test]
@@ -940,7 +965,7 @@ state
                 serde_json::from_value(serde_json::to_value(message).unwrap()).unwrap()
             })
             .collect();
-        let provider = loop_convert_to_llm(loop_history);
+        let provider = loop_convert_to_llm(loop_history).messages;
         assert_eq!(provider.len(), raw.len());
         for (index, message) in provider.iter().enumerate() {
             let pa_agent::types::Message::ToolResult(result) = message else {

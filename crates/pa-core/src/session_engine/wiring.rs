@@ -80,6 +80,12 @@ impl AgentSession {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         settings.enabled = enabled;
+        if !enabled {
+            *self
+                .compaction_notice
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Default::default();
+        }
     }
 
     /// Install the auxiliary-model routing context: compaction summaries resolve through the

@@ -324,22 +324,27 @@ pub fn threshold_compaction_due(
     max_output_tokens: u64,
     settings: &CompactionSettings,
 ) -> bool {
-    if !settings.enabled || context_window == 0 {
-        return false;
-    }
+    settings.enabled
+        && context_window > 0
+        && live_context_tokens(messages)
+            .is_some_and(|tokens| should_compact(tokens, context_window, max_output_tokens, settings))
+}
+
+/// Context estimate shared by the compaction trigger and its advance notice.
+pub(super) fn live_context_tokens(messages: &[AgentMessage]) -> Option<u64> {
     let compaction_timestamp = messages.iter().rev().find_map(|message| match message {
         AgentMessage::CompactionSummary(summary) => Some(summary.timestamp),
         _ => None,
     });
     let estimate = estimate_context_tokens(messages);
-    let context_tokens = if let Some(index) = estimate.last_usage_index {
+    if let Some(index) = estimate.last_usage_index {
         // The usage anchor must postdate the latest compaction.
         if compaction_timestamp
             .is_some_and(|timestamp| message_timestamp(&messages[index]) <= timestamp)
         {
-            return false;
+            return None;
         }
-        estimate.tokens
+        Some(estimate.tokens)
     }
     // No valid usage: the last assistant's raw usage decides; error
     // turns never trigger.
@@ -349,17 +354,65 @@ pub fn threshold_compaction_due(
             .rev()
             .find(|message| matches!(message, AgentMessage::Assistant(_)))
         else {
-            return false;
+            return None;
         };
         if assistant.stop_reason == pa_types::ai::StopReason::Error {
-            return false;
+            return None;
         }
         if compaction_timestamp.is_some_and(|timestamp| assistant.timestamp <= timestamp) {
-            return false;
+            return None;
         }
-        calculate_context_tokens(&assistant.usage)
-    };
-    should_compact(context_tokens, context_window, max_output_tokens, settings)
+        Some(calculate_context_tokens(&assistant.usage))
+    }
+}
+
+/// Session-local advisory state. Pending is consumed only when attached to
+/// the next model request; no transcript row or extra model turn is created.
+#[derive(Default)]
+pub(super) enum CompactionNotice {
+    #[default]
+    Armed,
+    Pending,
+    Delivered,
+}
+
+impl CompactionNotice {
+    pub(super) fn check(
+        &mut self,
+        tokens: Option<u64>,
+        window: u64,
+        threshold: u64,
+    ) -> bool {
+        let warning_at = threshold.saturating_sub(window / 10).max(1);
+        match tokens {
+            Some(tokens) if threshold != 0 && tokens > threshold => {
+                // A single jump can skip the advance-warning band entirely.
+                if matches!(self, Self::Pending) {
+                    *self = Self::Armed;
+                }
+                true
+            }
+            Some(tokens) if threshold != 0 && tokens >= warning_at => {
+                if matches!(self, Self::Armed) {
+                    *self = Self::Pending;
+                }
+                false
+            }
+            _ => {
+                *self = Self::Armed;
+                false
+            }
+        }
+    }
+
+    pub(super) fn take(&mut self) -> bool {
+        if matches!(self, Self::Pending) {
+            *self = Self::Delivered;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// Valid cut point indices: user/assistant/custom/branch/compaction-summary

@@ -1330,17 +1330,7 @@ impl AgentSessionEngine {
                             .filter_map(|message| serde_json::to_value(message).ok())
                             .filter_map(|value| serde_json::from_value(value).ok())
                             .collect::<Vec<_>>();
-                        let due = pa_core::session_engine::compaction::threshold_compaction_due(
-                            &messages,
-                            model.context_window,
-                            pa_core::session_engine::compaction::request_output_budget(
-                                &model,
-                                pa_core::session_engine::provider_adapter::model_thinking_level(
-                                    thinking,
-                                ),
-                            ),
-                            &engine.session.compaction_settings(),
-                        );
+                        let due = engine.session.check_auto_compaction(&messages, &model, thinking);
                         if due {
                             yielded.store(true, Ordering::SeqCst);
                         }

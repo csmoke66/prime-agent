@@ -40,17 +40,37 @@ impl AgentSession {
             .filter_map(|message| serde_json::to_value(message).ok())
             .filter_map(|value| serde_json::from_value(value).ok())
             .collect();
-        compaction::threshold_compaction_due(
-            &messages,
-            model.context_window,
-            // The live thinking level decides whether the request folds a
-            // thinking budget on top of the base output budget.
-            compaction::request_output_budget(
-                model,
-                provider_adapter::model_thinking_level(state.thinking_level),
-            ),
-            &self.compaction_settings(),
-        )
+        self.check_auto_compaction(&messages, model, state.thinking_level)
+    }
+
+    /// Check one live boundary, arming an optional tool-release suggestion
+    /// for the next request when the context is nearing the effective limit.
+    pub fn check_auto_compaction(
+        &self,
+        messages: &[SessionAgentMessage],
+        model: &pa_types::ai::Model,
+        thinking: pa_agent::types::ThinkingLevel,
+    ) -> bool {
+        let settings = self.compaction_settings();
+        let threshold = if settings.enabled {
+            compaction::compaction_threshold(
+                model.context_window,
+                compaction::request_output_budget(
+                    model,
+                    provider_adapter::model_thinking_level(thinking),
+                ),
+                &settings,
+            )
+        } else {
+            0
+        };
+        let tokens = (threshold != 0)
+            .then(|| compaction::live_context_tokens(messages))
+            .flatten();
+        self.compaction_notice
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .check(tokens, model.context_window, threshold)
     }
 
     /// Remove the trailing assistant message from the loop context, so a
@@ -217,6 +237,10 @@ impl AgentSession {
         let loop_messages: Vec<AgentMessage> = rebuilt_loop_messages(rebuilt);
         let rebuilt_message_count = loop_messages.len();
         self.agent.set_messages(loop_messages).await;
+        *self
+            .compaction_notice
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Default::default();
         compaction_trace::trace(
             "compact.rebuilt_context",
             &serde_json::json!({ "messages": rebuilt_message_count }),

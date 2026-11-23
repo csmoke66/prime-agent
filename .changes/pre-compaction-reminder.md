@@ -1,0 +1,1 @@
+- Automatic compaction gives agents an advance reminder, ten percentage points of the model window below the effective trigger, to release spent tool results themselves. The reminder does not clear history or start an extra turn.

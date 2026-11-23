@@ -280,6 +280,18 @@ def release(target: str | list[str] | tuple[str, ...] = "last", *, batches: int 
     request_output_release(target, batches)
 
 
+def context_note(text: str) -> None:
+    """Replace the short note at the tail of this session's model context.
+
+    Save exact file paths, variable names, or expressions before releasing
+    tool output. Use "" to clear. Applies only when the foreground cell
+    succeeds. The note survives tool releases, but is not long-term memory.
+    """
+    from .repl import request_context_note
+
+    request_context_note(text)
+
+
 async def end_turn() -> dict[str, Any]:
     """End the turn: the sanctioned terminal programmatic call.
 
@@ -1067,6 +1079,7 @@ class _RLMNamespace:
     session = _RLMSessionNamespace()
     get_harness_state = staticmethod(get_harness_state)
     release = staticmethod(release)
+    context_note = staticmethod(context_note)
 
     async def spawn(
         self,
@@ -1177,6 +1190,7 @@ __all__ = [
     "persistent_shells",
     "progress_note",
     "release",
+    "context_note",
     "rename",
     "rlm",
     "spawn",

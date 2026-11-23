@@ -1,0 +1,1 @@
+- Agents can use `rlm.context_note(text)` to keep exact paths, variable names, and expressions at the tail of their model context while releasing tool results. Notes are short, replaceable, and clearable.

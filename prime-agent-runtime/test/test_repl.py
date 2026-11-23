@@ -1155,6 +1155,24 @@ class ReplTest(unittest.TestCase):
         self.assertEqual(one(invalid, "error")["ename"], "ValueError")
         self.assertNotIn("releaseToolOutputs", invalid[-1])
 
+    def test_context_note_commits_only_on_success_and_can_clear_with_release(self):
+        failed = self.repl.execute(
+            "note-error", "from rlm import rlm; rlm.context_note('stale'); raise ValueError()"
+        )
+        self.assertNotIn("contextNote", one(failed, "done"))
+        oversized = self.repl.execute("oversized", "rlm.context_note('x' * 2001)")
+        self.assertEqual(one(oversized, "error")["ename"], "ValueError")
+        self.assertNotIn("contextNote", one(oversized, "done"))
+        success = self.repl.execute(
+            "note", "rlm.context_note(' replay.rs; state '); rlm.release('tail')"
+        )
+        self.assertEqual(one(success, "done"), {
+            "event": "done", "id": "note", "status": "ok",
+            "releaseToolOutputs": {"tail": 1}, "contextNote": "replay.rs; state",
+        })
+        cleared = self.repl.execute("clear-note", "rlm.context_note('')")
+        self.assertEqual(one(cleared, "done")["contextNote"], "")
+
     def test_emit_nan_payload_errors_in_cell_and_keeps_framing(self):
         # NaN would serialize as non-JSON text and tear protocol framing;
         # emit() must raise in the caller's cell instead.

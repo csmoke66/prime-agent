@@ -91,6 +91,9 @@ runtime keeps serving. Closing stdin is equivalent to `shutdown`.
   `"all"`, a nonempty array of tool call IDs, or `{"tail": N}` for up to N
   preceding complete tool exchanges. The host freezes tail targets at landing.
   These change the model's view, never the stored output.
+  A successful `execute` may also include `contextNote`, a replacement note
+  of at most 2,000 characters. An empty string clears the note, while omission
+  leaves the preceding note unchanged. It is independent of `releaseToolOutputs`.
 
 Before a cell's `done`, the runtime drains both channels: tagged Python-level
 writes ship synchronously from the writing thread, and the fd pipes are fenced

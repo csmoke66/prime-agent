@@ -73,6 +73,8 @@ pub struct ExecuteResult {
     pub transcript_reads: Vec<serde_json::Value>,
     /// A request to omit prior tool result bodies from the model's context.
     pub release_tool_outputs: Option<serde_json::Value>,
+    /// Replacement model-tail note from this cell, including an empty clear.
+    pub context_note: Option<String>,
     /// The time limit that interrupted this cell, if one did.
     pub timed_out_after_ms: Option<u64>,
     /// The cell ended the turn via the sanctioned `rlm.end_turn()` call:
@@ -461,6 +463,9 @@ pub async fn execute_ipython(
     }
     if let Some(release) = r.release_tool_outputs {
         details["releaseToolOutputs"] = release;
+    }
+    if let Some(note) = r.context_note {
+        details["contextNote"] = note.into();
     }
 
     // The flagged cell ends the turn: the batch rule terminates the run's

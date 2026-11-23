@@ -520,6 +520,21 @@ pub type LlmToolResultMessage = ToolResultMessage;
 pub fn loop_convert_to_llm(
     mut messages: Vec<pa_agent::types::AgentMessage>,
 ) -> Vec<pa_agent::types::Message> {
+    // Read the active branch's newest update before releases can hide its
+    // source exchange. Empty is a tombstone; never fall back to an older note.
+    use pa_agent::types::{AgentMessage as LiveMessage, Message, UserContent, UserMessage};
+    let context_note = messages.iter_mut().rev().find_map(|message| match message {
+        LiveMessage::Standard(Message::ToolResult(result))
+            if !result.is_error && result.tool_name == pa_types::ai::PYTHON_TOOL_NAME =>
+        {
+            let value = result.details.as_mut()?.as_object_mut()?.remove("contextNote")?;
+            match value {
+                serde_json::Value::String(note) => Some((note, result.timestamp)),
+                _ => None,
+            }
+        }
+        _ => None,
+    });
     project_loop_history_tool_output_releases(&mut messages);
     let mut out = Vec::new();
     for message in messages {
@@ -536,6 +551,12 @@ pub fn loop_convert_to_llm(
                 }
             }
         }
+    }
+    if let Some((note, timestamp)) = context_note.filter(|(note, _)| !note.is_empty()) {
+        out.push(Message::User(UserMessage {
+            content: UserContent::Text(format!("[context-note]\n{note}")),
+            timestamp,
+        }));
     }
     out
 }

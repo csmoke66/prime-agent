@@ -80,6 +80,7 @@ class _CellExecution:
         self.finished = asyncio.Event()
         self.owner: asyncio.Task[Any] | None = None
         self.release_tool_outputs: str | list[str] | dict[str, int] | None = None
+        self.context_note: str | None = None
 
 
 # Asyncio tasks copy cell context at creation, so detached tasks retain their
@@ -175,6 +176,18 @@ def request_output_release(target: str | list[str] | tuple[str, ...], batches: i
         execution.release_tool_outputs = ids
     else:
         raise ValueError('rlm.release() takes "current", "tail", "last", "all", or a nonempty list of tool call IDs')
+
+
+def request_context_note(text: str) -> None:
+    execution = _current_cell_execution.get()
+    if execution is None or execution.owner is None or asyncio.current_task() is not execution.owner:
+        raise RuntimeError("rlm.context_note() must run in the foreground REPL cell")
+    if not isinstance(text, str):
+        raise TypeError("rlm.context_note() requires a string")
+    text = text.strip()
+    if len(text) > 2000:
+        raise ValueError("rlm.context_note() is limited to 2,000 characters")
+    execution.context_note = text
 
 
 def current_cell_completion_context() -> tuple[asyncio.Event, asyncio.Task[Any] | None] | None:
@@ -713,6 +726,8 @@ async def _handle_execute(req: dict[str, Any], ns: dict[str, Any]) -> None:
         done = {"event": "done", "id": cell_id, "status": status}
         if status == "ok" and execution.release_tool_outputs is not None:
             done["releaseToolOutputs"] = execution.release_tool_outputs
+        if status == "ok" and execution.context_note is not None:
+            done["contextNote"] = execution.context_note
         _send(done)
     finally:
         execution.owner = None

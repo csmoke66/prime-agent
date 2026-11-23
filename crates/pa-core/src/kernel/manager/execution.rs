@@ -212,6 +212,18 @@ impl Inner {
             } else {
                 None
             };
+            let context_note = if status == ExecuteStatus::Ok {
+                match done_fields
+                    .as_mut()
+                    .and_then(Value::as_object_mut)
+                    .and_then(|fields| fields.remove("contextNote"))
+                {
+                    Some(Value::String(note)) if note.chars().take(2001).count() <= 2000 => Some(note),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let result = ExecuteResult {
                 stdout,
                 stderr,
@@ -225,6 +237,7 @@ impl Inner {
                 transcript_reads: (!buffers.transcript_reads.is_empty())
                     .then(|| std::mem::take(&mut buffers.transcript_reads)),
                 release_tool_outputs,
+                context_note,
                 background_output: (!background_output.is_empty()).then_some(background_output),
                 ended_turn: buffers.ended_turn,
                 status,

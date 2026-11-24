@@ -138,8 +138,7 @@ fn truncate_plain(text: &str, width: usize) -> String {
         .collect::<String>()
 }
 
-/// The tray label while the goal is running; terminal states
-/// (idle/complete/error) carry no label.
+/// The tray label for an active or resumable goal.
 #[must_use]
 pub fn tray_goal_label(goal: &GoalState) -> Option<String> {
     match goal.status {
@@ -155,6 +154,7 @@ pub fn tray_goal_label(goal: &GoalState) -> Option<String> {
             "Goal budget limited ({})",
             format_goal_elapsed(goal.time_used_seconds)
         )),
+        GoalStatus::Error if goal.objective.is_some() => Some("Goal error · /goal resume".into()),
         GoalStatus::Idle | GoalStatus::Complete | GoalStatus::Error => None,
     }
 }

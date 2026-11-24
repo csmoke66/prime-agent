@@ -130,13 +130,12 @@ impl SessionEngine {
         decision
     }
 
-    /// A failed terminal assistant message fails an active goal: the error
-    /// text becomes the terminal reason; an abort keeps the goal.
+    /// Record a failed terminal assistant message on an active goal without
+    /// ending it. An aborted turn leaves the goal unchanged.
     ///
     /// # Errors
     ///
-    /// Returns the driver's error when failing the goal cannot be
-    /// persisted.
+    /// Returns the driver's error when the updated state cannot be persisted.
     pub async fn fail_goal_for_terminal_error(
         &self,
         error_message: Option<&str>,

@@ -514,10 +514,9 @@ impl PrintGoalSurface {
     }
 
     /// The settled boundary's goal drain: the held continuation and the armed
-    /// budget steer run as this invocation's follow-up turns; a turn that
-    /// still ends in a terminal error fails an active goal. Returns
-    /// whether any turn ran (the drive loop re-enters quiescence for
-    /// whatever the turns left behind).
+    /// budget steer run as this invocation's follow-up turns. A terminal
+    /// assistant error ends the invocation but leaves its goal active.
+    /// Returns whether any follow-up turn ran.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn drive_boundary(
         &self,
@@ -550,6 +549,7 @@ impl PrintGoalSurface {
                     .await
                     .map_err(|error| format!("{error:#}"))?;
                 self.publish_goal_update(engine).await;
+                return Ok(ran);
             }
             if let Some(wake_at) = engine.take_goal_backoff_wake_at().await {
                 tokio::time::sleep(std::time::Duration::from_millis(
@@ -953,12 +953,11 @@ mod tests {
         let owns = bed.prompt("work").await;
         subscription.unsubscribe().await;
         let runs = counter.load(Ordering::SeqCst);
-        // The active goal mints past the one scripted reply; the second turn
-        // overruns the faux queue and fails the goal (the terminal-error arm).
+        // Exhausting the script ends the invocation, not its goal.
         assert_eq!(runs, 1, "the continuation turn shares the one run");
-        assert!(!owns, "the failed goal no longer owns the boundary");
+        assert!(owns, "the failed turn leaves the goal active");
         let goal = bed.engine.goal_state().await;
-        assert_eq!(goal.status, pa_types::goal::GoalStatus::Error);
+        assert_eq!(goal.status, pa_types::goal::GoalStatus::Active);
         assert_eq!(goal.continuations_used, 1, "the seed itself mints nothing");
         let rows = custom_rows(&bed.engine).await;
         assert_eq!(
@@ -1014,7 +1013,7 @@ mod tests {
             vec![
                 "goal_update:active",
                 "goal_update:active",
-                "goal_update:error"
+                "goal_update:active"
             ]
         );
     }
@@ -1054,12 +1053,12 @@ mod tests {
         )
         .await;
         let (counter, subscription) = agent_run_counter(&bed.engine).await;
-        // The third turn overruns the faux queue: its error ends the run and fails the goal.
+        // The third turn overruns the faux queue and ends the invocation.
         let owns = bed.prompt("work").await;
         subscription.unsubscribe().await;
         let runs = counter.load(Ordering::SeqCst);
         assert_eq!(runs, 1, "the continuation turns share the one run");
-        assert!(!owns, "the failed goal no longer owns the boundary");
+        assert!(owns, "the failed turn leaves the goal active");
         let texts = assistant_texts(&bed.engine).await;
         assert_eq!(
             texts,
@@ -1076,7 +1075,7 @@ mod tests {
             "the seed context plus one minted context per turn"
         );
         let goal = bed.engine.goal_state().await;
-        assert_eq!(goal.status, pa_types::goal::GoalStatus::Error);
+        assert_eq!(goal.status, pa_types::goal::GoalStatus::Active);
         assert_eq!(goal.continuations_used, 2);
         // The stream: each turn's usage bump, each mint's bump, and the terminal
         // error — no queue frames (the natural mints never queue).
@@ -1087,7 +1086,7 @@ mod tests {
                 "goal_update:active",
                 "goal_update:active",
                 "goal_update:active",
-                "goal_update:error",
+                "goal_update:active",
             ]
         );
     }
@@ -1111,7 +1110,7 @@ mod tests {
             2,
             "the initial run plus the wake turn's run"
         );
-        assert!(!owns, "the exhausted faux queue fails the resumed goal");
+        assert!(owns, "the goal survives the exhausted faux queue");
         assert_eq!(
             wake_marker_rows(&bed.engine).await,
             1,
@@ -1124,16 +1123,15 @@ mod tests {
         );
         assert_eq!(
             bed.engine.goal_state().await.status,
-            pa_types::goal::GoalStatus::Error
+            pa_types::goal::GoalStatus::Active
         );
     }
 
-    /// Three consecutive empty turns end the goal at the cap after exactly three model
-    /// calls — the third wake never runs.
+    /// More than three consecutive empty turns still allow recovery.
     #[tokio::test(start_paused = true)]
-    async fn three_empty_turns_hit_the_cap_with_exactly_three_model_calls() {
+    async fn repeated_empty_turns_keep_retrying_until_a_reply() {
         let bed = goal_bed(
-            script(&json!([{}, {}, {}]), 128_000),
+            script(&json!([{}, {}, {}, {}, "recovered reply"]), 128_000),
             no_compaction(),
             Some(("finish the work", None)),
         )
@@ -1143,18 +1141,15 @@ mod tests {
         subscription.unsubscribe().await;
         assert_eq!(
             counter.load(Ordering::SeqCst),
-            3,
-            "the prompt turn plus the two wake turns"
+            5,
+            "the prompt turn plus four wake turns"
         );
-        assert!(!owns, "the capped goal no longer owns the boundary");
-        assert_eq!(wake_marker_rows(&bed.engine).await, 2);
-        let goal = bed.engine.goal_state().await;
-        assert_eq!(goal.status, pa_types::goal::GoalStatus::Error);
+        assert!(owns, "the goal is still active");
+        assert_eq!(wake_marker_rows(&bed.engine).await, 4);
         assert_eq!(
-            goal.last_error.as_deref(),
-            Some(pa_core::session_engine::goal_driver::CONTINUATION_NO_PROGRESS_CAP_REASON)
+            assistant_texts(&bed.engine).await.last().map(String::as_str),
+            Some("recovered reply")
         );
-        assert_eq!(goal.no_progress_streak, Some(3));
     }
 
     /// A non-goal empty turn never wakes: no marker turn, the boundary returns at once.
@@ -1255,9 +1250,9 @@ mod tests {
         subscription.unsubscribe().await;
         let runs = counter.load(Ordering::SeqCst);
         // The crossing turn and the held continuation: two runs (the held turn's
-        // own natural mint stays inside its run; faux-queue exhaustion fails the goal).
+        // own natural mint stays inside its run; the faux queue then runs out).
         assert_eq!(runs, 2, "the crossing run and the held-turn run");
-        assert!(!owns, "the failed goal no longer owns the boundary");
+        assert!(owns, "the failed turn leaves the goal active");
         let texts = assistant_texts(&bed.engine).await;
         assert_eq!(
             texts,
@@ -1332,11 +1327,11 @@ mod tests {
                 "goal_update:active",
                 "goal_update:active",
                 "action:0:",
-                "goal_update:error",
+                "goal_update:active",
             ]
         );
         let goal = bed.engine.goal_state().await;
-        assert_eq!(goal.status, pa_types::goal::GoalStatus::Error);
+        assert_eq!(goal.status, pa_types::goal::GoalStatus::Active);
         assert_eq!(
             goal.continuations_used, 2,
             "the held mint plus the held turn's own natural mint"

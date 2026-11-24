@@ -77,7 +77,7 @@ Use `/cost reset` to start counting from zero for the current session and all it
 
 ## Goals
 
-If the model provider is temporarily unreachable or unavailable after the normal retries, an active goal keeps its progress and schedules another attempt in five minutes. The delay repeats while the outage persists; it does not count toward the no-progress limit. For goals already marked `error` by an older build, reopen the session and use `/goal resume` to recover the same goal and budget.
+A failed provider request does not stop an active goal. After the normal retries, the goal uses a delayed retry without resetting progress or spending the no-progress allowance. Older goals already marked `error` can be recovered with `/goal resume`.
 
 ## Heartbeats
 

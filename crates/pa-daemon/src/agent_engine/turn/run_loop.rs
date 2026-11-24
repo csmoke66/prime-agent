@@ -100,6 +100,9 @@ impl AgentSessionEngine {
                     return;
                 }
                 TurnResult::Error { error, assistant } => {
+                    let failure_kind = assistant.as_deref().and_then(
+                        pa_core::session_engine::provider_retry::provider_stream_failure_kind,
+                    );
                     // A context-overflow error triggers one compact-and-retry attempt.
                     let arm = assistant.map_or(OverflowArmRun::NotApplicable, |assistant| {
                         self.run_overflow_compaction(&assistant, emit)
@@ -146,7 +149,7 @@ impl AgentSessionEngine {
                             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
                     }
                     // The goal settles terminal failures; provider outages arm a delayed wake.
-                    self.finish_goal_for_terminal_error(&error);
+                    self.finish_goal_for_terminal_error(&error, failure_kind.as_deref());
                     emit(EngineEvent::Done(Err(error)));
                     return;
                 }

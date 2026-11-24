@@ -78,12 +78,8 @@ fn now_millis() -> u64 {
 
 mod progress;
 
-use progress::CONTINUATION_NO_PROGRESS_CAP;
 pub use progress::{terminal_provider_failure, turn_produced_no_output};
-pub use progress::{
-    CONTINUATION_NO_PROGRESS_CAP_REASON, GOAL_BACKOFF_WAKE_CRON_LABEL,
-    GOAL_BACKOFF_WAKE_MARKER_TEXT,
-};
+pub use progress::{GOAL_BACKOFF_WAKE_CRON_LABEL, GOAL_BACKOFF_WAKE_MARKER_TEXT};
 
 impl GoalDriver {
     #[must_use]
@@ -101,20 +97,15 @@ impl GoalDriver {
         }
     }
 
-    /// Rehydrate from the session branch's latest persisted entry: an `active`
-    /// newest row that failed on a provider error adopts the failure as terminal.
-    #[must_use]
+    /// Rehydrate the newest persisted goal row. A provider failure written
+    /// after an active row is retained as diagnostics; it never deactivates
+    /// the goal during recovery.
     pub fn load_persisted(session: &SessionManager) -> Self {
         let mut state = Self::latest_persisted_state(session);
         if state.status == GoalStatus::Active {
             if let Some(error) = session.stale_active_goal_failure() {
-                state = GoalState {
-                    active: false,
-                    status: GoalStatus::Error,
-                    last_reason: Some(error.clone()),
-                    last_error: Some(error),
-                    ..state
-                };
+                state.last_reason = Some(error.clone());
+                state.last_error = Some(error);
             }
         }
         Self::restore_persisted(state)
@@ -159,16 +150,15 @@ impl GoalDriver {
                 self.no_progress_backoff_until_ms = 0;
                 self.parked_refusal_until_ms = 0;
                 self.counted_no_progress_turn_ms = reloaded.no_progress_turn_ms;
-                // The restore-resurrection guard applies here as in `load_persisted`.
+                // A trailing provider failure is diagnostic state, not a
+                // terminal transition. Recovery must keep the goal active.
                 if reloaded.status == GoalStatus::Active {
                     match session.stale_active_goal_failure() {
-                        Some(error) => normalize_goal_state(GoalState {
-                            active: false,
-                            status: GoalStatus::Error,
+                        Some(error) => GoalState {
                             last_reason: Some(error.clone()),
                             last_error: Some(error),
                             ..reloaded
-                        }),
+                        },
                         None => reloaded,
                     }
                 } else {
@@ -447,7 +437,7 @@ impl GoalDriver {
         Ok(())
     }
 
-    /// Resume a paused (including connection failures) or budget-limited goal.
+    /// Resume a paused, failed, or budget-limited goal without replacing it.
     /// Returns the continuation context when the goal becomes active again.
     ///
     /// # Errors
@@ -462,7 +452,7 @@ impl GoalDriver {
         }
         if !matches!(
             self.state.status,
-            GoalStatus::Paused | GoalStatus::BudgetLimited
+            GoalStatus::Paused | GoalStatus::BudgetLimited | GoalStatus::Error
         ) {
             return Ok(None);
         }
@@ -475,6 +465,7 @@ impl GoalDriver {
         } else {
             GoalStatus::Active
         };
+        let resuming_error = self.state.status == GoalStatus::Error;
         self.set_state(
             session,
             GoalState {
@@ -484,9 +475,17 @@ impl GoalDriver {
                 // stays budget_limited); a live resume clears it.
                 last_reason: exhausted.then(|| "Goal token budget already reached".to_string()),
                 last_error: None,
+                no_progress_streak: if resuming_error { Some(0) } else { self.state.no_progress_streak },
+                no_progress_turn_ms: if resuming_error { None } else { self.state.no_progress_turn_ms },
                 ..self.state.clone()
             },
         )?;
+        if resuming_error {
+            self.no_progress_streak = 0;
+            self.counted_no_progress_turn_ms = None;
+            self.no_progress_backoff_until_ms = 0;
+            self.parked_refusal_until_ms = 0;
+        }
         if next_status == GoalStatus::Active {
             // Calls billed while the goal was paused never charge it.
             self.billed_tokens
@@ -522,58 +521,61 @@ impl GoalDriver {
         )
     }
 
-    /// Terminal-assistant handling: `aborted` keeps the goal, `error` fails it.
+    /// Terminal-assistant handling: aborted turns leave the goal unchanged;
+    /// failed turns are recorded without ending the active goal.
     ///
     /// # Errors
     ///
-    /// Returns an error when the terminal goal state cannot be persisted.
+    /// Returns an error when the updated goal state cannot be persisted.
     pub fn finish_for_terminal_message(
         &mut self,
         session: &mut SessionManager,
         stop_reason: pa_types::ai::StopReason,
         error_message: Option<&str>,
     ) -> anyhow::Result<()> {
-        use pa_types::ai::StopReason;
+        if stop_reason != pa_types::ai::StopReason::Error {
+            return Ok(());
+        }
+        self.record_failed_turn(session, error_message, None)
+    }
+
+    /// Record a failed turn using the provider's structured classification when available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the goal transition cannot be persisted.
+    pub fn record_failed_turn(
+        &mut self,
+        session: &mut SessionManager,
+        error_message: Option<&str>,
+        provider_failure_kind: Option<&str>,
+    ) -> anyhow::Result<()> {
         if self.state.status != GoalStatus::Active {
             return Ok(());
         }
+        let reason = error_message
+            .filter(|message| !message.is_empty())
+            .unwrap_or("Assistant response failed");
+        let safety_block = matches!(provider_failure_kind, Some("refusal" | "safety"))
+            || crate::session_engine::error_classify::classify_error_message(reason).subtype
+                == "refusal";
         // Give the provider time to recover after the turn's own retries.
         // This is not a no-progress strike: a long outage must not kill the goal.
-        if let StopReason::Error = stop_reason {
-            let reason = error_message
-                .filter(|message| !message.is_empty())
-                .unwrap_or("Assistant response failed");
-            if crate::goals::is_goal_provider_outage(reason) {
-                let now = now_millis();
-                let retry_already_armed = self.no_progress_backoff_until_ms > now
-                    && self
-                        .state
-                        .last_error
-                        .as_deref()
-                        .is_some_and(crate::goals::is_goal_provider_outage);
-                self.set_state(
-                    session,
-                    GoalState {
-                        last_reason: Some(reason.to_string()),
-                        last_error: Some(reason.to_string()),
-                        ..self.state.clone()
-                    },
-                )?;
-                if !retry_already_armed {
-                    self.no_progress_backoff_until_ms = now + 5 * 60 * 1_000;
-                }
-                return Ok(());
-            }
-            self.set_state(
-                session,
-                GoalState {
-                    active: false,
-                    status: GoalStatus::Error,
-                    last_reason: Some(reason.to_string()),
-                    last_error: Some(reason.to_string()),
-                    ..self.state.clone()
-                },
-            )?;
+        let retry_already_armed =
+            self.no_progress_backoff_until_ms > now_millis() && self.state.last_error.is_some();
+        self.set_state(
+            session,
+            GoalState {
+                status: GoalStatus::Active,
+                last_reason: Some(reason.to_string()),
+                last_error: Some(reason.to_string()),
+                ..self.state.clone()
+            },
+        )?;
+        if safety_block {
+            self.no_progress_backoff_until_ms = 0;
+        } else if !retry_already_armed {
+            self.no_progress_backoff_until_ms = now_millis() + 5 * 60 * 1_000;
         }
         Ok(())
     }
@@ -601,25 +603,6 @@ impl GoalDriver {
             }
         }
 
-        // The cap enforcement is UNCONDITIONAL: a restored goal already
-        // at the cap finishes at the FIRST consult.
-        if self.state.status == GoalStatus::Active
-            && self.no_progress_streak >= CONTINUATION_NO_PROGRESS_CAP
-        {
-            let reason = progress::CONTINUATION_NO_PROGRESS_CAP_REASON.to_string();
-            self.set_state(
-                session,
-                GoalState {
-                    active: false,
-                    status: GoalStatus::Error,
-                    no_progress_streak: Some(self.no_progress_streak),
-                    last_reason: Some(reason.clone()),
-                    last_error: Some(reason),
-                    ..self.state.clone()
-                },
-            )?;
-            return Ok(None);
-        }
         // A consult inside either window mints nothing; the next boundary
         // after the window re-mints (the goal stays Active — a delay, not a death).
         let now = now_millis();

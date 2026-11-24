@@ -114,11 +114,13 @@ fn create_goal_from_host(
         GoalStatus::Paused => anyhow::bail!(
             "cannot create a new goal because a paused goal exists; ask the user to resume it with /goal resume or clear it with /goal clear"
         ),
+        GoalStatus::Error => anyhow::bail!(
+            "cannot create a new goal because a failed goal still exists; ask the user to resume it with /goal resume or clear it with /goal clear"
+        ),
         GoalStatus::BudgetLimited => anyhow::bail!(
             "cannot create a new goal because a budget-limited goal exists; ask the user to resume it with /goal resume or clear it with /goal clear"
         ),
-        // Idle, or a terminal record (complete / error): start fresh.
-        GoalStatus::Idle | GoalStatus::Complete | GoalStatus::Error => {
+        GoalStatus::Idle | GoalStatus::Complete => {
             driver.start(session, objective, token_budget)
         }
     }

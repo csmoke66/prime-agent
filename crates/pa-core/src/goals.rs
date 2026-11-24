@@ -82,8 +82,6 @@ pub fn goal_update_dedupe_projection(state: &GoalState) -> GoalState {
 
 /// Clamp counters and derive `active` from the status. Backfills `created_at` (operator ruling
 /// 2026-09-28): a goal without `created_at` adopts its `updated_at`.
-/// Legacy transport failures recorded as `error` rehydrate as manually resumable
-/// pauses, without restarting the goal or changing its usage and objective.
 #[must_use]
 pub fn normalize_goal_state(goal: GoalState) -> GoalState {
     let created_at = match goal.created_at {
@@ -92,29 +90,14 @@ pub fn normalize_goal_state(goal: GoalState) -> GoalState {
             .then_some(goal.updated_at)
             .flatten(),
     };
-    let status = if goal.status == GoalStatus::Error
-        && goal.objective.is_some()
-        && goal.last_error.as_deref().is_some_and(is_goal_provider_outage)
-    {
-        GoalStatus::Paused
-    } else {
-        goal.status
-    };
     GoalState {
-        active: status == GoalStatus::Active,
-        status,
+        active: goal.status == GoalStatus::Active,
         tokens_used: goal.tokens_used,
         time_used_seconds: goal.time_used_seconds,
         continuations_used: goal.continuations_used,
         created_at,
         ..goal
     }
-}
-
-pub(crate) fn is_goal_provider_outage(error: &str) -> bool {
-    let failure = crate::session_engine::error_classify::classify_error_message(error);
-    failure.is_model_transport()
-        || matches!(failure.subtype, "timeout" | "provider_unavailable")
 }
 
 /// Validate and normalize a goal objective.
@@ -154,9 +137,9 @@ pub fn goal_token_delta_for_usage(input: i64, output: i64) -> u64 {
     input.max(0) as u64 + output.max(0) as u64
 }
 
-/// The restore-resurrection guard: the newest `thread_goal_state` row is `active`, but a terminal
-/// provider failure settled after it. Returns the failure's error text for the caller to adopt as
-/// the goal's terminal state. Newest-first: no goal row means only the newest assistant row counts.
+/// Find an unrecorded provider failure after the newest active goal row.
+/// Quota parking and safety refusals do not enter ordinary goal recovery.
+/// Without a goal row only the newest assistant row counts.
 pub fn stale_active_goal_failure(entries: &[pa_types::session::FileEntry]) -> Option<String> {
     let mut newest_assistant: Option<&pa_types::ai::AssistantMessage> = None;
     for entry in entries.iter().rev() {
@@ -190,14 +173,12 @@ pub fn stale_active_goal_failure(entries: &[pa_types::session::FileEntry]) -> Op
     newest_assistant.and_then(wire_terminal_provider_failure)
 }
 
-/// The wire form of terminal-provider-failure predicate: the failure text when the assistant row
-/// settled as terminal. The quota-park class keeps the goal.
+/// The wire form of the provider failure predicate used by goal recovery.
 fn wire_terminal_provider_failure(message: &pa_types::ai::AssistantMessage) -> Option<String> {
     if message.stop_reason != pa_types::ai::StopReason::Error {
         return None;
     }
-    // The diagnostic only excludes the quota-park class: an error-stop row WITHOUT a provider
-    // diagnostic is still terminal.
+    // Leave quota parking and safety refusals to their own handling.
     let kind = message.diagnostics.as_ref().and_then(|diagnostics| {
         diagnostics
             .iter()
@@ -206,7 +187,7 @@ fn wire_terminal_provider_failure(message: &pa_types::ai::AssistantMessage) -> O
             .and_then(|details| details.get("kind"))
             .and_then(serde_json::Value::as_str)
     });
-    if kind == Some("rate_limit") {
+    if matches!(kind, Some("rate_limit" | "refusal" | "safety")) {
         return None;
     }
     Some(

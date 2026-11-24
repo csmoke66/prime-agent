@@ -814,11 +814,9 @@ fn goal_outage_arms_one_automatic_wake_and_keeps_the_goal_active() {
     assert!((270_000..=300_000).contains(&delay), "wake delay: {delay} ms");
 }
 
-/// THE GOAL-SIDE 402 REGRESSION: a goal whose continuation turn dies on the wallet-drain
-/// 402 refuses the NEXT continuation and finishes the goal. The disclosure row still
-/// fires (BUG 1).
+/// Billing errors keep the goal active but must not cause an immediate request loop.
 #[test]
-fn goal_continuation_refuses_after_the_402_corpse() {
+fn goal_402_stays_active_without_an_immediate_retry_loop() {
     let (dir, mock, _supervisor, mut client, session_id) = setup_with_rejection(
         "p402goal",
         5,
@@ -866,10 +864,10 @@ fn goal_continuation_refuses_after_the_402_corpse() {
         .collect();
     let latest = goal_rows.last().expect("at least one goal row");
     assert_eq!(
-        latest["data"]["status"], "error",
-        "the goal finished on the errored turn: {latest}"
+        latest["data"]["status"], "active",
+        "the failed request must not finish the goal: {latest}"
     );
-    assert_eq!(latest["data"]["active"], false);
+    assert_eq!(latest["data"]["active"], true);
     assert!(
         latest["data"]["lastError"]
             .as_str()
@@ -877,6 +875,14 @@ fn goal_continuation_refuses_after_the_402_corpse() {
             .contains("Insufficient balance"),
         "the goal's error is the turn's 402: {latest}"
     );
+    client.send_command(
+        "jobs",
+        &json!({"type": "cron_list", "activeSessionId": session_id}),
+    );
+    let reply = client.request("jobs");
+    assert!(reply["data"]["jobs"].as_array().unwrap().iter().any(|job| {
+        job["source"] == "goal_backoff_wake" && job["status"] == "active"
+    }), "{reply}");
 
     let outcome_rows = client
         .events

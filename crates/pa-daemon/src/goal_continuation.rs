@@ -75,20 +75,15 @@ impl AgentSessionEngine {
             .expect("registered jobs probe lock") = Some(probe);
     }
 
-    /// Settle the failed goal turn and arm the existing durable backoff wake
-    /// if the provider failed to connect or was unavailable.
-    pub(crate) fn finish_goal_for_terminal_error(&self, error: &str) {
+    /// Record the failed turn without ending the active goal.
+    pub(crate) fn finish_goal_for_terminal_error(&self, error: &str, kind: Option<&str>) {
         let Some(handles) = self.live_handles().map(|live| live.goal.clone()) else {
             return;
         };
         self.runtime.block_on(async {
             let mut driver = handles.driver.lock().await;
             let mut session = handles.session.lock().await;
-            if let Err(persist_error) = driver.finish_for_terminal_message(
-                &mut session,
-                pa_types::ai::StopReason::Error,
-                Some(error),
-            ) {
+            if let Err(persist_error) = driver.record_failed_turn(&mut session, Some(error), kind) {
                 // The best-effort terminal hook must not reject the caller.
                 eprintln!("pa-daemon: goal terminal finish persist failed: {persist_error:#}");
             }
@@ -97,8 +92,10 @@ impl AgentSessionEngine {
             drop(driver);
             if let Some(wake_at) = wake_at {
                 if self.schedule_goal_backoff_wake(wake_at).await.is_none() {
-                    eprintln!("pa-daemon: could not schedule the goal's provider-outage wake");
+                    eprintln!("pa-daemon: could not schedule the failed goal turn's wake");
                 }
+            } else {
+                self.cancel_goal_backoff_wake();
             }
         });
     }

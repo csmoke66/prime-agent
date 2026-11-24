@@ -6,22 +6,6 @@ use crate::session::manager::SessionManager;
 use pa_types::ai::UserContent;
 use std::fmt::Write as _;
 
-/// The latest persisted goal state with the terminal row reverted:
-/// the newest ACTIVE streak-3 row.
-fn session_rows_with_reverted_terminal(session: &mut SessionManager) -> GoalState {
-    let mut state = session.active_goal_state().unwrap_or_else(empty_goal_state);
-    if state.status == GoalStatus::Error {
-        state = GoalState {
-            active: true,
-            status: GoalStatus::Active,
-            last_reason: None,
-            last_error: None,
-            ..state
-        };
-    }
-    state
-}
-
 fn persisted_session() -> SessionManager {
     let dir = tempfile::TempDir::new().unwrap();
     let session_dir = dir.path().join("session");
@@ -300,7 +284,8 @@ fn terminal_messages_fail_or_keep_the_goal() {
     driver
         .finish_for_terminal_message(&mut session, StopReason::Error, Some("provider exploded"))
         .unwrap();
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
+    let wake = driver.backoff_wake_at().expect("unknown failures schedule a wake");
     assert_eq!(
         driver.state().last_error.as_deref(),
         Some("provider exploded")
@@ -308,7 +293,8 @@ fn terminal_messages_fail_or_keep_the_goal() {
     driver
         .finish_for_terminal_message(&mut session, StopReason::Error, None)
         .unwrap();
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
+    assert_eq!(driver.backoff_wake_at(), Some(wake));
 }
 
 #[test]
@@ -348,7 +334,7 @@ fn continuations_increment() {
 }
 
 #[test]
-fn the_mint_refuses_and_finishes_on_an_errored_turn() {
+fn the_mint_delays_retry_on_an_errored_turn() {
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
@@ -363,15 +349,15 @@ fn the_mint_refuses_and_finishes_on_an_errored_turn() {
         .next_continuation_message(&mut session, Some(&corpse))
         .unwrap()
         .is_none());
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
     assert_eq!(
         driver.state().last_error.as_deref(),
         Some("402 Payment required: wallet drained")
     );
-    assert!(!driver.owns_continuation_wakeup());
+    assert!(driver.backoff_wake_at().is_some());
     assert_eq!(
         GoalDriver::load_persisted(&session).state().status,
-        GoalStatus::Error
+        GoalStatus::Active
     );
 }
 
@@ -412,7 +398,7 @@ fn a_rate_limited_turn_keeps_the_goal_alive() {
 }
 
 #[test]
-fn no_output_turns_count_to_the_cap_and_backoff() {
+fn no_output_turns_back_off_without_ending_the_goal() {
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
@@ -469,14 +455,12 @@ fn no_output_turns_count_to_the_cap_and_backoff() {
             .unwrap()
             .is_none());
     }
-    assert_eq!(driver.state().status, GoalStatus::Error);
-    assert_eq!(
-        driver.state().last_reason.as_deref(),
-        Some("Goal continuation cap reached: consecutive turns made no progress")
-    );
+    assert_eq!(driver.state().status, GoalStatus::Active);
+    assert_eq!(driver.state().no_progress_streak, Some(3));
+    assert!(driver.backoff_wake_at().is_some());
     assert_eq!(
         GoalDriver::load_persisted(&session).state().status,
-        GoalStatus::Error
+        GoalStatus::Active
     );
 }
 
@@ -623,8 +607,8 @@ fn a_terminal_error_sharing_the_millisecond_still_refuses() {
         .is_none());
     assert_eq!(driver.no_progress_streak(), 1);
 
-    // A TERMINAL provider error at the same millisecond T: the dedup alone
-    // would skip it (`T > T` is false); the unconditional kill finishes the goal.
+    // A provider error at the same millisecond is still recorded and
+    // schedules recovery without ending the goal.
     let same_ms_corpse = test_error_turn(
         "invalid_request",
         Some(400),
@@ -635,13 +619,13 @@ fn a_terminal_error_sharing_the_millisecond_still_refuses() {
         .next_continuation_message(&mut session, Some(&same_ms_corpse))
         .unwrap()
         .is_none());
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
     assert_eq!(
         driver.state().last_error.as_deref(),
         Some("402 Insufficient balance (team wallet drained)")
     );
-    // An EARLIER-millisecond terminal error on a fresh goal refuses
-    // too (the wall clock is not monotonic across settle paths).
+    // An earlier-millisecond provider error on a fresh goal is retained
+    // and retried too (the wall clock is not monotonic across settle paths).
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
@@ -665,7 +649,7 @@ fn a_terminal_error_sharing_the_millisecond_still_refuses() {
         )
         .unwrap()
         .is_none());
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
 }
 
 /// A same-ms pre-goal row never judges the new goal — the gate requires a
@@ -692,18 +676,19 @@ fn a_same_ms_pre_goal_corpse_never_judges_the_new_goal() {
     assert_eq!(driver.state().status, GoalStatus::Active);
     driver.continuation_consumed();
 
-    // A turn a millisecond LATER is the goal's own and judges it.
+    // A turn a millisecond later belongs to this goal. Its failure is
+    // recorded, while the goal remains active for its delayed retry.
     let next_ms = test_error_turn(
         "invalid_request",
         Some(400),
-        "the goal's own corpse, one millisecond later",
+        "the goal's own failed turn, one millisecond later",
         created_at as i64 + 1,
     );
     assert!(driver
         .next_continuation_message(&mut session, Some(&next_ms))
         .unwrap()
         .is_none());
-    assert_eq!(driver.state().status, GoalStatus::Error);
+    assert_eq!(driver.state().status, GoalStatus::Active);
 }
 
 #[test]
@@ -804,42 +789,32 @@ fn the_rate_limit_refusal_sticks_across_reconsults() {
 }
 
 #[test]
-fn a_restored_goal_at_the_cap_finishes_at_the_first_consult() {
+fn repeated_empty_turns_never_end_the_goal() {
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
     let created_at = driver.state().created_at.unwrap();
-    for offset in 1..=3 {
+    for offset in 1..=6 {
         let empty = test_empty_turn(created_at as i64 + offset);
         driver
             .next_continuation_message(&mut session, Some(&empty))
             .unwrap();
     }
-    assert_eq!(driver.state().status, GoalStatus::Error);
-    // Simulate the interrupted terminal transition: the streak-3
-    // Active row stays newest.
-    let rows = session_rows_with_reverted_terminal(&mut session);
-    let mut driver = GoalDriver::restore_persisted(rows);
     assert_eq!(driver.state().status, GoalStatus::Active);
-    assert_eq!(driver.no_progress_streak(), 3);
-    assert!(driver
-        .next_continuation_message(&mut session, Some(&test_empty_turn(created_at as i64 + 3)))
-        .unwrap()
-        .is_none());
-    assert_eq!(driver.state().status, GoalStatus::Error);
-    assert_eq!(
-        driver.state().last_reason.as_deref(),
-        Some("Goal continuation cap reached: consecutive turns made no progress")
+    assert_eq!(driver.no_progress_streak(), 6);
+    assert!(
+        driver.backoff_wake_at().is_some(),
+        "the latest failed attempt schedules another retry"
     );
 }
 
 #[test]
-fn load_persisted_adopts_the_stale_active_failure() {
+fn load_persisted_keeps_stale_and_settled_failures_active() {
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
-    // The corpse message persists after the newest goal row: the
-    // interrupted-settle ordering.
+    // A failed assistant row may persist after the newest goal row when
+    // settling is interrupted.
     driver
         .next_continuation_message(&mut session, None)
         .unwrap();
@@ -852,32 +827,13 @@ fn load_persisted_adopts_the_stale_active_failure() {
         )))
         .unwrap();
     let rehydrated = GoalDriver::load_persisted(&session);
-    assert_eq!(rehydrated.state().status, GoalStatus::Error);
+    assert_eq!(rehydrated.state().status, GoalStatus::Active);
     assert_eq!(
         rehydrated.state().last_error.as_deref(),
         Some("402 Insufficient balance")
     );
-    // The rate-limit corpse is the park's pause: the goal
-    // resurrects.
-    let mut session = persisted_session();
-    let mut driver = GoalDriver::new();
-    driver.start(&mut session, "work", None).unwrap();
-    driver
-        .next_continuation_message(&mut session, None)
-        .unwrap();
-    session
-        .append_message(pa_types::session::AgentMessage::Assistant(wire_error_turn(
-            "rate_limit",
-            Some(429),
-            "429 Too many requests",
-            0,
-        )))
-        .unwrap();
-    assert_eq!(
-        GoalDriver::load_persisted(&session).state().status,
-        GoalStatus::Active
-    );
-    // A settled terminal row is the newest row: no stale adoption.
+
+    // A failure already recorded in goal state remains active after reload.
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();
     driver.start(&mut session, "work", None).unwrap();
@@ -888,9 +844,11 @@ fn load_persisted_adopts_the_stale_active_failure() {
             Some("settled failure"),
         )
         .unwrap();
+    let rehydrated = GoalDriver::load_persisted(&session);
+    assert_eq!(rehydrated.state().status, GoalStatus::Active);
     assert_eq!(
-        GoalDriver::load_persisted(&session).state().status,
-        GoalStatus::Error
+        rehydrated.state().last_error.as_deref(),
+        Some("settled failure")
     );
 }
 
@@ -1091,8 +1049,8 @@ fn goal_transport_failure_is_resumable_without_restarting_or_resetting_the_goal(
                 &GoalState {
                     status: GoalStatus::Error,
                     active: false,
-                    last_error: Some(FAILURE.into()),
-                    last_reason: Some(FAILURE.into()),
+                    last_error: Some("unknown provider failure".into()),
+                    last_reason: Some("unknown provider failure".into()),
                     ..before.clone()
                 },
             );
@@ -1107,10 +1065,10 @@ fn goal_transport_failure_is_resumable_without_restarting_or_resetting_the_goal(
             assert_eq!(driver.state().status, GoalStatus::Active);
             let first_wake = driver.backoff_wake_at().expect("outage wake");
             driver
-                .finish_for_terminal_message(
+                .record_failed_turn(
                     &mut session,
-                    pa_types::ai::StopReason::Error,
-                    Some("HTTP 503 Service Unavailable"),
+                    Some("Codex error: Our servers are currently overloaded. Please try again later"),
+                    Some("overloaded"),
                 )
                 .unwrap();
             assert_eq!(driver.backoff_wake_at(), Some(first_wake));
@@ -1123,8 +1081,8 @@ fn goal_transport_failure_is_resumable_without_restarting_or_resetting_the_goal(
             continue;
         }
         let mut restored = GoalDriver::load_persisted(&session);
-        assert_eq!(restored.state().status, GoalStatus::Paused);
-        assert_eq!(restored.state().last_reason.as_deref(), Some(FAILURE));
+        assert_eq!(restored.state().status, GoalStatus::Error);
+        assert_eq!(restored.state().last_reason.as_deref(), Some("unknown provider failure"));
         assert!(restored
             .next_continuation_message(&mut session, None)
             .unwrap()

@@ -308,35 +308,37 @@ impl AgentSessionEngine {
             .expect("progress note emit lock") = Some(emit);
     }
 
-    /// The stale-row guard's deferred durable write: the terminal row
-    /// lands AFTER the context adoption, so the active row stops being
-    /// rediscovered.
+    /// Persist a provider failure discovered while rebuilding an active goal,
+    /// then arm the same delayed continuation used for live failed turns.
     pub(crate) async fn flush_pending_stale_goal_terminal(&self) {
-        let terminal = self
+        let pending = self
             .stale_goal_terminal_pending
             .lock()
             .expect("stale terminal pending lock")
             .take();
-        let Some(terminal) = terminal else {
+        let Some(pending) = pending else {
             return;
         };
         let Some(handles) = self.built_handles() else {
             return;
         };
+        let mut driver = handles.goal.driver.lock().await;
         let mut session = handles.goal.session.lock().await;
-        let normalized = pa_core::goals::normalize_goal_state(terminal);
-        match serde_json::to_value(&normalized) {
-            Ok(value) => {
-                let appended = session
-                    .append_custom_entry(pa_core::goals::GOAL_STATE_CUSTOM_TYPE, Some(value))
-                    .map(|_| ())
-                    .and_then(|()| session.flush_now());
-                if let Err(persist_error) = appended {
-                    eprintln!("pa-daemon: stale goal terminal persist failed: {persist_error:#}");
-                }
-            }
-            Err(serialize_error) => {
-                eprintln!("pa-daemon: stale goal terminal serialize failed: {serialize_error:#}");
+        let recorded = driver.record_failed_turn(
+            &mut session,
+            pending.last_error.as_deref(),
+            None,
+        );
+        let wake_at = driver.backoff_wake_at();
+        drop(session);
+        drop(driver);
+        if let Err(persist_error) = recorded {
+            eprintln!("pa-daemon: stale goal failure persist failed: {persist_error:#}");
+            return;
+        }
+        if let Some(wake_at) = wake_at {
+            if self.schedule_goal_backoff_wake(wake_at).await.is_none() {
+                eprintln!("pa-daemon: could not schedule the recovered goal's wake");
             }
         }
     }
@@ -512,9 +514,8 @@ impl AgentSessionEngine {
             );
         }
         if let Some(state) = seed {
-            // The restore-resurrection guard: an active seed whose
-            // trailing turn settled as a terminal provider failure adopts
-            // the failure (the active row cannot resurrect the goal).
+            // Preserve a trailing provider failure as diagnostics on the
+            // active goal and persist it after context adoption.
             let mut stale_error = None;
             if state.status == pa_core::goals::GoalStatus::Active {
                 let scan: Option<Vec<pa_types::session::FileEntry>> = pending_branch
@@ -532,29 +533,24 @@ impl AgentSessionEngine {
                 }
             }
             if let Some(error) = stale_error {
-                // The stale-row guard's adoption: the IN-MEMORY driver
-                // takes the verdict directly; the DURABLE row is DEFERRED
-                // to the post-adoption flush (a write here would be replaced).
-                let terminal = pa_core::goals::normalize_goal_state(pa_core::goals::GoalState {
-                    active: false,
-                    status: pa_core::goals::GoalStatus::Error,
+                // Context adoption would replace an immediate write, so stage
+                // the active diagnostic state for the post-adoption flush.
+                let failed_turn = pa_core::goals::normalize_goal_state(pa_core::goals::GoalState {
                     last_reason: Some(error.clone()),
                     last_error: Some(error),
                     ..state.clone()
                 });
                 if let Some(handles) = self.built_handles() {
                     let mut driver = handles.goal.driver.lock().await;
-                    driver.restore_from_persisted(terminal.clone());
+                    driver.restore_from_persisted(failed_turn.clone());
                     drop(driver);
-                    // The published baseline keeps the RAW row: the first
-                    // `goal_update_if_changed` EMITS — the worker's durable
-                    // mirror is the ONE path the terminal row reaches the file.
-                    *handles.published_goal.lock().expect("published goal lock") = Some(state);
+                    *handles.published_goal.lock().expect("published goal lock") =
+                        Some(state);
                 }
                 *self
                     .stale_goal_terminal_pending
                     .lock()
-                    .expect("stale terminal pending lock") = Some(terminal);
+                    .expect("stale terminal pending lock") = Some(failed_turn);
             } else if let Some(handles) = self.built_handles() {
                 let mut driver = handles.goal.driver.lock().await;
                 driver.restore_from_persisted(state.clone());

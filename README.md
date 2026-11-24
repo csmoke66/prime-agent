@@ -69,6 +69,12 @@ Both field maps are required; use `{}` if there are no fields. Types are `string
 
 An operator workflow invoked from a root session can set `"overrideSubagentModels": true` to use its exact `model` for the runner and its explicit `subagents.allowedModels` for descendants instead of the root session's child-model list. Use `"subagents": {"allowedModels": []}` when the runner should not spawn any children. All selected models still have to pass the daemon-wide allowlist and catalog checks. This flag is rejected in user-global and project definitions, including definitions created by agents.
 
+## Session costs
+
+Use `/cost` to see this session's total and its sub-agents' spend, split into uncached input, output, cache reads, and cache writes. Older records that stored only a total appear under **Unclassified**.
+
+Use `/cost reset` to start counting from zero for the current session and all its descendants. The reset is saved locally and applies to the chat header, Agents View, and `/cost`. It does not change provider billing, transcripts, or the lifetime totals in `/session` and `/context`.
+
 ## Agent-controlled context
 
 An agent can stop sending old tool output to the model without deleting it from the session transcript. In a successful foreground REPL cell, `rlm.release()` releases the previous result, `rlm.release([call_id, ...])` selects specific results, and `rlm.release("all")` releases every result before that cell. For example, an agent that has just verified a commit can keep a small checkpoint:

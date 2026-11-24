@@ -8,6 +8,13 @@ use super::{
 };
 
 fn cost_rows(cost: crate::session_cost::Cost) -> Vec<info_commands::ClientLine> {
+    let dollars = |value: f64| {
+        if value > 0.0 && value < 0.00005 {
+            "<$0.0001".to_string()
+        } else {
+            format!("${}", info_commands::js_to_fixed(value, 4))
+        }
+    };
     let row = |label: &str, value: f64| {
         vec![
             info_commands::ClientSpan {
@@ -15,7 +22,7 @@ fn cost_rows(cost: crate::session_cost::Cost) -> Vec<info_commands::ClientLine> 
                 color: Some(crate::theme::ThemeColor::Dim),
             },
             info_commands::ClientSpan {
-                text: format!(" ${}", info_commands::js_to_fixed(value, 4)),
+                text: format!(" {}", dollars(value)),
                 color: None,
             },
         ]
@@ -547,7 +554,33 @@ impl SessionUi {
                 if resolved.args == "reset" {
                     // Refresh first so every currently-known descendant receives the checkpoint,
                     // rather than resetting against a stale attach-time snapshot.
-                    self.subscribe_roster().await;
+                    let refreshed = self
+                        .bounded_request(
+                            Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
+                            DaemonCommand::RosterSubscribe {
+                                id: None,
+                                rest: Map::default(),
+                            },
+                        )
+                        .await;
+                    let roster = match refreshed {
+                        Ok(data) => data.get("roster").and_then(Value::as_array).cloned(),
+                        Err(error) => {
+                            self.error_row(
+                                &format!("Cannot refresh session costs: {error:#}"),
+                                view,
+                            );
+                            return Ok(());
+                        }
+                    };
+                    let Some(roster) = roster else {
+                        self.error_row(
+                            "Cannot refresh session costs: daemon returned no roster",
+                            view,
+                        );
+                        return Ok(());
+                    };
+                    self.roster = roster;
                     let identity = self.session_identity();
                     if let Err(error) = crate::session_cost::reset(&self.roster, &identity) {
                         self.error_row(&format!("{error:#}"), view);

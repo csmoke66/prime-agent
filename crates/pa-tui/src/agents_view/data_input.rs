@@ -2,7 +2,7 @@
 //! reconciled roster+catalog with the query filter), the roster update apply, the saved-catalog
 //! stream reconcile, and the selection/key/mouse dispatch residue.
 use super::{
-    build_rows, compute_rollups, filter_by_session_ids, filter_empty_sessions,
+    build_rows, filter_by_session_ids, filter_empty_sessions,
     filter_unified_sessions, parse_search_query, reconcile_unified_sessions, resolve_selection,
     scope_ancestors, scope_root, scope_to_subtree, subtree_contains, AgentsViewMode, AgentsViewRow,
     AgentsViewScope, Composer, OpenedRow, PathBuf, PressedMouseClick, RowKind, SavedMore,
@@ -73,7 +73,7 @@ impl AgentsViewMode {
             filter_unified_sessions(&filtered, &parsed)
         };
         // The rollup runs over the full reconciled set, so a filter never changes a row's total.
-        let rollups = compute_rollups(&records);
+        let rollups = crate::agents_view_forest::display_rollups(&records);
         let mut rows = build_rows(
             &filtered,
             self.options.scope.as_ref(),

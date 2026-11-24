@@ -100,6 +100,7 @@ pub(crate) mod search_input;
 pub mod selection;
 mod sequence_guard;
 pub mod session;
+mod session_cost;
 pub mod session_open_error;
 pub mod session_ui;
 pub mod settings_menu;

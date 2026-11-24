@@ -13,8 +13,8 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agents_view_forest::{
-    ancestor_session_ids, build_rows, compute_rollups, has_session_children, resolve_selection,
-    scope_ancestors, scope_root, scope_to_subtree, subtree_contains, ActivityCounts, AgentsViewRow,
+    ancestor_session_ids, build_rows, has_session_children, resolve_selection, scope_ancestors,
+    scope_root, scope_to_subtree, subtree_contains, ActivityCounts, AgentsViewRow,
     RowKind, ScopeRoot, SelectionKey, SessionActivity,
 };
 use crate::agents_view_state::truncate_text;

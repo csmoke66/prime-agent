@@ -13,7 +13,8 @@ mod persistence_tests;
 
 pub use manager::{IdleEviction, SettingsError, SettingsManager, DEFAULT_IDLE_EVICTION_MINUTES};
 pub use storage::{
-    FileSettingsStorage, InMemorySettingsStorage, SettingsScope, SettingsStorage, CONFIG_DIR_NAME,
+    atomic_write_with, AtomicWriteOptions, FileSettingsStorage, InMemorySettingsStorage,
+    SettingsScope, SettingsStorage, CONFIG_DIR_NAME,
 };
 pub use types::{
     AutoRefineSettings, AutonomousSettings, CompactionSettings, ProviderBlockDelivery,

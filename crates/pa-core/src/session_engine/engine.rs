@@ -726,10 +726,13 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
         }
         None => timing_stream_fn,
     };
-    let tool_output_accounting =
-        super::tool_output_reminder::accounting(Arc::clone(&reminder_percent));
-    let tool_output_stats = std::sync::Arc::clone(&tool_output_accounting.stats);
-    let compaction_notice = Arc::default();
+    let tool_output_accounting = super::tool_output_reminder::accounting();
+    let tool_output_stats = Arc::clone(&tool_output_accounting.stats);
+    let agent_stream_fn = super::tool_output_reminder::remind_on_request(
+        agent_stream_fn,
+        Arc::clone(&reminder_percent),
+        Arc::clone(&tool_output_stats),
+    );
     let agent = Agent::new(AgentOptions {
         // Every request in the session carries this identity: providers key prompt caching
         // (`prompt_cache_key`), session headers, and WebSocket/`previous_response_id` reuse on it
@@ -753,8 +756,6 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             super::refinement_gate::convert_to_llm(
                 refinement_settings.reopen(),
                 reminder_percent,
-                Arc::clone(&compaction_notice),
-                Arc::clone(&tool_output_stats),
             ),
         )),
         // The Rust engine wires no transform, so the instrumented seam
@@ -814,7 +815,6 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             .then_some(digest_context.clone()),
     )
     .await?;
-    session.compaction_notice = compaction_notice;
     // Receipts that landed after their cell's tool result persist as
     // custom entries; the build patches them onto the rebuilt tool
     // results (TS `_restoreLateIpythonSentAgentMessages`).

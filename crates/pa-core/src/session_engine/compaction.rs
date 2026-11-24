@@ -366,59 +366,6 @@ pub(super) fn live_context_tokens(messages: &[AgentMessage]) -> Option<u64> {
     }
 }
 
-/// Session-local advisory state. Pending is consumed only when attached to
-/// the next model request; no transcript row or extra model turn is created.
-#[derive(Default)]
-pub(super) enum CompactionNotice {
-    #[default]
-    Armed,
-    Pending { window: u64 },
-    Delivered,
-}
-
-impl CompactionNotice {
-    pub(super) fn check(
-        &mut self,
-        tokens: Option<u64>,
-        window: u64,
-        threshold: u64,
-    ) -> bool {
-        let warning_at = threshold.saturating_sub(window / 10).max(1);
-        match tokens {
-            Some(tokens) if threshold != 0 && tokens > threshold => {
-                // A single jump can skip the advance-warning band entirely.
-                if matches!(self, Self::Pending { .. }) {
-                    *self = Self::Armed;
-                }
-                true
-            }
-            Some(tokens) if threshold != 0 && tokens >= warning_at => {
-                if !matches!(self, Self::Delivered) {
-                    *self = Self::Pending { window };
-                }
-                false
-            }
-            _ => {
-                *self = Self::Armed;
-                false
-            }
-        }
-    }
-
-    pub(super) fn take(&mut self, retained_tool_tokens: impl FnOnce() -> u64) -> bool {
-        let Self::Pending { window } = *self else {
-            return false;
-        };
-        // The other tool-pressure advisory has its own configurable limit.
-        // Recheck at delivery: releases since arming may have cleared the output.
-        if window == 0 || u128::from(retained_tool_tokens()) * 100 < u128::from(window) * 30 {
-            return false;
-        }
-        *self = Self::Delivered;
-        true
-    }
-}
-
 /// Valid cut point indices: user/assistant/custom/branch/compaction-summary
 /// messages plus `branch_summary` and `custom_message` entries. Never tool results.
 #[must_use]

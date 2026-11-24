@@ -136,7 +136,7 @@ pub trait ClientSettings: Send + Sync {
     /// Advisory reminder threshold for live tool results as a percentage of the model window;
     /// zero disables it.
     fn tool_output_reminder_percent(&self) -> u8 {
-        30
+        pa_types::compaction::DEFAULT_TOOL_OUTPUT_REMINDER_PERCENT
     }
     /// Persist the advisory tool-result reminder percentage globally.
     ///

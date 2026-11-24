@@ -539,6 +539,13 @@ pub fn loop_convert_to_llm(
     let mut out = Vec::new();
     for message in messages {
         match message {
+            LiveMessage::Standard(Message::ToolResult(mut result)) => {
+                result.content.retain(|part| {
+                    !matches!(part, pa_agent::types::ToolResultContent::Text(text)
+                        if super::tool_output_reminder::is_legacy_notice(&text.text))
+                });
+                out.push(Message::ToolResult(result));
+            }
             pa_agent::types::AgentMessage::Standard(message) => out.push(message),
             pa_agent::types::AgentMessage::Custom(custom) => {
                 let Some(session_message) = custom_message_to_session(&custom) else {

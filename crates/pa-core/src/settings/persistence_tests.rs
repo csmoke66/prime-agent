@@ -346,7 +346,7 @@ fn project_percentage_overrides_global_and_stale_writes_preserve_external_settin
 fn tool_output_reminder_preserves_compaction_siblings_and_survives_reload() {
     let (storage, mut manager) =
         fixture(r#"{"compaction":{"enabled":false,"reserveTokens":1234,"future":"keep"}}"#);
-    assert_eq!(manager.get_tool_output_reminder_percent(), 30);
+    assert_eq!(manager.get_tool_output_reminder_percent(), 20);
     for percent in [0, 1, 30, 100] {
         manager.set_tool_output_reminder_percent(percent).unwrap();
         manager.reload().unwrap();
@@ -379,7 +379,7 @@ fn invalid_tool_output_reminder_values_fall_back_without_mutating_settings() {
             "reserveTokens":1234,"toolOutputReminderPercent":invalid
         }}));
         let manager = SettingsManager::in_memory(&settings);
-        assert_eq!(manager.get_tool_output_reminder_percent(), 30);
+        assert_eq!(manager.get_tool_output_reminder_percent(), 20);
         assert_eq!(
             manager
                 .settings()

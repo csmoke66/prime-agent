@@ -122,8 +122,8 @@ impl SettingsManager {
         self.save_global_scope(&["compaction.thresholdPercent"])
     }
 
-    /// Percentage of the model context window that live tool results may occupy before the agent
-    /// receives an advisory reminder (default 30%; zero disables the reminder).
+    /// Percentage of the model window at which each request gets a tool-output reminder
+    /// (default 20%; zero disables it).
     #[must_use]
     pub fn get_tool_output_reminder_percent(&self) -> u8 {
         self.settings()
@@ -131,7 +131,7 @@ impl SettingsManager {
             .as_ref()
             .and_then(|settings| settings.tool_output_reminder_percent)
             .filter(|percent| *percent <= 100)
-            .unwrap_or(30)
+            .unwrap_or(pa_types::compaction::DEFAULT_TOOL_OUTPUT_REMINDER_PERCENT)
     }
 
     /// Persist the advisory tool-result reminder percentage without changing compaction settings.

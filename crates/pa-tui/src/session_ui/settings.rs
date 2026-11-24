@@ -380,7 +380,8 @@ impl SessionUi {
             // The tier row preselects the saved default instead of the struct default.
             values.default_service_tier = settings.default_service_tier();
         } else {
-            values.tool_output_reminder_percent = Some(30);
+            values.tool_output_reminder_percent =
+                Some(pa_types::compaction::DEFAULT_TOOL_OUTPUT_REMINDER_PERCENT);
             values.show_images = true;
             values.auto_resize_images = true;
             values.skill_commands = true;

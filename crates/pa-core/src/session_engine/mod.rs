@@ -158,7 +158,6 @@ pub struct AgentSession {
     /// Compaction settings; defaults until the engine wiring resolves
     /// them.
     compaction: std::sync::RwLock<compaction::CompactionSettings>,
-    compaction_notice: Arc<std::sync::Mutex<compaction::CompactionNotice>>,
     /// Auxiliary-model routing for compaction summaries; `None` keeps
     /// every summarizer on the session model.
     auxiliary_model: Option<auxiliary_model::AuxiliaryModelContext>,
@@ -275,7 +274,6 @@ impl AgentSession {
             harness_digest,
             digest_pending: std::sync::atomic::AtomicBool::new(false),
             compaction: std::sync::RwLock::new(compaction::CompactionSettings::default()),
-            compaction_notice: Arc::default(),
             auxiliary_model: None,
             auto_refine_allowed: false,
             refinement_settings: None,

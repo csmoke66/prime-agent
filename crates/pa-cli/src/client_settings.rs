@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(settings.mermaid_rendering_mode(), "streaming");
         assert_eq!(settings.tree_filter_mode(), "user-only");
         assert!(settings.warnings_anthropic_extra_usage());
-        assert_eq!(settings.tool_output_reminder_percent(), 30);
+        assert_eq!(settings.tool_output_reminder_percent(), 20);
 
         settings.set_theme("dark").expect("theme");
         settings.set_idle_eviction_minutes("off").expect("idle");

@@ -67,10 +67,7 @@ impl AgentSession {
         let tokens = (threshold != 0)
             .then(|| compaction::live_context_tokens(messages))
             .flatten();
-        self.compaction_notice
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .check(tokens, model.context_window, threshold)
+        tokens.is_some_and(|tokens| tokens > threshold)
     }
 
     /// Remove the trailing assistant message from the loop context, so a
@@ -237,10 +234,6 @@ impl AgentSession {
         let loop_messages: Vec<AgentMessage> = rebuilt_loop_messages(rebuilt);
         let rebuilt_message_count = loop_messages.len();
         self.agent.set_messages(loop_messages).await;
-        *self
-            .compaction_notice
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Default::default();
         compaction_trace::trace(
             "compact.rebuilt_context",
             &serde_json::json!({ "messages": rebuilt_message_count }),

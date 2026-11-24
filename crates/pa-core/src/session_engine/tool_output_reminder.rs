@@ -1,16 +1,19 @@
-//! Session-local tool-output pressure advisory.
-//!
-//! The landing hook accounts only model-visible, unreleased tool-result
-//! bodies. It appends one advisory to the result that enters a high-pressure
-//! episode; the durable placement keeps the note at a stable prompt position.
+//! Account for unreleased tool results and advise at the model-request
+//! boundary, without adding reminders to durable history.
+
+use std::sync::{atomic::AtomicU8, Arc, RwLock};
 
 use pa_agent::agent_loop::ToolResultLandingFn;
-use pa_agent::types::{AgentMessage, Model, ToolResultContent, ToolResultMessage};
+use pa_agent::stream::StreamFn;
+use pa_agent::types::{AgentMessage, ToolResultContent, ToolResultMessage};
 
-const NOTICE_PREFIX: &str = "[tool-output-pressure]";
-/// Ten percent of the configured threshold is hysteresis: at the default
-/// 30% trigger, releases must take pressure below 27% before another episode.
-const REARM_THRESHOLD_TENTHS: u128 = 9;
+const NOTICE: &str =
+    "[tool-output-pressure] Tool results are taking up a significant part of the context window. Use rlm.release() for results you no longer need.";
+
+pub(super) fn is_legacy_notice(text: &str) -> bool {
+    text.starts_with("[tool-output-pressure] Tool results use about ")
+        && text.ends_with("for transcript-only output.")
+}
 
 #[derive(Debug)]
 struct TrackedResult {
@@ -26,12 +29,6 @@ struct PressureState {
     live_tokens: u64,
     results_since_release: u64,
     last_release: Option<&'static str>,
-    armed: bool,
-    initialized: bool,
-    compaction_timestamp: Option<u64>,
-    model_provider: String,
-    model_id: String,
-    context_window: u64,
 }
 
 impl PressureState {
@@ -40,33 +37,13 @@ impl PressureState {
         message: &mut ToolResultMessage,
         prefix: &[AgentMessage],
         batch_prefix: &[ToolResultMessage],
-        model: &Model,
-        threshold_percent: u8,
-        force_rearm: bool,
     ) -> super::ToolOutputStats {
-        let compaction_timestamp = latest_compaction_timestamp(prefix);
-        let compaction_changed = self.initialized
-            && compaction_timestamp.is_some()
-            && compaction_timestamp != self.compaction_timestamp;
-        let model_changed = self.initialized
-            && (self.model_provider != model.provider
-                || self.model_id != model.id
-                || self.context_window != model.context_window);
-        if !self.initialized || compaction_changed || !self.prefix_matches(prefix, batch_prefix) {
-            self.rebuild(prefix, compaction_changed);
+        if !self.prefix_matches(prefix, batch_prefix) {
+            self.rebuild(prefix);
             for result in batch_prefix {
                 self.track_existing(result);
             }
         }
-        if force_rearm || model_changed {
-            self.armed = true;
-        }
-        self.model_provider.clone_from(&model.provider);
-        self.model_id.clone_from(&model.id);
-        self.context_window = model.context_window;
-        self.compaction_timestamp = compaction_timestamp;
-        self.initialized = true;
-
         self.record_result(message);
         let released = self.apply_release(message);
         let tokens = if released { 0 } else { result_tokens(message) };
@@ -78,43 +55,7 @@ impl PressureState {
             released,
         });
 
-        if below_rearm_pressure(
-            self.live_tokens,
-            model.context_window,
-            threshold_percent,
-        ) {
-            self.armed = true;
-        }
-        if self.armed
-            && at_or_above_pressure(
-                self.live_tokens,
-                model.context_window,
-                threshold_percent,
-            )
-            && !released
-        {
-            let percent = approximate_percent(self.live_tokens, model.context_window);
-            let note = format!(
-                "{NOTICE_PREFIX} Tool results use about {percent}% of this model's window. Even small results cost tokens on later requests. Keep evidence you still need; once a result is spent, save the finding and call rlm.release() in your next useful cell. Don't wait for a bulk clear. Use rlm.release(\"tail\") for a spent exchange or rlm.release(\"current\") for transcript-only output."
-            );
-            let note_tokens = text_tokens(&note);
-            message.content.push(ToolResultContent::text(note));
-            self.live_tokens = self.live_tokens.saturating_add(note_tokens);
-            if let Some(tracked) = self.results.last_mut() {
-                tracked.tokens = tracked.tokens.saturating_add(note_tokens);
-            }
-            self.armed = false;
-        }
         self.stats()
-    }
-
-    fn replace_history(&mut self, messages: &[AgentMessage]) {
-        let compaction_timestamp = latest_compaction_timestamp(messages);
-        let compaction_changed = self.initialized
-            && compaction_timestamp.is_some()
-            && compaction_timestamp != self.compaction_timestamp;
-        self.rebuild(messages, compaction_changed);
-        self.compaction_timestamp = compaction_timestamp;
     }
 
     fn stats(&self) -> super::ToolOutputStats {
@@ -162,11 +103,10 @@ impl PressureState {
         expected.next().is_none()
     }
 
-    fn rebuild(&mut self, prefix: &[AgentMessage], force_rearm: bool) {
+    fn rebuild(&mut self, prefix: &[AgentMessage]) {
         let release_mask = super::tool_output_release::loop_release_mask(prefix);
         let mut results = Vec::new();
         let mut live_tokens = 0u64;
-        let mut has_live_notice = false;
         self.results_since_release = 0;
         self.last_release = None;
         for (index, message) in prefix.iter().enumerate() {
@@ -181,7 +121,6 @@ impl PressureState {
             let tokens = if released { 0 } else { result_tokens(result) };
             if !released {
                 live_tokens = live_tokens.saturating_add(tokens);
-                has_live_notice |= contains_notice(result);
             }
             results.push(TrackedResult {
                 timestamp: result_timestamp(result),
@@ -192,7 +131,6 @@ impl PressureState {
         }
         self.results = results;
         self.live_tokens = live_tokens;
-        self.armed = force_rearm || !has_live_notice;
     }
 
     fn track_existing(&mut self, result: &ToolResultMessage) {
@@ -206,9 +144,6 @@ impl PressureState {
             tokens,
             released,
         });
-        if !released && contains_notice(result) {
-            self.armed = false;
-        }
     }
 
     fn apply_release(&mut self, result: &ToolResultMessage) -> bool {
@@ -279,9 +214,7 @@ pub(super) struct ToolOutputAccounting {
     pub(super) stats: std::sync::Arc<std::sync::RwLock<super::ToolOutputStats>>,
 }
 
-pub(super) fn accounting(
-    percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
-) -> ToolOutputAccounting {
+pub(super) fn accounting() -> ToolOutputAccounting {
     let state = std::sync::Arc::new(std::sync::Mutex::new(PressureState::default()));
     let stats = std::sync::Arc::new(std::sync::RwLock::new(super::ToolOutputStats::default()));
     let history_state = std::sync::Arc::clone(&state);
@@ -291,33 +224,20 @@ pub(super) fn accounting(
             let mut state = history_state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.replace_history(messages);
+            state.rebuild(messages);
             *history_stats
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = state.stats();
         });
     let landing_state = state;
     let landing_stats = std::sync::Arc::clone(&stats);
-    let last_percent = std::sync::atomic::AtomicU8::new(u8::MAX);
     let landing: ToolResultLandingFn =
-        std::sync::Arc::new(move |message, prefix, batch_prefix, model| {
+        std::sync::Arc::new(move |message, prefix, batch_prefix, _model| {
             super::tool_output_release::resolve_loop_tail_release(message, prefix);
-            let threshold_percent = percent.load(std::sync::atomic::Ordering::Relaxed);
-            let previous_percent = last_percent.swap(
-                threshold_percent,
-                std::sync::atomic::Ordering::Relaxed,
-            );
             let mut state = landing_state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let snapshot = state.land(
-                message,
-                prefix,
-                batch_prefix,
-                model,
-                threshold_percent,
-                previous_percent == 0,
-            );
+            let snapshot = state.land(message, prefix, batch_prefix);
             *landing_stats
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
@@ -329,12 +249,27 @@ pub(super) fn accounting(
     }
 }
 
-fn latest_compaction_timestamp(messages: &[AgentMessage]) -> Option<u64> {
-    messages.iter().rev().find_map(|message| match message {
-        AgentMessage::Custom(custom) if custom.role == "compactionSummary" => {
-            custom.payload.get("timestamp").and_then(serde_json::Value::as_u64)
+pub(super) fn remind_on_request(
+    stream: StreamFn,
+    percent: Arc<AtomicU8>,
+    stats: Arc<RwLock<super::ToolOutputStats>>,
+) -> StreamFn {
+    Arc::new(move |model, mut context, options| {
+        let threshold = percent.load(std::sync::atomic::Ordering::Relaxed);
+        let tokens = stats
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tokens;
+        if at_or_above_pressure(tokens, model.context_window, threshold) {
+            match &mut context.tail_context {
+                Some(note) => {
+                    note.push_str("\n\n");
+                    note.push_str(NOTICE);
+                }
+                None => context.tail_context = Some(NOTICE.into()),
+            }
         }
-        _ => None,
+        stream(model, context, options)
     })
 }
 
@@ -343,6 +278,7 @@ fn result_tokens(result: &ToolResultMessage) -> u64 {
         .content
         .iter()
         .map(|content| match content {
+            ToolResultContent::Text(text) if is_legacy_notice(&text.text) => 0,
             ToolResultContent::Text(text) => text.text.chars().count() as u64,
             ToolResultContent::Image(_) => 4_800,
             ToolResultContent::Video(_) => pa_types::ai::VIDEO_ESTIMATED_TOKENS.saturating_mul(4),
@@ -355,42 +291,17 @@ fn result_timestamp(result: &ToolResultMessage) -> Option<u64> {
     u64::try_from(result.timestamp).ok()
 }
 
-fn text_tokens(text: &str) -> u64 {
-    (text.chars().count() as u64).div_ceil(4)
-}
-
-fn contains_notice(result: &ToolResultMessage) -> bool {
-    result.content.iter().any(|content| {
-        matches!(content, ToolResultContent::Text(text) if text.text.starts_with(NOTICE_PREFIX))
-    })
-}
-
 fn at_or_above_pressure(tokens: u64, context_window: u64, threshold_percent: u8) -> bool {
-    threshold_percent > 0
-        && u128::from(tokens).saturating_mul(100)
-            >= u128::from(context_window).saturating_mul(u128::from(threshold_percent))
-}
-
-fn below_rearm_pressure(tokens: u64, context_window: u64, threshold_percent: u8) -> bool {
-    context_window > 0
-        && threshold_percent > 0
-        && u128::from(tokens).saturating_mul(1_000)
-            < u128::from(context_window)
-                .saturating_mul(u128::from(threshold_percent))
-                .saturating_mul(REARM_THRESHOLD_TENTHS)
-}
-
-fn approximate_percent(tokens: u64, context_window: u64) -> u128 {
-    let window = u128::from(context_window);
-    u128::from(tokens)
-        .saturating_mul(100)
-        .saturating_add(window / 2)
-        / window
+    context_window != 0
+        && threshold_percent != 0
+        && u128::from(tokens) * 100 >= u128::from(context_window) * u128::from(threshold_percent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use pa_agent::types::Model;
 
     fn model(context_window: u64) -> Model {
         Model {
@@ -456,25 +367,13 @@ mod tests {
         .into()
     }
 
-    fn has_notice(message: &AgentMessage) -> bool {
-        matches!(message,
-            AgentMessage::Standard(pa_agent::types::Message::ToolResult(result))
-                if contains_notice(result))
-    }
-
-    fn land(
-        hook: &ToolResultLandingFn,
-        prefix: &mut Vec<AgentMessage>,
-        mut message: AgentMessage,
-    ) -> bool {
+    fn land(hook: &ToolResultLandingFn, prefix: &mut Vec<AgentMessage>, mut message: AgentMessage) {
         let AgentMessage::Standard(pa_agent::types::Message::ToolResult(result)) = &mut message
         else {
             panic!("test result");
         };
         hook(result, prefix, &[], &model(100));
-        let reminded = has_notice(&message);
         prefix.push(message);
-        reminded
     }
 
     fn stats(accounting: &ToolOutputAccounting) -> super::super::ToolOutputStats {
@@ -484,59 +383,56 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    #[test]
-    fn reminds_once_and_rearms_after_release_compaction_or_reenable() {
-        let threshold = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(30));
-        let accounting = accounting(std::sync::Arc::clone(&threshold));
-        let hook = std::sync::Arc::clone(&accounting.landing);
-        let mut prefix = Vec::new();
+    #[tokio::test]
+    async fn reminds_on_every_request_at_threshold_until_results_are_released() {
+        use pa_agent::stream::{LlmContext, StreamRequestOptions};
 
-        assert!(land(&hook, &mut prefix, result("first", 120)));
-        assert!(!land(&hook, &mut prefix, result("still-high", 40)));
-
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("release", "all", 0),
+        let threshold = Arc::new(AtomicU8::new(
+            pa_types::compaction::DEFAULT_TOOL_OUTPUT_REMINDER_PERCENT,
         ));
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("hidden-current", "current", 1_000),
-        ));
-        assert!(land(&hook, &mut prefix, result("new-episode", 120)));
-        assert!(!land(&hook, &mut prefix, result("same-episode", 4)));
-
-        prefix.push(AgentMessage::Custom(pa_agent::types::CustomAgentMessage {
-            role: "compactionSummary".to_string(),
-            payload: serde_json::json!({ "timestamp": 1 }),
-        }));
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("post-compaction-hidden", "current", 1_000),
-        ));
-        assert!(land(
-            &hook,
-            &mut prefix,
-            result("post-compaction-visible", 4),
-        ));
-
-        threshold.store(0, std::sync::atomic::Ordering::Relaxed);
-        assert!(!land(&hook, &mut prefix, result("disabled", 120)));
-        threshold.store(30, std::sync::atomic::Ordering::Relaxed);
-        assert!(land(&hook, &mut prefix, result("re-enabled", 4)));
+        let accounting = accounting();
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stream: StreamFn = {
+            let sent = Arc::clone(&sent);
+            Arc::new(move |_, context, _| {
+                sent.lock().unwrap().push(context.tail_context);
+                Box::pin(async { anyhow::bail!("captured request") })
+            })
+        };
+        let stream = remind_on_request(stream, threshold, Arc::clone(&accounting.stats));
+        let mut prefix = vec![result("below", 76)]; // 19 tokens of 100
+        (accounting.history_changed)(&prefix);
+        let request = || {
+            stream(
+                model(100),
+                LlmContext { tail_context: Some("scratchpad".into()), ..Default::default() },
+                StreamRequestOptions::default(),
+            )
+        };
+        let _ = request().await;
+        land(&accounting.landing, &mut prefix, result("threshold", 4));
+        let _ = request().await;
+        let _ = request().await; // no new tool call and still at 20%
+        land(&accounting.landing, &mut prefix, release_string("release", "all", 0));
+        let _ = request().await;
+        assert_eq!(
+            *sent.lock().unwrap(),
+            [
+                Some("scratchpad".into()),
+                Some(format!("scratchpad\n\n{NOTICE}")),
+                Some(format!("scratchpad\n\n{NOTICE}")),
+                Some("scratchpad".into()),
+            ]
+        );
     }
 
     #[test]
-    fn meter_tracks_disabled_reminders_and_release_receipts() {
-        let accounting = accounting(std::sync::Arc::new(
-            std::sync::atomic::AtomicU8::new(0),
-        ));
+    fn meter_tracks_release_receipts() {
+        let accounting = accounting();
         let hook = std::sync::Arc::clone(&accounting.landing);
         let mut prefix = Vec::new();
 
-        assert!(!land(&hook, &mut prefix, result("first", 40)));
+        land(&hook, &mut prefix, result("first", 40));
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -545,11 +441,7 @@ mod tests {
                 last_release: None,
             }
         );
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("hidden-current", "current", 400),
-        ));
+        land(&hook, &mut prefix, release_string("hidden-current", "current", 400));
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -558,7 +450,7 @@ mod tests {
                 last_release: Some("current"),
             }
         );
-        assert!(!land(&hook, &mut prefix, result("second", 80)));
+        land(&hook, &mut prefix, result("second", 80));
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -567,11 +459,7 @@ mod tests {
                 last_release: Some("current"),
             }
         );
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_explicit("explicit", &["first"]),
-        ));
+        land(&hook, &mut prefix, release_explicit("explicit", &["first"]));
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -580,17 +468,9 @@ mod tests {
                 last_release: Some("explicit"),
             }
         );
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("last", "last", 0),
-        ));
+        land(&hook, &mut prefix, release_string("last", "last", 0));
         assert_eq!(stats(&accounting).last_release, Some("last"));
-        assert!(!land(
-            &hook,
-            &mut prefix,
-            release_string("all", "all", 0),
-        ));
+        land(&hook, &mut prefix, release_string("all", "all", 0));
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -603,9 +483,7 @@ mod tests {
 
     #[test]
     fn meter_applies_tail_release_on_the_landing_result() {
-        let accounting = accounting(std::sync::Arc::new(
-            std::sync::atomic::AtomicU8::new(0),
-        ));
+        let accounting = accounting();
         let hook = std::sync::Arc::clone(&accounting.landing);
         let prior = ToolResultMessage {
             tool_call_id: "prior".to_string(),
@@ -642,7 +520,7 @@ mod tests {
             },
         ));
 
-        assert!(!land(&hook, &mut prefix, release));
+        land(&hook, &mut prefix, release);
         assert_eq!(
             stats(&accounting),
             super::super::ToolOutputStats {
@@ -655,9 +533,7 @@ mod tests {
 
     #[tokio::test]
     async fn restored_branch_and_compacted_tail_replace_meter_before_another_tool() {
-        let accounting = accounting(std::sync::Arc::new(
-            std::sync::atomic::AtomicU8::new(0),
-        ));
+        let accounting = accounting();
         let stats_handle = std::sync::Arc::clone(&accounting.stats);
         let agent = pa_agent::agent::Agent::new(pa_agent::agent::AgentOptions {
             initial_state: pa_agent::agent::AgentInitialState {

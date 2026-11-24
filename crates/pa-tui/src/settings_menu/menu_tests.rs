@@ -715,24 +715,20 @@ fn threshold_control_retains_off_grid_values_and_selects_neighbouring_presets() 
 
 #[test]
 fn tool_result_reminder_is_advisory_and_cycles_zero_with_five_point_steps() {
-    let values = SettingsCurrentValues {
-        tool_output_reminder_percent: Some(30),
-        ..Default::default()
-    };
-    let mut menu = SettingsMenu::new(settings_menu_rows(&values));
+    let mut menu = SettingsMenu::new(settings_menu_rows(&SettingsCurrentValues::default()));
     menu.paste("tool-result reminder");
     let text = render_text(&menu);
     assert!(text.iter().any(|row| row.contains("Tool-result reminder (%)")));
     assert!(text.iter().any(|row| {
         row.contains(
-            "Warn when live tool results use this percentage of the model window; advisory only, 0 disables",
+            "Remind on every request at or above this percentage of the model window; 0 disables",
         )
     }));
     assert_eq!(
         menu.handle_key("right", &kb()),
         SettingsMenuAction::Change {
             id: "tool-output-reminder",
-            value: "35".into()
+            value: "25".into()
         }
     );
 

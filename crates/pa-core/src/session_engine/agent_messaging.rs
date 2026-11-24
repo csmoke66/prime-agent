@@ -40,7 +40,7 @@ impl AgentContextReminderReason {
                 "Context advisory: when safe, consider choosing a useful checkpoint and running a full compaction."
             }
             AgentContextReminderReason::Release => {
-                "Context advisory: review expendable tool outputs where useful. Prefer consuming the immediately preceding result in the next useful cell, then taking a fresh checkpoint and calling rlm.release(); use rlm.release('tail') if the whole exchange is spent, and reserve rlm.release('all') for occasional cleanup."
+                "Context advisory: release tool results you no longer need with rlm.release(). Keep any results you still need."
             }
         }
     }

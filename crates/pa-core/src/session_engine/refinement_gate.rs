@@ -46,18 +46,13 @@ pub(crate) fn without_refinements(messages: Vec<AgentMessage>) -> Vec<AgentMessa
 pub(crate) fn convert_to_llm(
     settings: crate::settings::SettingsManager,
     reminder_percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
-    compaction_notice: std::sync::Arc<std::sync::Mutex<super::compaction::CompactionNotice>>,
-    tool_output: std::sync::Arc<std::sync::RwLock<super::ToolOutputStats>>,
 ) -> pa_agent::agent_loop::ConvertToLlmFn {
     let settings = std::sync::Arc::new(settings);
     std::sync::Arc::new(move |messages| {
         let settings = std::sync::Arc::clone(&settings);
         let reminder_percent = std::sync::Arc::clone(&reminder_percent);
-        let compaction_notice = std::sync::Arc::clone(&compaction_notice);
-        let tool_output = std::sync::Arc::clone(&tool_output);
         Box::pin(async move {
-            // Both policies use the same live settings snapshot. Landing a
-            // parallel batch of results must not re-read files on the async worker.
+            // Read both policies from the same live settings snapshot.
             let enabled = tokio::task::spawn_blocking(move || {
                 let live = settings.reopen();
                 reminder_percent.store(
@@ -84,25 +79,7 @@ pub(crate) fn convert_to_llm(
                     })
                     .collect()
             };
-            let mut projection = super::messages::loop_convert_to_llm(messages);
-            if compaction_notice
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take(|| {
-                    tool_output
-                        .read()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .tokens
-                })
-            {
-                projection.messages.push(pa_agent::types::Message::User(pa_agent::types::UserMessage {
-                    content: pa_agent::types::UserContent::Text(
-                        "[pre-compaction] Automatic compaction is approaching. Save any findings you still need, then use rlm.release() in your next useful REPL cell to release spent tool results. Use rlm.release([tool_call_id, ...]) for specific older results. Keep raw output you still need.".into()
-                    ),
-                    timestamp: super::now_millis() as i64,
-                }));
-            }
-            Ok(projection)
+            Ok(super::messages::loop_convert_to_llm(messages))
         })
     })
 }
@@ -122,62 +99,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pre_compaction_notice_reaches_the_next_request_once_at_the_effective_margin() {
-        use crate::session_engine::compaction::{compaction_threshold, CompactionSettings};
-
-        let dir = tempfile::tempdir().unwrap();
-        let settings = SettingsManager::create(dir.path(), dir.path().join("agent"));
-        let notice = std::sync::Arc::new(std::sync::Mutex::new(
-            super::super::compaction::CompactionNotice::default(),
-        ));
-        let tool_output = std::sync::Arc::new(std::sync::RwLock::new(
-            super::super::ToolOutputStats::default(),
-        ));
-        let convert = convert_to_llm(
-            settings,
-            std::sync::Arc::default(),
-            notice.clone(),
-            tool_output.clone(),
-        );
-        let window = 128_000;
-        let threshold = compaction_threshold(window, 32_000, &CompactionSettings::default());
-        let margin = threshold - window / 10;
-        let request = vec![super::super::session_message_to_loop(&user("continue")).unwrap()];
-        let check = |tokens| notice.lock().unwrap().check(Some(tokens), window, threshold);
-        let has_notice = |messages: pa_agent::agent_loop::ProviderMessages| {
-            serde_json::to_string(&messages.messages)
-                .unwrap()
-                .contains("[pre-compaction]")
-        };
-
-        let set_tool_tokens = |tokens| tool_output.write().unwrap().tokens = tokens;
-        set_tool_tokens(window * 30 / 100);
-        assert!(!check(margin - 1));
-        assert!(!has_notice(convert(request.clone()).await.unwrap()));
-        assert!(!check(margin));
-        set_tool_tokens(window * 30 / 100 - 1);
-        assert!(!has_notice(convert(request.clone()).await.unwrap()));
-        set_tool_tokens(window * 30 / 100);
-        let warned = convert(request.clone()).await.unwrap();
-        assert!(serde_json::to_string(&warned.messages).unwrap().contains("rlm.release()"));
-        assert!(!check(threshold));
-        assert!(!has_notice(convert(request.clone()).await.unwrap()));
-        assert!(!check(margin - 1));
-        assert!(!check(margin));
-        assert!(has_notice(convert(request.clone()).await.unwrap()));
-        assert!(!check(margin - 1));
-        assert!(check(threshold + 1));
-        assert!(!has_notice(convert(request).await.unwrap()));
-    }
-
-    #[tokio::test]
     async fn live_request_gate_filters_saved_rows_and_preserves_quoted_user_content() {
         let tmp = tempfile::tempdir().unwrap();
         let mut settings = SettingsManager::create(tmp.path(), tmp.path().join("agent"));
         let convert = convert_to_llm(
             settings.reopen(),
-            std::sync::Arc::default(),
-            std::sync::Arc::default(),
             std::sync::Arc::default(),
         );
         let digest =

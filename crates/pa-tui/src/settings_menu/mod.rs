@@ -207,7 +207,7 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
     let reminder = current
         .tool_output_reminder_percent
         .filter(|percent| *percent <= 100)
-        .unwrap_or(30);
+        .unwrap_or(pa_types::compaction::DEFAULT_TOOL_OUTPUT_REMINDER_PERCENT);
     let mut reminder_values: Vec<u8> = (0..=100).step_by(5).collect();
     if !reminder_values.contains(&reminder) {
         reminder_values.push(reminder);
@@ -274,7 +274,7 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         SettingsMenuRow {
             id: "tool-output-reminder",
             label: "Tool-result reminder (%)",
-            description: "Warn when live tool results use this percentage of the model window; advisory only, 0 disables",
+            description: "Remind on every request at or above this percentage of the model window; 0 disables",
             current: reminder.to_string(),
             values: Some(reminder_values.into_iter().map(|value| value.to_string()).collect()),
             submenu: None,

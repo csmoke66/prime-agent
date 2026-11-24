@@ -47,6 +47,7 @@ fn supervisor_end_to_end_scripted_session_lifecycle() {
             "delete_rlm_subagent",
             "heartbeat_catalog",
             "heartbeat_management",
+            "heartbeat_edit",
             "model_catalog",
             "side_question_transcript",
             "transient_bash",

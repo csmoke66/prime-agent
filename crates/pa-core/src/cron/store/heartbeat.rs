@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::state::normalize_optional_label;
 use super::{
-    iso_from_millis, now_millis, AgentCronJobStore, CreateAgentCronJobInput,
+    iso_from_millis, now_millis, AgentCronJobStore, CreateAgentCronJobInput, HeartbeatEdit,
     HeartbeatManagementAction,
 };
 use crate::cron::{
@@ -203,6 +203,55 @@ impl AgentCronJobStore {
         Ok(cleared)
     }
 
+    /// Edit a live or paused heartbeat in place, preserving its identity and run history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the instruction is empty, the schedule is invalid or
+    /// non-recurring, or the state cannot be locked and written.
+    pub fn edit_heartbeat(
+        &self,
+        active_session_id: &str,
+        id: &str,
+        edit: &HeartbeatEdit,
+        now: u64,
+    ) -> anyhow::Result<Option<AgentCronJob>> {
+        let prompt = edit.prompt.trim();
+        if prompt.is_empty() {
+            anyhow::bail!("Heartbeat instruction cannot be empty");
+        }
+        let (schedule, next_run_at) = parse_agent_cron_schedule(&edit.schedule_text, now)?;
+        if schedule.kind == ScheduleKind::Once {
+            anyhow::bail!("Heartbeat schedule must be recurring");
+        }
+        let now_iso = iso_from_millis(now);
+        let mut updated = None;
+        self.mutate_states(|state| {
+            for job in &mut state.jobs {
+                if job.id != id
+                    || job.active_session_id != active_session_id
+                    || !is_heartbeat_cron_job(job)
+                    || matches!(job.status, JobStatus::Cancelled | JobStatus::Completed)
+                {
+                    continue;
+                }
+                job.prompt = prompt.to_string();
+                job.label = normalize_optional_label(edit.label.as_deref());
+                job.delivery_mode = Some(edit.delivery_mode);
+                if job.schedule != schedule {
+                    job.schedule = schedule.clone();
+                    job.next_run_at =
+                        (job.status == JobStatus::Active).then(|| iso_from_millis(next_run_at));
+                }
+                job.updated_at.clone_from(&now_iso);
+                updated = Some(job.clone());
+                break;
+            }
+            Vec::new()
+        })?;
+        Ok(updated)
+    }
+
     /// Apply a pause, stop, or resume management action to a heartbeat job. `Ok(None)`
     /// when no matching job was found (cancelled and completed jobs are left untouched).
     ///
@@ -302,6 +351,79 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
         drop(held);
         assert_eq!(store.get_heartbeat("live-1"), Some(heartbeat));
+    }
+
+    #[test]
+    fn edit_heartbeat_preserves_other_jobs_history_and_paused_state_and_rejects_invalid_schedule() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("jobs.json");
+        let store = AgentCronJobStore::new(path.clone());
+        let now = 1_700_000_000_000;
+        let first = store
+            .create_heartbeat(&input("first", "every 5m", now))
+            .unwrap();
+        let second = store
+            .create_heartbeat(&input("second", "every 10m", now + 1))
+            .unwrap();
+        store
+            .record_run_result(
+                &first.id,
+                &crate::cron::store::RecordRunOptions {
+                    now: Some(now + 2),
+                    error: Some("history".into()),
+                },
+            )
+            .unwrap();
+        let paused = store
+            .manage_heartbeat(
+                "live-1",
+                &first.id,
+                HeartbeatManagementAction::Pause,
+                now + 3,
+            )
+            .unwrap()
+            .unwrap();
+        let edited = store
+            .edit_heartbeat(
+                "live-1",
+                &first.id,
+                &HeartbeatEdit {
+                    prompt: " revised instruction ".into(),
+                    schedule_text: "every 2m".into(),
+                    label: Some(" revised ".into()),
+                    delivery_mode: crate::cron::DeliveryMode::FollowUp,
+                },
+                now + 4,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(edited.id, first.id);
+        assert_eq!(edited.prompt, "revised instruction");
+        assert_eq!(edited.status, JobStatus::Paused);
+        assert_eq!(edited.next_run_at, None);
+        assert_eq!(edited.run_count, paused.run_count);
+        assert_eq!(edited.last_run_at, paused.last_run_at);
+        assert_eq!(edited.last_error, paused.last_error);
+        assert_eq!(
+            store.list().into_iter().find(|job| job.id == second.id),
+            Some(second)
+        );
+
+        let before = std::fs::read(&path).unwrap();
+        assert!(store
+            .edit_heartbeat(
+                "live-1",
+                &first.id,
+                &HeartbeatEdit {
+                    prompt: "must not land".into(),
+                    schedule_text: "in 10m".into(),
+                    label: None,
+                    delivery_mode: crate::cron::DeliveryMode::Steer,
+                },
+                now + 5,
+            )
+            .is_err());
+        assert_eq!(std::fs::read(path).unwrap(), before);
     }
 
     #[test]

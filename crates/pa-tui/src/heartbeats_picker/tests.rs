@@ -815,3 +815,39 @@ fn the_dock_heartbeat_items_list_active_heartbeats_by_next_fire() {
         vec!["5m soon job", "2h late job"]
     );
 }
+
+#[test]
+fn edit_form_prefills_preserves_multiline_prompt_and_submits() {
+    let mut picker = HeartbeatsPicker::new(entries(), None, None, 30);
+    assert_eq!(picker.handle_key("enter", &kb()), HeartbeatsPickerAction::None);
+    picker.handle_key("down", &kb());
+    picker.handle_key("down", &kb());
+    assert_eq!(picker.handle_key("enter", &kb()), HeartbeatsPickerAction::None);
+
+    let rendered = frame_text(&picker.render(&theme(), 80, &kb())).join("\n");
+    assert!(rendered.contains("Edit heartbeat"));
+    assert!(rendered.contains("every 10m"));
+    assert!(rendered.contains("tick user-1"));
+    assert!(rendered.contains("steer"));
+
+    picker.handle_key("tab", &kb());
+    picker.paste("\nsecond line");
+    picker.handle_key("tab", &kb());
+    picker.handle_key("tab", &kb());
+    picker.handle_key("tab", &kb());
+    let HeartbeatsPickerAction::Manage { job_id, action, .. } =
+        picker.handle_key("enter", &kb())
+    else {
+        panic!("save submits an edit");
+    };
+    assert_eq!(job_id, "user-1");
+    assert_eq!(
+        action,
+        HeartbeatAction::Edit(HeartbeatEdit {
+            schedule: "every 10m".into(),
+            prompt: "tick user-1\nsecond line".into(),
+            label: None,
+            delivery_mode: "steer".into(),
+        })
+    );
+}

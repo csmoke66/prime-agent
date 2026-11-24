@@ -88,7 +88,7 @@ impl Worker {
     }
 
     /// `heartbeat_manage` (TS daemon-mode case over `manageHeartbeat`): pause/resume/stop
-    /// a heartbeat by job id; an unknown id answers the TS error.
+    /// or edit a heartbeat by job id; an unknown id answers the TS error.
     pub(crate) async fn handle_heartbeat_manage(&self, payload: &Value) -> DaemonResponse {
         if let Err(response) = self.require_created("heartbeat_manage") {
             return response;
@@ -103,12 +103,6 @@ impl Worker {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        // The TS store treats any non-pause/non-stop action as resume.
-        let action = match payload.get("action").and_then(Value::as_str) {
-            Some("pause") => HeartbeatManagementAction::Pause,
-            Some("stop") => HeartbeatManagementAction::Stop,
-            _ => HeartbeatManagementAction::Resume,
-        };
         {
             let core = self
                 .core
@@ -116,21 +110,53 @@ impl Worker {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.bind_store_artifact(&core);
         }
-        let managed = self.scheduled.store().manage_heartbeat(
-            &active_session_id,
-            &job_id,
-            action,
-            crate::util::now_ms(),
-        );
-        let Ok(Some(job)) = managed else {
-            return response_failure(
-                None,
-                "heartbeat_manage",
-                &format!("No active heartbeat found: {job_id}"),
-                None,
-            );
+        let is_edit = payload.get("action").and_then(Value::as_str) == Some("edit");
+        let managed = if is_edit {
+            crate::scheduling_catalog::parse_heartbeat_edit(payload.get("edit"))
+                .map_err(anyhow::Error::msg)
+                .and_then(|edit| {
+                    self.scheduled.store().edit_heartbeat(
+                        &active_session_id,
+                        &job_id,
+                        &edit,
+                        crate::util::now_ms(),
+                    )
+                })
+        } else {
+            // The TS store treats any non-pause/non-stop action as resume.
+            let action = match payload.get("action").and_then(Value::as_str) {
+                Some("pause") => HeartbeatManagementAction::Pause,
+                Some("stop") => HeartbeatManagementAction::Stop,
+                _ => HeartbeatManagementAction::Resume,
+            };
+            self.scheduled.store().manage_heartbeat(
+                &active_session_id,
+                &job_id,
+                action,
+                crate::util::now_ms(),
+            )
         };
-        if action != HeartbeatManagementAction::Resume {
+        let job = match managed {
+            Ok(Some(job)) => job,
+            Ok(None) => {
+                return response_failure(
+                    None,
+                    "heartbeat_manage",
+                    &format!("No active heartbeat found: {job_id}"),
+                    None,
+                );
+            }
+            Err(error) => {
+                return response_failure(
+                    None,
+                    "heartbeat_manage",
+                    &error.to_string(),
+                    None,
+                );
+            }
+        };
+        let action = payload.get("action").and_then(Value::as_str);
+        if matches!(action, Some("pause" | "stop" | "edit")) {
             self.scheduled.remove_queued_heartbeat_follow_up(&job);
         }
         self.scheduled.wake().await;

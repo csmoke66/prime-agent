@@ -178,6 +178,14 @@ pub enum HeartbeatManagementAction {
     Stop,
 }
 
+#[derive(Debug, Clone)]
+pub struct HeartbeatEdit {
+    pub prompt: String,
+    pub schedule_text: String,
+    pub label: Option<String>,
+    pub delivery_mode: DeliveryMode,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RlmHeartbeatStatusUpdate {
     Pause,

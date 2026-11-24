@@ -65,12 +65,13 @@ impl MockSupervisor {
             return;
         };
         let mut subscribe = 0usize;
+        let mut heartbeats = self.heartbeats;
         let capabilities: &[&str] = if self.factory_lane {
-            &["factory_activity"]
+            &["factory_activity", "heartbeat_edit"]
         } else {
-            &[]
+            &["heartbeat_edit"]
         };
-        serve_connection(stream, capabilities, |writer, Request { id, kind, .. }| {
+        serve_connection(stream, capabilities, |writer, Request { id, kind, command }| {
             match kind {
                 "create" => {
                     write_json(writer, &create_response(id));
@@ -89,9 +90,22 @@ impl MockSupervisor {
                             "id": id,
                             "command": "heartbeats_list",
                             "success": true,
-                            "data": self.heartbeats.clone().unwrap_or_else(|| json!({})),
+                            "data": heartbeats.clone().unwrap_or_else(|| json!({})),
                         }),
                     );
+                }
+                "heartbeat_manage" => {
+                    assert_eq!(command["action"], "edit");
+                    assert_eq!(command["jobId"], "hb-1");
+                    let edit = &command["edit"];
+                    assert_eq!(edit["schedule"], "every 30m");
+                    assert_eq!(edit["prompt"], "Inspect the queue");
+                    assert_eq!(edit["label"], "lane canary");
+                    assert_eq!(edit["deliveryMode"], "follow_up");
+                    let job = &mut heartbeats.as_mut().unwrap()["heartbeats"][0]["job"];
+                    job["prompt"] = edit["prompt"].clone();
+                    job["deliveryMode"] = edit["deliveryMode"].clone();
+                    support::respond(writer, id, kind, &json!({"heartbeat": job}));
                 }
                 "factory_activity" => {
                     write_json(
@@ -169,6 +183,38 @@ fn canary_heartbeats() -> Value {
             },
         ],
     })
+}
+
+#[test]
+fn heartbeat_edit_saves_from_the_open_picker() {
+    let wait = |text: &str| HeadlessStep::WaitRender {
+        needle: text.to_string(),
+        timeout_ms: 5_000,
+    };
+    let key = |code| HeadlessStep::Key(KeyEvent::new(code, KeyModifiers::NONE));
+    let steps = vec![
+        HeadlessStep::Submit("/heartbeats".into()),
+        wait("lane canary"),
+        key(KeyCode::Enter),
+        wait("Pause heartbeat"),
+        key(KeyCode::Down),
+        key(KeyCode::Down),
+        key(KeyCode::Enter),
+        wait("Edit heartbeat"),
+        wait("every 30m"),
+        key(KeyCode::Tab),
+        HeadlessStep::Paste("Inspect the queue".into()),
+        wait("Inspect the queue"),
+        key(KeyCode::Tab),
+        key(KeyCode::Tab),
+        key(KeyCode::Right),
+        key(KeyCode::Tab),
+        key(KeyCode::Enter),
+        HeadlessStep::WaitGone { needle: "Save changes".into(), timeout_ms: 5_000 },
+        key(KeyCode::Enter),
+        wait("Inspect the queue"),
+    ];
+    run_plan(steps, Some(canary_heartbeats()), None);
 }
 
 /// One alt+a key event (the dock's focus hand-off, `app.subagents.focus`).

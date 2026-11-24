@@ -754,6 +754,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
                 refinement_settings.reopen(),
                 reminder_percent,
                 Arc::clone(&compaction_notice),
+                Arc::clone(&tool_output_stats),
             ),
         )),
         // The Rust engine wires no transform, so the instrumented seam

@@ -75,6 +75,10 @@ Use `/cost` to see this session's total and its sub-agents' spend, split into un
 
 Use `/cost reset` to start counting from zero for the current session and all its descendants. The reset is saved locally and applies to the chat header, Agents View, and `/cost`. It does not change provider billing, transcripts, or the lifetime totals in `/session` and `/context`.
 
+## Heartbeats
+
+Open `/heartbeats`, select a heartbeat, and choose **Edit** to change its schedule, instruction, label, or delivery mode. Editing keeps its run history and pause state. Changing only the instruction, label, or delivery mode leaves the next run time alone.
+
 ## Agent-controlled context
 
 An agent can stop sending old tool output to the model without deleting it from the session transcript. In a successful foreground REPL cell, `rlm.release()` releases the previous result, `rlm.release([call_id, ...])` selects specific results, and `rlm.release("all")` releases every result before that cell. For example, an agent that has just verified a commit can keep a small checkpoint:
@@ -89,6 +93,8 @@ The checkpoint, user messages, assistant decisions, and subsequent tool results 
 For cache-friendly cleanup, `rlm.release("current")` keeps the current cell's raw output in the transcript but sends only a placeholder to the model, starting with the first request. No already-sent input changes. If the agent has just finished using a tool exchange, `rlm.release("tail", batches=1)` drops up to that many consecutive completed exchanges from the end of the **previous model input**. This removes the assistant turn (including text, reasoning, and structured call arguments) and all its parallel results together. The earlier prefix and current checkpoint stay unchanged. It stops at user messages, standalone assistant messages, summaries, and incomplete batches. Trimming isn't a refund: only the common prefix remains eligible for a cache hit, subject to the provider's minimum and block size.
 
 By default, a tool result carries an advisory when unreleased tool output reaches an estimated **30% of the model's entire context window**. It warns once while usage stays high and re-arms below 27% at the default threshold. The agent can ignore it; the warning neither releases output nor triggers compaction. Adjust **`/settings` → General → Tool-result reminder (%)**, or set `compaction.toolOutputReminderPercent` to `0` in `settings.json` to turn it off.
+
+The separate pre-compaction suggestion appears only within the final 10% of the model's window before the automatic compaction threshold, and only if retained tool output still occupies at least 30% of the full window.
 
 `await rlm.list_subagents()` displays a compact roster without dropping children from iteration or indexing. Use `await rlm.list_subagents(full=True)` when you want all the records printed.
 

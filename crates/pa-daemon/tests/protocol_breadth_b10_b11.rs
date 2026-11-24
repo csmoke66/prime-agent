@@ -324,6 +324,25 @@ fn wave_b10_scheduling_wire_shapes() {
     assert_eq!(heartbeat["source"], "heartbeat");
     assert_eq!(heartbeat["status"], "active");
     assert_eq!(heartbeat["deliveryMode"], "follow_up");
+    client.send_command(
+        "h-edit",
+        &json!({
+            "type": "heartbeat_manage", "activeSessionId": session_id,
+            "jobId": heartbeat["id"], "action": "edit",
+            "edit": {
+                "prompt": "check the new queue", "schedule": "every 10m",
+                "label": "Queue check", "deliveryMode": "steer",
+            },
+        }),
+    );
+    let edited = client.read_response("h-edit");
+    assert_eq!(edited["success"], true, "{edited}");
+    let edited = &edited["data"]["heartbeat"];
+    assert_eq!(edited["id"], heartbeat["id"]);
+    assert_eq!(edited["nextRunAt"], heartbeat["nextRunAt"]);
+    assert_eq!(edited["prompt"], "check the new queue");
+    assert_eq!(edited["label"], "Queue check");
+    assert_eq!(edited["deliveryMode"], "steer");
     let heartbeat_id = heartbeat["id"].as_str().expect("heartbeat id").to_string();
 
     client.send_command(

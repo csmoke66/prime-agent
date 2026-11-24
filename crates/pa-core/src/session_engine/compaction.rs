@@ -372,7 +372,7 @@ pub(super) fn live_context_tokens(messages: &[AgentMessage]) -> Option<u64> {
 pub(super) enum CompactionNotice {
     #[default]
     Armed,
-    Pending,
+    Pending { window: u64 },
     Delivered,
 }
 
@@ -387,14 +387,14 @@ impl CompactionNotice {
         match tokens {
             Some(tokens) if threshold != 0 && tokens > threshold => {
                 // A single jump can skip the advance-warning band entirely.
-                if matches!(self, Self::Pending) {
+                if matches!(self, Self::Pending { .. }) {
                     *self = Self::Armed;
                 }
                 true
             }
             Some(tokens) if threshold != 0 && tokens >= warning_at => {
-                if matches!(self, Self::Armed) {
-                    *self = Self::Pending;
+                if !matches!(self, Self::Delivered) {
+                    *self = Self::Pending { window };
                 }
                 false
             }
@@ -405,13 +405,17 @@ impl CompactionNotice {
         }
     }
 
-    pub(super) fn take(&mut self) -> bool {
-        if matches!(self, Self::Pending) {
-            *self = Self::Delivered;
-            true
-        } else {
-            false
+    pub(super) fn take(&mut self, retained_tool_tokens: impl FnOnce() -> u64) -> bool {
+        let Self::Pending { window } = *self else {
+            return false;
+        };
+        // The other tool-pressure advisory has its own configurable limit.
+        // Recheck at delivery: releases since arming may have cleared the output.
+        if window == 0 || u128::from(retained_tool_tokens()) * 100 < u128::from(window) * 30 {
+            return false;
         }
+        *self = Self::Delivered;
+        true
     }
 }
 

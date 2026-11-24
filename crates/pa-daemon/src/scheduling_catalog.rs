@@ -10,8 +10,10 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use pa_core::cron::store::{AgentCronJobStore, HeartbeatManagementAction};
-use pa_core::cron::{is_heartbeat_cron_job, AgentCronJob, JobStatus};
+use pa_core::cron::store::{AgentCronJobStore, HeartbeatEdit, HeartbeatManagementAction};
+use pa_core::cron::{
+    is_heartbeat_cron_job, normalize_heartbeat_delivery_mode, AgentCronJob, JobStatus,
+};
 use pa_types::daemon::DaemonCommand;
 
 use crate::backpressure::RouteAdmission;
@@ -66,6 +68,33 @@ fn heartbeat_manage_action(action: &Value) -> HeartbeatManagementAction {
         Some("stop") => HeartbeatManagementAction::Stop,
         _ => HeartbeatManagementAction::Resume,
     }
+}
+
+pub(crate) fn parse_heartbeat_edit(edit: Option<&Value>) -> Result<HeartbeatEdit, String> {
+    let edit = edit
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Heartbeat edit payload is required".to_string())?;
+    let (Some(prompt), Some(schedule), Some(delivery_mode)) = (
+        edit.get("prompt").and_then(Value::as_str),
+        edit.get("schedule").and_then(Value::as_str),
+        edit.get("deliveryMode").and_then(Value::as_str),
+    ) else {
+        return Err("Heartbeat edit requires prompt, schedule, and deliveryMode".into());
+    };
+    let label = match edit.get("label") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(label)) => Some(label.clone()),
+        Some(_) => return Err("Heartbeat edit label must be a string or null".into()),
+    };
+    let delivery_mode = normalize_heartbeat_delivery_mode(Some(delivery_mode))
+        .map_err(|error| error.to_string())?
+        .expect("a supplied delivery mode normalizes to a value");
+    Ok(HeartbeatEdit {
+        prompt: prompt.to_string(),
+        schedule_text: schedule.to_string(),
+        label,
+        delivery_mode,
+    })
 }
 
 impl Supervisor {
@@ -582,6 +611,7 @@ impl Supervisor {
             active_session_id,
             job_id,
             action,
+            rest,
             ..
         } = command
         else {
@@ -609,25 +639,51 @@ impl Supervisor {
                 .await;
             if !owned_elsewhere {
                 let store = Self::passive_job_store(&passive.info);
-                // A passive row that cannot be managed falls through to the live-worker route.
-                if let Ok(Some(heartbeat)) = store.manage_heartbeat(
-                    active_session_id,
-                    job_id,
-                    heartbeat_manage_action(action),
-                    crate::util::now_ms(),
-                ) {
-                    self.broadcast_heartbeats_changed();
-                    return (
-                        vec![response_line(&response_success(
-                            Some(command_id),
-                            type_name,
-                            Some(json!({
-                                "heartbeat": serde_json::to_value(&heartbeat)
-                                    .unwrap_or(Value::Null),
-                            })),
-                        ))],
-                        false,
-                    );
+                let managed = if action.as_str() == Some("edit") {
+                    match parse_heartbeat_edit(rest.get("edit")) {
+                        Ok(edit) => store.edit_heartbeat(
+                            active_session_id,
+                            job_id,
+                            &edit,
+                            crate::util::now_ms(),
+                        ),
+                        Err(error) => Err(anyhow::Error::msg(error)),
+                    }
+                } else {
+                    store.manage_heartbeat(
+                        active_session_id,
+                        job_id,
+                        heartbeat_manage_action(action),
+                        crate::util::now_ms(),
+                    )
+                };
+                match managed {
+                    Ok(Some(heartbeat)) => {
+                        self.broadcast_heartbeats_changed();
+                        return (
+                            vec![response_line(&response_success(
+                                Some(command_id),
+                                type_name,
+                                Some(json!({
+                                    "heartbeat": serde_json::to_value(&heartbeat)
+                                        .unwrap_or(Value::Null),
+                                })),
+                            ))],
+                            false,
+                        );
+                    }
+                    Err(error) if action.as_str() == Some("edit") => {
+                        return (
+                            vec![response_line(&response_failure(
+                                Some(command_id),
+                                type_name,
+                                &error.to_string(),
+                                None,
+                            ))],
+                            false,
+                        );
+                    }
+                    _ => {}
                 }
             }
         }

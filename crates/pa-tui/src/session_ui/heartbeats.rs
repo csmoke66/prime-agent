@@ -103,9 +103,8 @@ impl SessionUi {
         Ok(())
     }
 
-    /// Run one heartbeat management request: the daemon owns the job; the updated job (or the
-    /// stop's removal) patches the open view locally, and a failure surfaces as the view's error
-    /// row.
+    /// Run one heartbeat management request. Edits are capability-gated because old daemons
+    /// interpret unknown actions as resume.
     async fn run_heartbeat_manage(
         &mut self,
         active_session_id: String,
@@ -113,12 +112,34 @@ impl SessionUi {
         action: HeartbeatAction,
         view: &mut AgentView,
     ) {
+        if matches!(action, HeartbeatAction::Edit(_))
+            && !self.client.hello().get("serverCapabilities").and_then(Value::as_array)
+                .is_some_and(|caps| caps.iter().any(|cap| cap.as_str() == Some("heartbeat_edit")))
+        {
+            if let Some(picker) = view.heartbeats_picker.as_mut() {
+                picker.set_action_error(
+                    "Editing heartbeats requires an updated daemon; update and restart it".into(),
+                );
+            }
+            self.dirty = true;
+            return;
+        }
+        let mut rest = Map::default();
+        if let HeartbeatAction::Edit(edit) = &action {
+            rest.insert("edit".into(), serde_json::json!({
+                "schedule": edit.schedule,
+                "prompt": edit.prompt,
+                "label": edit.label,
+                "deliveryMode": edit.delivery_mode,
+            }));
+        }
+        let stopped = action == HeartbeatAction::Stop;
         let request = DaemonCommand::HeartbeatManage {
             id: None,
             active_session_id,
             job_id,
             action: Value::String(action.as_wire().to_string()),
-            rest: Map::default(),
+            rest,
         };
         match self
             .bounded_request(Duration::from_millis(UI_REQUEST_TIMEOUT_MS), request)
@@ -132,7 +153,6 @@ impl SessionUi {
                     .and_then(crate::heartbeats_picker::parse_heartbeat_job)
                 {
                     Some(job) => {
-                        let stopped = action == HeartbeatAction::Stop;
                         let job_id = job.id.clone();
                         if let Some(picker) = view.heartbeats_picker.as_mut() {
                             picker.apply_managed_job(job.clone(), stopped);

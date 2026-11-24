@@ -47,12 +47,14 @@ pub(crate) fn convert_to_llm(
     settings: crate::settings::SettingsManager,
     reminder_percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
     compaction_notice: std::sync::Arc<std::sync::Mutex<super::compaction::CompactionNotice>>,
+    tool_output: std::sync::Arc<std::sync::RwLock<super::ToolOutputStats>>,
 ) -> pa_agent::agent_loop::ConvertToLlmFn {
     let settings = std::sync::Arc::new(settings);
     std::sync::Arc::new(move |messages| {
         let settings = std::sync::Arc::clone(&settings);
         let reminder_percent = std::sync::Arc::clone(&reminder_percent);
         let compaction_notice = std::sync::Arc::clone(&compaction_notice);
+        let tool_output = std::sync::Arc::clone(&tool_output);
         Box::pin(async move {
             // Both policies use the same live settings snapshot. Landing a
             // parallel batch of results must not re-read files on the async worker.
@@ -86,7 +88,12 @@ pub(crate) fn convert_to_llm(
             if compaction_notice
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take()
+                .take(|| {
+                    tool_output
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .tokens
+                })
             {
                 projection.messages.push(pa_agent::types::Message::User(pa_agent::types::UserMessage {
                     content: pa_agent::types::UserContent::Text(
@@ -123,7 +130,15 @@ mod tests {
         let notice = std::sync::Arc::new(std::sync::Mutex::new(
             super::super::compaction::CompactionNotice::default(),
         ));
-        let convert = convert_to_llm(settings, std::sync::Arc::default(), notice.clone());
+        let tool_output = std::sync::Arc::new(std::sync::RwLock::new(
+            super::super::ToolOutputStats::default(),
+        ));
+        let convert = convert_to_llm(
+            settings,
+            std::sync::Arc::default(),
+            notice.clone(),
+            tool_output.clone(),
+        );
         let window = 128_000;
         let threshold = compaction_threshold(window, 32_000, &CompactionSettings::default());
         let margin = threshold - window / 10;
@@ -135,9 +150,14 @@ mod tests {
                 .contains("[pre-compaction]")
         };
 
+        let set_tool_tokens = |tokens| tool_output.write().unwrap().tokens = tokens;
+        set_tool_tokens(window * 30 / 100);
         assert!(!check(margin - 1));
         assert!(!has_notice(convert(request.clone()).await.unwrap()));
         assert!(!check(margin));
+        set_tool_tokens(window * 30 / 100 - 1);
+        assert!(!has_notice(convert(request.clone()).await.unwrap()));
+        set_tool_tokens(window * 30 / 100);
         let warned = convert(request.clone()).await.unwrap();
         assert!(serde_json::to_string(&warned.messages).unwrap().contains("rlm.release()"));
         assert!(!check(threshold));
@@ -156,6 +176,7 @@ mod tests {
         let mut settings = SettingsManager::create(tmp.path(), tmp.path().join("agent"));
         let convert = convert_to_llm(
             settings.reopen(),
+            std::sync::Arc::default(),
             std::sync::Arc::default(),
             std::sync::Arc::default(),
         );

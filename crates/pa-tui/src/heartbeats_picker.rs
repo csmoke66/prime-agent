@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::keybindings::{format_key_text, KeybindingsManager};
 use crate::menu_panel::{fill_row, hug_row, menu_list_layout, plain_cell, status_dot};
 use crate::theme::{Theme, ThemeColor};
+use crate::search_input::SearchInput;
 use crate::width::{str_width, truncate_line, wrap_text};
 use crate::{Line, Span};
 
@@ -40,37 +41,55 @@ const LIST_FRAME_ROWS: usize = 7;
 /// fit — the schedule fact never displaces the error row.
 const MAX_DETAIL_ROWS: usize = 7;
 
+/// Editable heartbeat fields sent with the `edit` management action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeartbeatEdit {
+    pub schedule: String,
+    pub prompt: String,
+    pub label: Option<String>,
+    pub delivery_mode: String,
+}
+
 /// The management-action vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeartbeatAction {
     Pause,
     Resume,
     Stop,
+    Edit(HeartbeatEdit),
 }
 
 impl HeartbeatAction {
-    /// The wire word (TS `heartbeat_manage` action values).
     #[must_use]
-    pub fn as_wire(self) -> &'static str {
+    pub fn as_wire(&self) -> &'static str {
         match self {
             HeartbeatAction::Pause => "pause",
             HeartbeatAction::Resume => "resume",
             HeartbeatAction::Stop => "stop",
+            HeartbeatAction::Edit(_) => "edit",
         }
     }
 }
 
-/// The pane's interactive mode: the columned list, or the selected heartbeat's detail drill-in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EditForm {
+    heartbeat_id: String,
+    active_session_id: String,
+    schedule: SearchInput,
+    prompt: SearchInput,
+    label: SearchInput,
+    delivery_mode: String,
+    focus: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Mode {
     List,
-    /// The selected heartbeat's detail drill-in: the full prompt text,
-    /// the created-by facts, and the action rows (`action_index` in
-    /// their selection).
     Detail {
         heartbeat_id: String,
         action_index: usize,
     },
+    Edit(EditForm),
 }
 
 /// One key press while the view is open.
@@ -156,20 +175,18 @@ impl HeartbeatsPicker {
         self.error = None;
     }
 
-    /// Surface a management-action failure.
+    /// Surface a management-action failure without discarding an edit form.
     pub fn set_action_error(&mut self, error: String) {
         self.error = Some(error);
-        self.mode = Mode::List;
+        if !matches!(self.mode, Mode::Edit(_)) {
+            self.mode = Mode::List;
+        }
     }
 
-    /// A background-catalog refresh failure: the rows stay
-    /// (stale-while-revalidate) and the failure renders until the next
-    /// good refresh.
     pub fn set_fetch_error(&mut self, error: Option<String>) {
         self.fetch_error = error;
     }
 
-    /// Return to the list pane without a job patch.
     pub fn back_to_list(&mut self) {
         self.mode = Mode::List;
         self.error = None;
@@ -184,16 +201,15 @@ impl HeartbeatsPicker {
         }
     }
 
-    /// Drop a detail pane whose heartbeat vanished.
+    /// Drop a detail or edit pane whose heartbeat vanished.
     fn dirty_conform_mode(&mut self) {
-        if let Mode::Detail { heartbeat_id, .. } = self.mode.clone() {
-            if !self
-                .heartbeats
-                .iter()
-                .any(|entry| entry.job.id == heartbeat_id)
-            {
-                self.mode = Mode::List;
-            }
+        let heartbeat_id = match &self.mode {
+            Mode::Detail { heartbeat_id, .. } => Some(heartbeat_id),
+            Mode::Edit(form) => Some(&form.heartbeat_id),
+            Mode::List => None,
+        };
+        if heartbeat_id.is_some_and(|id| !self.heartbeats.iter().any(|entry| entry.job.id == id.as_str())) {
+            self.mode = Mode::List;
         }
     }
 
@@ -209,40 +225,51 @@ impl HeartbeatsPicker {
         self.heartbeats.iter().find(|entry| entry.job.id == id)
     }
 
-    /// The action rows of one heartbeat: the pause/resume complement of
-    /// its status, then stop.
-    fn available_actions(entry: &HeartbeatEntry) -> Vec<(String, HeartbeatAction, String)> {
-        let mut actions = Vec::with_capacity(2);
-        if entry.job.is_active() {
-            actions.push((
-                "Pause heartbeat".to_string(),
-                HeartbeatAction::Pause,
-                "Stop deliveries until resumed".to_string(),
-            ));
+    /// Keep pause/resume and stop in their established positions, then edit.
+    fn available_actions(
+        entry: &HeartbeatEntry,
+    ) -> [(&'static str, Option<HeartbeatAction>, &'static str); 3] {
+        let toggle = if entry.job.is_active() {
+            ("Pause heartbeat", Some(HeartbeatAction::Pause), "Stop deliveries until resumed")
         } else {
-            actions.push((
-                "Resume heartbeat".to_string(),
-                HeartbeatAction::Resume,
-                "Continue scheduled deliveries".to_string(),
-            ));
-        }
-        actions.push((
-            "Stop heartbeat".to_string(),
-            HeartbeatAction::Stop,
-            "Permanently remove this heartbeat".to_string(),
-        ));
-        actions
+            ("Resume heartbeat", Some(HeartbeatAction::Resume), "Continue scheduled deliveries")
+        };
+        [
+            toggle,
+            ("Stop heartbeat", Some(HeartbeatAction::Stop), "Permanently remove this heartbeat"),
+            ("Edit heartbeat", None, "Change schedule, prompt, label, or delivery"),
+        ]
     }
 
-    /// One key id (TS `handleInput`, minus the busy gate: the session UI
-    /// awaits the management request itself).
+    /// Paste into the focused edit control. Prompt pastes preserve line breaks.
+    pub fn paste(&mut self, text: &str) {
+        let Mode::Edit(form) = &mut self.mode else { return };
+        let focus = form.focus;
+        let input = match focus {
+            0 => Some(&mut form.schedule),
+            1 => Some(&mut form.prompt),
+            2 => Some(&mut form.label),
+            _ => None,
+        };
+        if let Some(input) = input {
+            if focus == 1 {
+                input.paste_multiline(text);
+            } else {
+                input.paste(text);
+            }
+            self.error = None;
+        }
+    }
+
     pub fn handle_key(&mut self, key: &str, kb: &KeybindingsManager) -> HeartbeatsPickerAction {
+        if matches!(self.mode, Mode::Edit(_)) {
+            return self.handle_edit_key(key, kb);
+        }
         if key == "ctrl+c" || kb.matches(key, "tui.select.cancel") {
             return HeartbeatsPickerAction::Close;
         }
-        // Back (left): the detail pane returns to the list, the list closes.
         if kb.matches(key, "app.modal.back") {
-            if self.mode == Mode::List {
+            if matches!(self.mode, Mode::List) {
                 return HeartbeatsPickerAction::Close;
             }
             self.mode = Mode::List;
@@ -250,15 +277,10 @@ impl HeartbeatsPicker {
             return HeartbeatsPickerAction::None;
         }
         if kb.matches(key, "tui.select.up") || kb.matches(key, "tui.select.down") {
-            let delta = if kb.matches(key, "tui.select.up") {
-                -1isize
-            } else {
-                1
-            };
-            self.move_selection(delta);
+            self.move_selection(if kb.matches(key, "tui.select.up") { -1 } else { 1 });
             return HeartbeatsPickerAction::None;
         }
-        if self.mode == Mode::List && kb.matches(key, "app.modal.open") {
+        if matches!(self.mode, Mode::List) && kb.matches(key, "app.modal.open") {
             self.open_detail();
             return HeartbeatsPickerAction::None;
         }
@@ -268,75 +290,124 @@ impl HeartbeatsPicker {
         HeartbeatsPickerAction::None
     }
 
-    /// Move the selection: the list walks rows by job id, the detail
-    /// pane walks its action rows by index.
+    fn handle_edit_key(&mut self, key: &str, kb: &KeybindingsManager) -> HeartbeatsPickerAction {
+        let Mode::Edit(form) = &mut self.mode else { return HeartbeatsPickerAction::None };
+        if key == "ctrl+c" {
+            return HeartbeatsPickerAction::Close;
+        }
+        if kb.matches(key, "tui.select.cancel") {
+            let heartbeat_id = form.heartbeat_id.clone();
+            self.mode = Mode::Detail { heartbeat_id, action_index: 2 };
+            self.error = None;
+            return HeartbeatsPickerAction::None;
+        }
+        match key {
+            "tab" | "down" | "enter" if form.focus < 4 => form.focus += 1,
+            "shift+tab" | "up" => form.focus = (form.focus + 4) % 5,
+            "left" | "right" | "space" if form.focus == 3 => {
+                form.delivery_mode = if form.delivery_mode == "steer" { "follow_up" } else { "steer" }.into();
+            }
+            "shift+enter" if form.focus == 1 => {
+                form.prompt.paste_multiline("\n");
+            }
+            "enter" | "space" if form.focus == 4 => {
+                if form.schedule.value().trim().is_empty() || form.prompt.value().trim().is_empty() {
+                    self.error = Some("Schedule and prompt are required".into());
+                    return HeartbeatsPickerAction::None;
+                }
+                return HeartbeatsPickerAction::Manage {
+                    active_session_id: form.active_session_id.clone(),
+                    job_id: form.heartbeat_id.clone(),
+                    action: HeartbeatAction::Edit(HeartbeatEdit {
+                        schedule: form.schedule.value().to_string(),
+                        prompt: form.prompt.value().to_string(),
+                        label: (!form.label.value().trim().is_empty()).then(|| form.label.value().trim().to_string()),
+                        delivery_mode: form.delivery_mode.clone(),
+                    }),
+                };
+            }
+            _ => match form.focus {
+                0 => form.schedule.handle_key(key, kb),
+                1 => form.prompt.handle_key(key, kb),
+                2 => form.label.handle_key(key, kb),
+                _ => {}
+            },
+        }
+        self.error = None;
+        HeartbeatsPickerAction::None
+    }
+
     fn move_selection(&mut self, delta: isize) {
         match self.mode.clone() {
             Mode::List => {
-                if self.heartbeats.is_empty() {
-                    return;
-                }
+                if self.heartbeats.is_empty() { return; }
                 let index = self.selected_index() as isize;
                 let next = (index + delta).clamp(0, self.heartbeats.len() as isize - 1) as usize;
                 self.selected_heartbeat_id = Some(self.heartbeats[next].job.id.clone());
             }
-            Mode::Detail {
-                heartbeat_id,
-                action_index,
-            } => {
-                let Some(entry) = self.find_entry(&heartbeat_id) else {
-                    return;
-                };
+            Mode::Detail { heartbeat_id, action_index } => {
+                let Some(entry) = self.find_entry(&heartbeat_id) else { return };
                 let count = Self::available_actions(entry).len();
                 let next = (action_index as isize + delta).clamp(0, count as isize - 1) as usize;
-                self.mode = Mode::Detail {
-                    heartbeat_id,
-                    action_index: next,
-                };
+                self.mode = Mode::Detail { heartbeat_id, action_index: next };
             }
+            Mode::Edit(_) => {}
         }
     }
 
-    /// Enter on the list opens the selected heartbeat's detail drill-in;
-    /// Enter on an action row runs it.
     fn confirm_selection(&mut self) -> HeartbeatsPickerAction {
         match self.mode.clone() {
             Mode::List => {
                 self.open_detail();
                 HeartbeatsPickerAction::None
             }
-            Mode::Detail {
-                heartbeat_id,
-                action_index,
-            } => {
+            Mode::Detail { heartbeat_id, action_index } => {
                 let Some(entry) = self.find_entry(&heartbeat_id) else {
                     self.mode = Mode::List;
                     return HeartbeatsPickerAction::None;
                 };
                 let actions = Self::available_actions(entry);
-                let Some((_, action, _)) = actions.get(action_index) else {
+                let Some((_, action, _)) = actions.into_iter().nth(action_index) else {
+                    return HeartbeatsPickerAction::None;
+                };
+                let Some(action) = action else {
+                    self.open_edit(heartbeat_id);
                     return HeartbeatsPickerAction::None;
                 };
                 HeartbeatsPickerAction::Manage {
                     active_session_id: entry.job.active_session_id.clone(),
                     job_id: entry.job.id.clone(),
-                    action: *action,
+                    action,
                 }
             }
+            Mode::Edit(_) => HeartbeatsPickerAction::None,
         }
     }
 
-    /// Open the selected heartbeat's detail drill-in.
     fn open_detail(&mut self) {
-        let Some(id) = self.selected_heartbeat_id.clone() else {
-            return;
-        };
+        let Some(id) = self.selected_heartbeat_id.clone() else { return };
         if self.find_entry(&id).is_some() {
-            self.mode = Mode::Detail {
-                heartbeat_id: id,
-                action_index: 0,
-            };
+            self.mode = Mode::Detail { heartbeat_id: id, action_index: 0 };
         }
+    }
+
+    fn open_edit(&mut self, heartbeat_id: String) {
+        let Some(entry) = self.find_entry(&heartbeat_id) else { return };
+        let active_session_id = entry.job.active_session_id.clone();
+        let schedule_value = entry.job.schedule_expression.clone();
+        let prompt_value = entry.job.prompt.clone();
+        let label_value = entry.job.label.clone().unwrap_or_default();
+        let delivery_mode = entry.job.delivery_mode.clone().unwrap_or_else(|| "steer".into());
+        let mut schedule = SearchInput::new();
+        schedule.prefill(&schedule_value);
+        let mut prompt = SearchInput::new();
+        prompt.prefill(&prompt_value);
+        let mut label = SearchInput::new();
+        label.prefill(&label_value);
+        self.mode = Mode::Edit(EditForm {
+            heartbeat_id, active_session_id, schedule, prompt, label, delivery_mode, focus: 0,
+        });
+        self.error = None;
     }
 
     /// The list's visible-row budget (inline shape).
@@ -368,10 +439,10 @@ impl HeartbeatsPicker {
     pub fn render(&self, theme: &Theme, width: usize, kb: &KeybindingsManager) -> Vec<Line> {
         match &self.mode {
             Mode::List => self.render_list(theme, width, kb),
-            Mode::Detail {
-                heartbeat_id,
-                action_index,
-            } => self.render_detail(theme, width, kb, heartbeat_id, *action_index),
+            Mode::Detail { heartbeat_id, action_index } => {
+                self.render_detail(theme, width, kb, heartbeat_id, *action_index)
+            }
+            Mode::Edit(form) => self.render_edit(theme, width, form),
         }
     }
 
@@ -548,6 +619,43 @@ impl HeartbeatsPicker {
             ));
         }
         lines.extend(self.pane_footer(theme, width, &Self::detail_hint(kb)));
+        lines.truncate(self.viewport_rows.max(1));
+        lines
+    }
+
+    fn render_edit(&self, theme: &Theme, width: usize, form: &EditForm) -> Vec<Line> {
+        let mut lines = pane_header_lines(theme, width, "Edit heartbeat", &[], None);
+        for (index, (label, input)) in [
+            ("Schedule", &form.schedule),
+            ("Prompt", &form.prompt),
+            ("Label (optional)", &form.label),
+        ].into_iter().enumerate() {
+            let focused = form.focus == index;
+            let cursor = if focused { input.cursor() } else { 0 };
+            let value = input.value();
+            let at = value.char_indices().nth(cursor).map_or(value.len(), |(at, _)| at);
+            let start = value[..at].rfind('\n').map_or(0, |at| at + 1);
+            let line = value[start..].split('\n').next().unwrap_or_default();
+            let line_cursor = value[start..at].chars().count();
+            lines.push(vec![
+                Span::raw(if focused { " › " } else { "   " }),
+                theme.fg_span(ThemeColor::Dim, format!("{label}:")),
+            ]);
+            lines.push(crate::menu_panel::search_field_plain_row(
+                theme, width, line, line_cursor, focused, " ",
+            ));
+        }
+        lines.push(action_row(theme, width, "Delivery", &form.delivery_mode, form.focus == 3));
+        lines.push(Vec::new());
+        lines.push(action_row(
+            theme, width, "Save changes", "Apply this heartbeat edit", form.focus == 4,
+        ));
+        let footer = self.pane_footer(
+            theme, width,
+            "Tab/↑/↓ move · Space toggle/save · Shift+Enter newline · Esc cancel",
+        );
+        lines.truncate(self.viewport_rows.saturating_sub(footer.len()));
+        lines.extend(footer);
         lines.truncate(self.viewport_rows.max(1));
         lines
     }

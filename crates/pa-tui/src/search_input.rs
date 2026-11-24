@@ -7,7 +7,7 @@ use crate::keybindings::KeybindingsManager;
 /// The single-line search input (TS `Input`): value, cursor, undo stack,
 /// and an Emacs-style kill ring. Dispatch happens through the shared
 /// keybinding manager; the model selector owns when keys reach it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SearchInput {
     value: String,
     /// Cursor position in characters.
@@ -246,9 +246,23 @@ impl SearchInput {
     /// stored in the query and re-emitted to the terminal on the next
     /// render of the field.
     pub(crate) fn paste(&mut self, text: &str) {
-        let mut clean = text.replace(['\r', '\n'], "");
-        clean = clean.replace('\t', "    ");
-        clean = clean.chars().filter(|c| !c.is_control()).collect();
+        self.insert_paste(text.chars().filter(|c| !matches!(c, '\r' | '\n')));
+    }
+
+    pub(crate) fn paste_multiline(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.insert_paste(normalized.chars());
+    }
+
+    fn insert_paste(&mut self, chars: impl Iterator<Item = char>) {
+        let mut clean = String::new();
+        for c in chars {
+            if c == '\t' {
+                clean.push_str("    ");
+            } else if !c.is_control() || c == '\n' {
+                clean.push(c);
+            }
+        }
         // A payload that filters to nothing (control-only bytes, empty
         // bracketed paste) changes nothing: no undo step is pushed, so
         // the next undo still undoes the typing (the editor's

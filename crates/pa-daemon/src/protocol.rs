@@ -339,6 +339,7 @@ pub fn default_server_capabilities() -> Vec<DaemonServerCapability> {
                 "delete_rlm_subagent",
                 "heartbeat_catalog",
                 "heartbeat_management",
+                "heartbeat_edit",
                 "model_catalog",
                 "side_question_transcript",
                 "transient_bash",

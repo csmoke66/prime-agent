@@ -238,6 +238,10 @@ impl AgentView {
             mcp.paste(text);
             return true;
         }
+        if let Some(picker) = self.heartbeats_picker.as_mut() {
+            picker.paste(text);
+            return true;
+        }
         if let Some(selector) = self.tree_selector.as_mut() {
             selector.paste(text);
             return true;
@@ -255,13 +259,10 @@ impl AgentView {
             return true;
         }
         // The input-less frame owners (the key dispatch's same set): the
-        // factory page, the heartbeats picker, the bash view, the
-        // read-only goal and info panels, the fork selector, the pending
-        // confirm, the share loader, the reload box, and the auth panel
-        // (its own channel drives it). None of them leaves a paste to the
-        // editor behind.
+        // factory page, the bash view, the read-only goal and info panels,
+        // the fork selector, the pending confirm, the share loader, the
+        // reload box, and the auth panel (its own channel drives it).
         if self.factory_view.is_some()
-            || self.heartbeats_picker.is_some()
             || self.harness_browser.is_some()
             || self.bash_view.is_some()
             || self.goal_panel.is_some()

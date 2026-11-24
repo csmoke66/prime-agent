@@ -7,6 +7,38 @@ use super::{
     StatusKind, SubmitBehavior, Value, UI_REQUEST_TIMEOUT_MS,
 };
 
+fn cost_rows(cost: crate::session_cost::Cost) -> Vec<info_commands::ClientLine> {
+    let row = |label: &str, value: f64| {
+        vec![
+            info_commands::ClientSpan {
+                text: format!("{label}:"),
+                color: Some(crate::theme::ThemeColor::Dim),
+            },
+            info_commands::ClientSpan {
+                text: format!(" ${}", info_commands::js_to_fixed(value, 4)),
+                color: None,
+            },
+        ]
+    };
+    let mut rows = vec![
+        vec![info_commands::ClientSpan {
+            text: "Session Cost".to_string(),
+            color: None,
+        }],
+        Vec::new(),
+        row("Total", cost.total),
+        Vec::new(),
+        row("Uncached input", cost.input),
+        row("Output", cost.output),
+        row("Cache read", cost.cache_read),
+        row("Cache write", cost.cache_write),
+    ];
+    if cost.unclassified > 1e-9 {
+        rows.push(row("Unclassified", cost.unclassified));
+    }
+    rows
+}
+
 fn workflow_target(args: &str) -> std::result::Result<(Option<String>, bool, bool, &str), String> {
     let mut rest = args.trim();
     let mut target = None;
@@ -504,6 +536,33 @@ impl SessionUi {
                     InfoContent::Markdown(crate::hotkeys::hotkeys_guide(view.editor.keybindings())),
                 );
                 self.track_menu_opened("hotkeys", "command");
+            }
+
+            "cost" => {
+                if !matches!(resolved.args.as_str(), "" | "reset") {
+                    view.editor.set_text(text);
+                    self.error_row("Usage: /cost [reset]", view);
+                    return Ok(());
+                }
+                if resolved.args == "reset" {
+                    // Refresh first so every currently-known descendant receives the checkpoint,
+                    // rather than resetting against a stale attach-time snapshot.
+                    self.subscribe_roster().await;
+                    let identity = self.session_identity();
+                    if let Err(error) = crate::session_cost::reset(&self.roster, &identity) {
+                        self.error_row(&format!("{error:#}"), view);
+                        return Ok(());
+                    }
+                    // The title and dock use the same roster and display checkpoint as this panel.
+                    self.update_subagent_summary(view);
+                }
+                let identity = self.session_identity();
+                let Some(cost) = crate::session_cost::displayed(&self.roster, &identity) else {
+                    self.error_row("Session cost is not available yet", view);
+                    return Ok(());
+                };
+                self.open_info_panel(view, None, InfoContent::Rows(cost_rows(cost)));
+                self.track_menu_opened("cost", "command");
             }
 
             "session" => {

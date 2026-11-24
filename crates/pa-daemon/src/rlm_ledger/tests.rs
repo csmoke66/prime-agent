@@ -803,6 +803,11 @@ fn usage_summary(cost: f64) -> crate::session_usage::SessionUsageSummary {
         input_tokens: 1_000,
         output_tokens: 100,
         cost,
+        cost_breakdown: Some(pa_types::ai::UsageCost {
+            output: cost.into(),
+            total: cost.into(),
+            ..pa_types::ai::UsageCost::default()
+        }),
     }
 }
 
@@ -1256,9 +1261,85 @@ fn bucket_bills_tombstoned_children_without_catalog_rows() {
                 input_tokens: 2_000,
                 output_tokens: 200,
                 cost: 0.55,
+                cost_breakdown: Some(pa_types::ai::UsageCost {
+                    output: 0.55.into(),
+                    total: 0.55.into(),
+                    ..pa_types::ai::UsageCost::default()
+                }),
             },
         )]),
         "the captured snapshot 0.30 + the legacy transcript's own fold 0.25; only the parent bills"
+    );
+}
+
+/// A legacy captured snapshot has only the scalar cost. Summing it with a
+/// fresh snapshot keeps the fresh components and their own total, leaving the
+/// scalar remainder available to consumers as unclassified spend.
+#[test]
+fn bucket_preserves_known_breakdown_across_legacy_snapshots() {
+    let dir = temp_dir("bucket-partial-breakdown");
+    let sessions = dir.join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    let parent = sessions.join("p.jsonl");
+    let legacy_child = sessions.join("legacy.jsonl");
+    let fresh_child = sessions.join("fresh.jsonl");
+    fs::write(&parent, "{}").unwrap();
+    let lines = [
+        json!({
+            "v": 1, "op": "spawn", "at": "2026-01-01T00:00:00Z",
+            "childId": "legacy", "parent": parent.to_string_lossy(),
+            "child": legacy_child.to_string_lossy(), "depth": 1, "name": "legacy",
+        }),
+        json!({
+            "v": 1, "op": "delete", "at": "2026-01-01T00:00:01Z",
+            "childId": "legacy", "child": legacy_child.to_string_lossy(), "reason": "user",
+            "usage": {"inputTokens": 1000, "outputTokens": 100, "cost": 0.25},
+        }),
+        json!({
+            "v": 1, "op": "spawn", "at": "2026-01-01T00:00:02Z",
+            "childId": "fresh", "parent": parent.to_string_lossy(),
+            "child": fresh_child.to_string_lossy(), "depth": 1, "name": "fresh",
+        }),
+        json!({
+            "v": 1, "op": "delete", "at": "2026-01-01T00:00:03Z",
+            "childId": "fresh", "child": fresh_child.to_string_lossy(), "reason": "user",
+            "usage": {
+                "inputTokens": 1000, "outputTokens": 100, "cost": 0.30,
+                "costBreakdown": {
+                    "input": 0.05, "output": 0.20, "cacheRead": 0.01,
+                    "cacheWrite": 0.04, "total": 0.30
+                }
+            },
+        }),
+    ];
+    let body = lines.iter().fold(String::new(), |mut body, line| {
+        use std::fmt::Write;
+        writeln!(body, "{line}").expect("write to String");
+        body
+    });
+    let path = rlm_ledger_path(&dir, &sessions);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, body).unwrap();
+
+    let bucket = ledger_for(&dir)
+        .deleted_descendant_usage_by_parent()
+        .unwrap();
+    let parent_key = crate::lease::canonical_session_path(&parent)
+        .to_string_lossy()
+        .to_string();
+    let total = bucket.get(&parent_key).expect("the parent usage bucket");
+    assert_eq!(total.input_tokens, 2_000);
+    assert_eq!(total.output_tokens, 200);
+    assert_eq!(total.cost, 0.55);
+    assert_eq!(
+        total.cost_breakdown,
+        Some(pa_types::ai::UsageCost {
+            input: 0.05.into(),
+            output: 0.20.into(),
+            cache_read: 0.01.into(),
+            cache_write: 0.04.into(),
+            total: 0.30.into(),
+        })
     );
 }
 
@@ -1330,6 +1411,10 @@ fn bucket_claims_each_tombstoned_path_once() {
     assert_eq!(claimed.input_tokens, 1000);
     assert_eq!(claimed.output_tokens, 100);
     assert!((claimed.cost - 0.15).abs() < 1e-9);
+    assert_eq!(
+        claimed.cost_breakdown, None,
+        "historical usage snapshots have no invented component split"
+    );
     assert!(
         !bucket.contains_key(&key_b),
         "the second parent never bills the same path"
@@ -1435,6 +1520,11 @@ fn the_bucket_updates_after_an_append_on_the_same_ledger() {
                 input_tokens: 2_000,
                 output_tokens: 200,
                 cost: 0.75,
+                cost_breakdown: Some(pa_types::ai::UsageCost {
+                    output: 0.75.into(),
+                    total: 0.75.into(),
+                    ..pa_types::ai::UsageCost::default()
+                }),
             }
         )]),
         "the appended delete bills on the same instance: {bucket:?}"

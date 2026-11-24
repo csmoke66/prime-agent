@@ -774,7 +774,12 @@ fn scan_folds_the_saved_row_usage_summary() {
         Some(crate::session_usage::SessionUsageSummary {
             input_tokens: 170,
             output_tokens: 15,
-            cost: 0.625
+            cost: 0.625,
+            cost_breakdown: Some(pa_types::ai::UsageCost {
+                output: 0.625.into(),
+                total: 0.625.into(),
+                ..pa_types::ai::UsageCost::default()
+            }),
         })
     );
     let _ = fs::remove_dir_all(&dir);
@@ -804,7 +809,8 @@ fn scan_keeps_messages_with_partial_usage_objects() {
         Some(crate::session_usage::SessionUsageSummary {
             input_tokens: 5,
             output_tokens: 1,
-            cost: 0.0
+            cost: 0.0,
+            cost_breakdown: Some(pa_types::ai::UsageCost::default()),
         })
     );
     let _ = fs::remove_dir_all(&dir);
@@ -1146,6 +1152,11 @@ fn listing_and_frozen_usage_agree_on_duplicate_attribution_ids() {
         input_tokens: 100,
         output_tokens: 10,
         cost: 8.0,
+        cost_breakdown: Some(pa_types::ai::UsageCost {
+            output: 8.0.into(),
+            total: 8.0.into(),
+            ..pa_types::ai::UsageCost::default()
+        }),
     });
     assert_eq!(read_session_info(&path).unwrap().usage, expected);
     let prefix_len = fs::metadata(&path).unwrap().len();

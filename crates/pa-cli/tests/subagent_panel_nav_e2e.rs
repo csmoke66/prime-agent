@@ -584,6 +584,11 @@ async fn the_title_bills_a_deleted_subagents_spend() {
                 input_tokens: 50,
                 output_tokens: 5,
                 cost: 0.3,
+                cost_breakdown: Some(pa_types::ai::UsageCost {
+                    output: 0.3.into(),
+                    total: 0.3.into(),
+                    ..pa_types::ai::UsageCost::default()
+                }),
             },
             None,
         )

@@ -824,6 +824,13 @@ fn saved_session_rows_publish_deleted_descendant_usage() {
         input_tokens: 1_100,
         output_tokens: 110,
         cost: 0.5,
+        cost_breakdown: Some(pa_types::ai::UsageCost {
+            input: 0.1.into(),
+            output: 0.2.into(),
+            cache_read: 0.05.into(),
+            cache_write: 0.15.into(),
+            total: 0.5.into(),
+        }),
     });
     let row = saved_session_row(
         &info,
@@ -832,7 +839,33 @@ fn saved_session_rows_publish_deleted_descendant_usage() {
     );
     assert_eq!(
         row["deletedDescendantUsage"],
-        json!({ "inputTokens": 1_100, "outputTokens": 110, "cost": 0.5 })
+        json!({
+            "inputTokens": 1_100,
+            "outputTokens": 110,
+            "cost": 0.5,
+            "costBreakdown": {
+                "input": 0.1,
+                "output": 0.2,
+                "cacheRead": 0.05,
+                "cacheWrite": 0.15,
+                "total": 0.5
+            }
+        })
+    );
+    info
+        .deleted_descendant_usage
+        .as_mut()
+        .expect("the deleted summary")
+        .cost_breakdown = None;
+    let legacy_row = saved_session_row(
+        &info,
+        &std::collections::HashMap::new(),
+        &std::collections::HashMap::new(),
+    );
+    assert_eq!(
+        legacy_row["deletedDescendantUsage"],
+        json!({ "inputTokens": 1_100, "outputTokens": 110, "cost": 0.5 }),
+        "legacy snapshots omit the unknown breakdown rather than publishing null"
     );
     // Absent again: the field never rides as a null.
     info.deleted_descendant_usage = None;
@@ -1082,12 +1115,34 @@ fn saved_session_rows_publish_the_own_usage_summary() {
     );
     assert_eq!(
         row["usage"],
-        json!({ "inputTokens": 105, "outputTokens": 10, "cost": 0.25 })
+        json!({
+            "inputTokens": 105,
+            "outputTokens": 10,
+            "cost": 0.25,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.25,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.25
+            }
+        })
     );
     let summary = saved_session_summary(&info);
     assert_eq!(
         summary["usage"],
-        json!({ "inputTokens": 105, "outputTokens": 10, "cost": 0.25 })
+        json!({
+            "inputTokens": 105,
+            "outputTokens": 10,
+            "cost": 0.25,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.25,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.25
+            }
+        })
     );
     // A draft with no billable work stays bare on both surfaces.
     let mut draft = crate::session_store::SessionFile::create("/tmp", None, 0);
@@ -1163,7 +1218,18 @@ fn saved_session_rows_match_the_catalog_row_golden() {
             "name": "golden name",
             "parentSessionPath": "/s/parent.jsonl",
             "model": { "provider": "p", "modelId": "m" },
-            "usage": { "inputTokens": 105, "outputTokens": 10, "cost": 0.25 },
+            "usage": {
+                "inputTokens": 105,
+                "outputTokens": 10,
+                "cost": 0.25,
+                "costBreakdown": {
+                    "input": 0,
+                    "output": 0.25,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0.25
+                }
+            },
             "thinkingLevel": "high"
         })
     );
@@ -2388,7 +2454,18 @@ async fn the_stopped_childs_delete_removes_its_row_and_bills_the_parent() {
     );
     assert_eq!(
         pushes[0]["changed"][0]["summary"]["deletedDescendantUsage"],
-        json!({ "inputTokens": 60, "outputTokens": 6, "cost": 0.3 }),
+        json!({
+            "inputTokens": 60,
+            "outputTokens": 6,
+            "cost": 0.3,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.3,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.3
+            }
+        }),
         "the deleted child's captured spend bills through the parent"
     );
     assert_eq!(

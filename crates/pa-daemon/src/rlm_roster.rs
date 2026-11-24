@@ -333,7 +333,18 @@ mod tests {
         let summary = passive_child_summary(&child_row);
         assert_eq!(
             summary["usage"],
-            json!({ "inputTokens": 10, "outputTokens": 2, "cost": 0.2 })
+            json!({
+                "inputTokens": 10,
+                "outputTokens": 2,
+                "cost": 0.2,
+                "costBreakdown": {
+                    "input": 0,
+                    "output": 0.2,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0.2
+                }
+            })
         );
     }
 

@@ -141,6 +141,28 @@ fn zero_usage() -> crate::session_usage::SessionUsageSummary {
         input_tokens: 0,
         output_tokens: 0,
         cost: 0.0,
+        cost_breakdown: None,
+    }
+}
+
+/// Add the cost components that are actually known. A legacy snapshot has no
+/// split, but must not erase a fresh sibling's split: its scalar remains in
+/// `SessionUsageSummary::cost`, while `cost_breakdown.total` covers only the
+/// snapshots whose component breakdown is known.
+fn add_cost_breakdown(
+    left: Option<pa_types::ai::UsageCost>,
+    right: Option<pa_types::ai::UsageCost>,
+) -> Option<pa_types::ai::UsageCost> {
+    match (left, right) {
+        (None, None) => None,
+        (Some(known), None) | (None, Some(known)) => Some(known),
+        (Some(left), Some(right)) => Some(pa_types::ai::UsageCost {
+            input: (left.input.as_f64() + right.input.as_f64()).into(),
+            output: (left.output.as_f64() + right.output.as_f64()).into(),
+            cache_read: (left.cache_read.as_f64() + right.cache_read.as_f64()).into(),
+            cache_write: (left.cache_write.as_f64() + right.cache_write.as_f64()).into(),
+            total: (left.total.as_f64() + right.total.as_f64()).into(),
+        }),
     }
 }
 
@@ -153,6 +175,7 @@ fn add_usage(
     left.input_tokens = left.input_tokens.saturating_add(right.input_tokens);
     left.output_tokens = left.output_tokens.saturating_add(right.output_tokens);
     left.cost += right.cost;
+    left.cost_breakdown = add_cost_breakdown(left.cost_breakdown, right.cost_breakdown);
     left
 }
 

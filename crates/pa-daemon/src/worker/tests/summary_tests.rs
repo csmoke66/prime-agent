@@ -227,7 +227,18 @@ fn live_summary_usage_is_the_catalog_fold() {
     // + the kept turn, tokens folded in.
     assert_eq!(
         json!(summary.usage),
-        json!({ "inputTokens": 220, "outputTokens": 22, "cost": 1.75 })
+        json!({
+            "inputTokens": 220,
+            "outputTokens": 22,
+            "cost": 1.75,
+            "costBreakdown": {
+                "input": 0,
+                "output": 1.75,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 1.75
+            }
+        })
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -277,7 +288,18 @@ fn pathless_summary_usage_folds_the_in_memory_entries() {
     let summary = session_summary(&core, inputs());
     assert_eq!(
         json!(summary.usage),
-        json!({ "inputTokens": 100, "outputTokens": 10, "cost": 0.5 })
+        json!({
+            "inputTokens": 100,
+            "outputTokens": 10,
+            "cost": 0.5,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.5,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.5
+            }
+        })
     );
 }
 

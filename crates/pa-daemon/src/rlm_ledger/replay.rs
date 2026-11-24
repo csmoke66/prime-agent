@@ -65,10 +65,18 @@ fn parse_deleted_usage(
     if cost.is_nan() || cost.is_sign_negative() {
         bail!("malformed RLM ledger line {line_no}: invalid delete usage");
     }
+    let cost_breakdown = usage
+        .get("costBreakdown")
+        .map(|breakdown| {
+            serde_json::from_value::<pa_types::ai::UsageCost>(breakdown.clone())
+                .map_err(|_| invalid())
+        })
+        .transpose()?;
     Ok(crate::session_usage::SessionUsageSummary {
         input_tokens,
         output_tokens,
         cost,
+        cost_breakdown,
     })
 }
 

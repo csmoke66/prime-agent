@@ -1121,6 +1121,13 @@ pub(crate) mod tests {
                     input_tokens: 11,
                     output_tokens: 7,
                     cost: 0.5,
+                    cost_breakdown: Some(pa_types::ai::UsageCost {
+                        input: 0.1.into(),
+                        output: 0.2.into(),
+                        cache_read: 0.05.into(),
+                        cache_write: 0.15.into(),
+                        total: 0.5.into(),
+                    }),
                 },
                 /*by_model*/ None,
             )
@@ -1175,7 +1182,18 @@ pub(crate) mod tests {
             .expect("family root row");
         assert_eq!(
             family_root["summary"]["deletedDescendantUsage"],
-            json!({ "inputTokens": 11, "outputTokens": 7, "cost": 0.5 }),
+            json!({
+                "inputTokens": 11,
+                "outputTokens": 7,
+                "cost": 0.5,
+                "costBreakdown": {
+                    "input": 0.1,
+                    "output": 0.2,
+                    "cacheRead": 0.05,
+                    "cacheWrite": 0.15,
+                    "total": 0.5
+                }
+            }),
             "the bucket attached to the family root before the stop"
         );
         let childless_id = roster_agent_id_for_summary(&childless_summary);

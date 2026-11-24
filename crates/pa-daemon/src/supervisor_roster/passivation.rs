@@ -327,7 +327,18 @@ async fn stop_carries_the_deleted_childs_spend_to_its_parent() {
     );
     assert_eq!(
         pushes[0]["changed"][0]["summary"]["deletedDescendantUsage"],
-        json!({ "inputTokens": 60, "outputTokens": 6, "cost": 0.3 }),
+        json!({
+            "inputTokens": 60,
+            "outputTokens": 6,
+            "cost": 0.3,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.3,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.3
+            }
+        }),
         "the deleted child's captured spend bills through the parent"
     );
     assert_eq!(
@@ -455,7 +466,18 @@ async fn a_saved_delete_without_a_roster_row_bills_the_parent() {
     );
     assert_eq!(
         pushes[0]["changed"][0]["summary"]["deletedDescendantUsage"],
-        json!({ "inputTokens": 60, "outputTokens": 6, "cost": 0.3 }),
+        json!({
+            "inputTokens": 60,
+            "outputTokens": 6,
+            "cost": 0.3,
+            "costBreakdown": {
+                "input": 0,
+                "output": 0.3,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.3
+            }
+        }),
         "the deleted child's captured spend bills through the parent"
     );
     assert!(

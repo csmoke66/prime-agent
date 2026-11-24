@@ -15,9 +15,11 @@ use pa_core::session_engine::compaction_exec::{add_assistant_usage, subtract_ass
 
 /// The token/cost summary the rows publish: `inputTokens` folds cache reads
 /// and writes into the input total; `cost` is the provider-billed total.
+/// Fresh summaries also retain the full typed cost split. Historical ledger
+/// snapshots omit `costBreakdown`, so it stays optional on every wire surface.
 ///
-/// `Eq` is manual: `cost` is the f64 under `JsNumber`, and JSON numbers are
-/// always finite (a NaN never round-trips `serde_json`), so equality is
+/// `Eq` is manual: the cost fields are f64s under `JsNumber`, and JSON numbers
+/// are always finite (a NaN never round-trips `serde_json`), so equality is
 /// total.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +27,8 @@ pub struct SessionUsageSummary {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cost: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_breakdown: Option<UsageCost>,
 }
 
 impl Eq for SessionUsageSummary {}
@@ -57,6 +61,7 @@ pub fn session_usage_summary_from(usage: &Usage) -> Option<SessionUsageSummary> 
         input_tokens,
         output_tokens: usage.output,
         cost: usage.cost.total.as_f64(),
+        cost_breakdown: Some(usage.cost),
     })
 }
 
@@ -422,6 +427,22 @@ mod tests {
         .unwrap()
     }
 
+    fn cost(
+        input: f64,
+        output: f64,
+        cache_read: f64,
+        cache_write: f64,
+        total: f64,
+    ) -> UsageCost {
+        UsageCost {
+            input: input.into(),
+            output: output.into(),
+            cache_read: cache_read.into(),
+            cache_write: cache_write.into(),
+            total: total.into(),
+        }
+    }
+
     fn scan_summary(lines: &[Value]) -> Option<SessionUsageSummary> {
         let mut scan = UsageScan::default();
         for line in lines {
@@ -544,7 +565,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 150,
                 output_tokens: 15,
-                cost: 1.5
+                cost: 1.5,
+                cost_breakdown: Some(cost(0.0, 1.5, 0.0, 0.0, 1.5)),
             })
         );
     }
@@ -569,7 +591,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 40,
                 output_tokens: 4,
-                cost: 0.4
+                cost: 0.4,
+                cost_breakdown: Some(cost(0.0, 0.4, 0.0, 0.0, 0.4)),
             })
         );
         // After the assistant entry the same attribution DOES fold — the same
@@ -579,7 +602,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 40,
                 output_tokens: 4,
-                cost: 0.7 - 0.3
+                cost: 0.7 - 0.3,
+                cost_breakdown: Some(cost(0.0, 0.7 - 0.3, 0.0, 0.0, 0.7 - 0.3)),
             })
         );
     }
@@ -627,7 +651,14 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 385,
                 output_tokens: 38,
-                cost: 1.0 + (0.3 + 0.1 + 0.05)
+                cost: 1.0 + (0.3 + 0.1 + 0.05),
+                cost_breakdown: Some(cost(
+                    0.1,
+                    1.0 + 0.2 + 0.1,
+                    0.0,
+                    0.0,
+                    1.0 + (0.3 + 0.1 + 0.05),
+                )),
             })
         );
     }
@@ -706,7 +737,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 5,
                 output_tokens: 1,
-                cost: 0.0
+                cost: 0.0,
+                cost_breakdown: Some(UsageCost::default()),
             })
         );
     }
@@ -730,7 +762,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: u64::MAX,
                 output_tokens: 2,
-                cost: 0.0
+                cost: 0.0,
+                cost_breakdown: Some(UsageCost::default()),
             })
         );
     }
@@ -755,7 +788,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 100,
                 output_tokens: 10,
-                cost: 1.0
+                cost: 1.0,
+                cost_breakdown: Some(cost(0.0, 1.0, 0.0, 0.0, 1.0)),
             })
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -777,7 +811,8 @@ mod tests {
             Some(SessionUsageSummary {
                 input_tokens: 1_505_509,
                 output_tokens: 14_472,
-                cost: 0.0
+                cost: 0.0,
+                cost_breakdown: Some(UsageCost::default()),
             })
         );
     }

@@ -777,6 +777,43 @@ fn payment_402_settles_once_with_the_disclosure() {
     );
 }
 
+#[test]
+fn goal_outage_arms_one_automatic_wake_and_keeps_the_goal_active() {
+    let (_dir, _mock, _supervisor, mut client, session_id) =
+        setup("goaloutage", 20, "provider recovered");
+    client.send_command(
+        "outage",
+        &json!({
+            "type": "prompt_and_wait",
+            "activeSessionId": session_id,
+            "message": "/goal start Ship the feature end to end."
+        }),
+    );
+    let failed = client.request("outage");
+    assert_eq!(failed["success"], false, "{failed}");
+    client.send_command(
+        "state",
+        &json!({"type": "get_connection_state", "activeSessionId": session_id}),
+    );
+    let state = client.request("state");
+    assert_eq!(state["data"]["goal"]["status"], "active", "{state}");
+    client.send_command(
+        "jobs",
+        &json!({"type": "cron_list", "activeSessionId": session_id}),
+    );
+    let reply = client.request("jobs");
+    let jobs = reply["data"]["jobs"].as_array().expect("scheduled jobs");
+    let wakes: Vec<_> = jobs
+        .iter()
+        .filter(|job| job["source"] == "goal_backoff_wake")
+        .collect();
+    assert_eq!(wakes.len(), 1, "{reply}");
+    assert_eq!(wakes[0]["status"], "active");
+    let next = pa_daemon::util::iso_to_unix_ms(wakes[0]["nextRunAt"].as_str().unwrap()).unwrap();
+    let delay = next.saturating_sub(pa_daemon::util::now_ms());
+    assert!((270_000..=300_000).contains(&delay), "wake delay: {delay} ms");
+}
+
 /// THE GOAL-SIDE 402 REGRESSION: a goal whose continuation turn dies on the wallet-drain
 /// 402 refuses the NEXT continuation and finishes the goal. The disclosure row still
 /// fires (BUG 1).

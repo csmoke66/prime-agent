@@ -75,6 +75,10 @@ Use `/cost` to see this session's total and its sub-agents' spend, split into un
 
 Use `/cost reset` to start counting from zero for the current session and all its descendants. The reset is saved locally and applies to the chat header, Agents View, and `/cost`. It does not change provider billing, transcripts, or the lifetime totals in `/session` and `/context`.
 
+## Goals
+
+If the model provider is temporarily unreachable or unavailable after the normal retries, an active goal keeps its progress and schedules another attempt in five minutes. The delay repeats while the outage persists; it does not count toward the no-progress limit. For goals already marked `error` by an older build, reopen the session and use `/goal resume` to recover the same goal and budget.
+
 ## Heartbeats
 
 Open `/heartbeats`, select a heartbeat, and choose **Edit** to change its schedule, instruction, label, or delivery mode. Editing keeps its run history and pause state. Changing only the instruction, label, or delivery mode leaves the next run time alone.

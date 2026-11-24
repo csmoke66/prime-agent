@@ -82,6 +82,8 @@ pub fn goal_update_dedupe_projection(state: &GoalState) -> GoalState {
 
 /// Clamp counters and derive `active` from the status. Backfills `created_at` (operator ruling
 /// 2026-09-28): a goal without `created_at` adopts its `updated_at`.
+/// Legacy transport failures recorded as `error` rehydrate as manually resumable
+/// pauses, without restarting the goal or changing its usage and objective.
 #[must_use]
 pub fn normalize_goal_state(goal: GoalState) -> GoalState {
     let created_at = match goal.created_at {
@@ -90,14 +92,29 @@ pub fn normalize_goal_state(goal: GoalState) -> GoalState {
             .then_some(goal.updated_at)
             .flatten(),
     };
+    let status = if goal.status == GoalStatus::Error
+        && goal.objective.is_some()
+        && goal.last_error.as_deref().is_some_and(is_goal_provider_outage)
+    {
+        GoalStatus::Paused
+    } else {
+        goal.status
+    };
     GoalState {
-        active: goal.status == GoalStatus::Active,
+        active: status == GoalStatus::Active,
+        status,
         tokens_used: goal.tokens_used,
         time_used_seconds: goal.time_used_seconds,
         continuations_used: goal.continuations_used,
         created_at,
         ..goal
     }
+}
+
+pub(crate) fn is_goal_provider_outage(error: &str) -> bool {
+    let failure = crate::session_engine::error_classify::classify_error_message(error);
+    failure.is_model_transport()
+        || matches!(failure.subtype, "timeout" | "provider_unavailable")
 }
 
 /// Validate and normalize a goal objective.

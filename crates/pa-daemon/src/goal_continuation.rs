@@ -75,8 +75,8 @@ impl AgentSessionEngine {
             .expect("registered jobs probe lock") = Some(probe);
     }
 
-    /// An error assistant message fails an active goal (an abort keeps
-    /// it); the state change surfaces through the run's tracking wrapper.
+    /// Settle the failed goal turn and arm the existing durable backoff wake
+    /// if the provider failed to connect or was unavailable.
     pub(crate) fn finish_goal_for_terminal_error(&self, error: &str) {
         let Some(handles) = self.live_handles().map(|live| live.goal.clone()) else {
             return;
@@ -91,6 +91,14 @@ impl AgentSessionEngine {
             ) {
                 // The best-effort terminal hook must not reject the caller.
                 eprintln!("pa-daemon: goal terminal finish persist failed: {persist_error:#}");
+            }
+            let wake_at = driver.backoff_wake_at();
+            drop(session);
+            drop(driver);
+            if let Some(wake_at) = wake_at {
+                if self.schedule_goal_backoff_wake(wake_at).await.is_none() {
+                    eprintln!("pa-daemon: could not schedule the goal's provider-outage wake");
+                }
             }
         });
     }

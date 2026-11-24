@@ -130,7 +130,7 @@ impl GoalDriver {
     /// branch's latest persisted entry adopts under [`rule`].
     pub fn reload_from_branch(&mut self, session: &SessionManager, rule: GoalBranchReload) {
         let previous = self.state.clone();
-        let reloaded = Self::latest_persisted_state(session);
+        let reloaded = normalize_goal_state(Self::latest_persisted_state(session));
         self.state = match rule {
             GoalBranchReload::SameTimeline
                 if reloaded.goal_id.is_some() && reloaded.goal_id == previous.goal_id =>
@@ -162,13 +162,13 @@ impl GoalDriver {
                 // The restore-resurrection guard applies here as in `load_persisted`.
                 if reloaded.status == GoalStatus::Active {
                     match session.stale_active_goal_failure() {
-                        Some(error) => GoalState {
+                        Some(error) => normalize_goal_state(GoalState {
                             active: false,
                             status: GoalStatus::Error,
                             last_reason: Some(error.clone()),
                             last_error: Some(error),
                             ..reloaded
-                        },
+                        }),
                         None => reloaded,
                     }
                 } else {
@@ -447,8 +447,8 @@ impl GoalDriver {
         Ok(())
     }
 
-    /// Resume a paused/budget-limited goal. Returns the continuation context
-    /// message when the goal becomes active again.
+    /// Resume a paused (including connection failures) or budget-limited goal.
+    /// Returns the continuation context when the goal becomes active again.
     ///
     /// # Errors
     ///
@@ -537,10 +537,33 @@ impl GoalDriver {
         if self.state.status != GoalStatus::Active {
             return Ok(());
         }
+        // Give the provider time to recover after the turn's own retries.
+        // This is not a no-progress strike: a long outage must not kill the goal.
         if let StopReason::Error = stop_reason {
             let reason = error_message
                 .filter(|message| !message.is_empty())
                 .unwrap_or("Assistant response failed");
+            if crate::goals::is_goal_provider_outage(reason) {
+                let now = now_millis();
+                let retry_already_armed = self.no_progress_backoff_until_ms > now
+                    && self
+                        .state
+                        .last_error
+                        .as_deref()
+                        .is_some_and(crate::goals::is_goal_provider_outage);
+                self.set_state(
+                    session,
+                    GoalState {
+                        last_reason: Some(reason.to_string()),
+                        last_error: Some(reason.to_string()),
+                        ..self.state.clone()
+                    },
+                )?;
+                if !retry_already_armed {
+                    self.no_progress_backoff_until_ms = now + 5 * 60 * 1_000;
+                }
+                return Ok(());
+            }
             self.set_state(
                 session,
                 GoalState {

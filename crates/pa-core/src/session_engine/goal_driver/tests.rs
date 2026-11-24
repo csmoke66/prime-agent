@@ -1069,6 +1069,79 @@ fn append_goal_row(session: &mut SessionManager, state: &GoalState) {
 }
 
 #[test]
+fn goal_transport_failure_is_resumable_without_restarting_or_resetting_the_goal() {
+    const FAILURE: &str = "Unable to connect. Is the computer able to access the url?";
+    for legacy in [false, true] {
+        let mut session = persisted_session();
+        let mut driver = GoalDriver::new();
+        driver
+            .start(&mut session, "continue the task", Some(1_000))
+            .unwrap();
+        driver
+            .record_assistant_usage(&mut session, "a1", &usage(40, 10))
+            .unwrap();
+        assert!(driver
+            .next_continuation_message(&mut session, None)
+            .unwrap()
+            .is_some());
+        let before = driver.state().clone();
+        if legacy {
+            append_goal_row(
+                &mut session,
+                &GoalState {
+                    status: GoalStatus::Error,
+                    active: false,
+                    last_error: Some(FAILURE.into()),
+                    last_reason: Some(FAILURE.into()),
+                    ..before.clone()
+                },
+            );
+        } else {
+            driver
+                .finish_for_terminal_message(
+                    &mut session,
+                    pa_types::ai::StopReason::Error,
+                    Some(FAILURE),
+                )
+                .unwrap();
+            assert_eq!(driver.state().status, GoalStatus::Active);
+            let first_wake = driver.backoff_wake_at().expect("outage wake");
+            driver
+                .finish_for_terminal_message(
+                    &mut session,
+                    pa_types::ai::StopReason::Error,
+                    Some("HTTP 503 Service Unavailable"),
+                )
+                .unwrap();
+            assert_eq!(driver.backoff_wake_at(), Some(first_wake));
+            assert_eq!(driver.state().no_progress_streak, before.no_progress_streak);
+            assert_eq!(driver.state().tokens_used, before.tokens_used);
+            assert_eq!(driver.state().goal_id, before.goal_id);
+            assert_eq!(GoalDriver::load_persisted(&session).state().status, GoalStatus::Active);
+            assert_eq!(driver.take_backoff_wake_at(), Some(first_wake));
+            assert_eq!(driver.take_backoff_wake_at(), None);
+            continue;
+        }
+        let mut restored = GoalDriver::load_persisted(&session);
+        assert_eq!(restored.state().status, GoalStatus::Paused);
+        assert_eq!(restored.state().last_reason.as_deref(), Some(FAILURE));
+        assert!(restored
+            .next_continuation_message(&mut session, None)
+            .unwrap()
+            .is_none());
+        assert!(restored.resume(&mut session).unwrap().is_some());
+        let resumed = restored.state();
+        assert!(resumed.active);
+        assert_eq!(resumed.goal_id, before.goal_id);
+        assert_eq!(resumed.objective, before.objective);
+        assert_eq!(resumed.token_budget, before.token_budget);
+        assert_eq!(resumed.tokens_used, before.tokens_used);
+        assert_eq!(resumed.continuations_used, before.continuations_used);
+        assert_eq!(resumed.last_error, None);
+    }
+}
+
+#[test]
 fn same_timeline_reload_never_regresses_the_same_goal() {
     let mut session = persisted_session();
     let mut driver = GoalDriver::new();

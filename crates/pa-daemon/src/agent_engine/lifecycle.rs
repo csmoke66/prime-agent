@@ -535,13 +535,13 @@ impl AgentSessionEngine {
                 // The stale-row guard's adoption: the IN-MEMORY driver
                 // takes the verdict directly; the DURABLE row is DEFERRED
                 // to the post-adoption flush (a write here would be replaced).
-                let terminal = pa_core::goals::GoalState {
+                let terminal = pa_core::goals::normalize_goal_state(pa_core::goals::GoalState {
                     active: false,
                     status: pa_core::goals::GoalStatus::Error,
                     last_reason: Some(error.clone()),
                     last_error: Some(error),
                     ..state.clone()
-                };
+                });
                 if let Some(handles) = self.built_handles() {
                     let mut driver = handles.goal.driver.lock().await;
                     driver.restore_from_persisted(terminal.clone());

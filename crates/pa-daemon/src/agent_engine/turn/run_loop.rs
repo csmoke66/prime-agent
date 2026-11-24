@@ -145,7 +145,7 @@ impl AgentSessionEngine {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
                     }
-                    // An error assistant message fails an active goal.
+                    // The goal settles terminal failures; provider outages arm a delayed wake.
                     self.finish_goal_for_terminal_error(&error);
                     emit(EngineEvent::Done(Err(error)));
                     return;

@@ -620,9 +620,22 @@ impl Supervisor {
         // Detached and window-hidden, the TS worker spawn (`spawnHidden`, `{ detached: true }`):
         // the worker leaves the supervisor's console group and shows no fresh console.
         pa_core::platform::process::set_new_process_group(command.as_std_mut());
-        let child = command
-            .spawn()
-            .with_context(|| format!("spawn session worker {}", resident.worker_id))?;
+        let child = command.spawn().with_context(|| {
+            let worker_id = &resident.worker_id;
+            let restart_hint = if executable
+                .as_os_str()
+                .to_string_lossy()
+                .ends_with(" (deleted)")
+            {
+                "; the daemon executable was replaced while running. Restart the Prime Agent daemon"
+            } else {
+                ""
+            };
+            format!(
+                "could not launch session worker {worker_id} using {}{restart_hint}",
+                executable.display()
+            )
+        })?;
         let child = SpawnedWorker {
             orphan_generation: OrphanGeneration {
                 pid: child.id().unwrap_or(0),

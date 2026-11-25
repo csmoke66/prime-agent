@@ -70,6 +70,25 @@ fn create_config_model_flags_reach_the_worker_engine() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn create_failure_reports_a_replaced_executable_and_the_os_error() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let socket = dir.path().join("daemon.sock");
+    let agent_dir = dir.path().join("agent");
+    let binary = dir.path().join("pa-daemon");
+    std::fs::copy(env!("CARGO_BIN_EXE_pa-daemon"), &binary).expect("copy test daemon");
+    let _daemon = spawn_daemon_binary(&binary, &socket, &agent_dir, dir.path());
+    let (mut client, _hello) = Client::connect(&socket);
+    std::fs::remove_file(&binary).expect("unlink test daemon");
+    client.send_command("c1", &serde_json::json!({"type": "create"}));
+    let response = client.read_response("c1");
+    assert_eq!(response["success"], false, "{response}");
+    let error = response["error"].as_str().expect("wire error message");
+    assert!(error.contains("Restart the Prime Agent daemon"), "{error}");
+    assert!(error.contains("(os error 2)"), "{error}");
+}
+
 #[test]
 fn create_path_duplicate_name_fails_with_current_ts_string() {
     let dir = tempfile::TempDir::new().expect("temp dir");

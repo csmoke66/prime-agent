@@ -58,13 +58,26 @@ fn spawn_daemon(socket: &std::path::Path, agent_dir: &std::path::Path) -> Daemon
     spawn_daemon_in(socket, agent_dir, &std::env::current_dir().unwrap())
 }
 
-#[allow(clippy::zombie_processes)] // the timeout path exits the test process
 fn spawn_daemon_in(
     socket: &std::path::Path,
     agent_dir: &std::path::Path,
     cwd: &std::path::Path,
 ) -> Daemon {
-    let binary = env!("CARGO_BIN_EXE_pa-daemon");
+    spawn_daemon_binary(
+        std::path::Path::new(env!("CARGO_BIN_EXE_pa-daemon")),
+        socket,
+        agent_dir,
+        cwd,
+    )
+}
+
+#[allow(clippy::zombie_processes)] // the timeout path exits the test process
+fn spawn_daemon_binary(
+    binary: &std::path::Path,
+    socket: &std::path::Path,
+    agent_dir: &std::path::Path,
+    cwd: &std::path::Path,
+) -> Daemon {
     let child = Command::new(binary)
         .current_dir(cwd)
         .arg("supervisor")

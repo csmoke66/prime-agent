@@ -1,0 +1,1 @@
+- Subagent startup failures now include the OS error and tell you when to restart a daemon whose executable was replaced.

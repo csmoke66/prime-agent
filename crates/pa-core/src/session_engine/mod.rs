@@ -149,6 +149,7 @@ pub struct AgentSession {
     agent: Arc<Agent>,
     session: Arc<tokio::sync::Mutex<SessionManager>>,
     prompt_templates: Vec<PromptTemplate>,
+    prompt_segments: Option<tokio::sync::Mutex<crate::prompts::session_prompt::SessionPrompt>>,
     slash_commands: SlashCommandRegistry,
     /// Harness digest inputs; `None` without harness state.
     harness_digest: Option<harness_digest::HarnessDigestContext>,
@@ -270,6 +271,7 @@ impl AgentSession {
             agent,
             session,
             prompt_templates,
+            prompt_segments: None,
             slash_commands: SlashCommandRegistry::builtin(),
             harness_digest,
             digest_pending: std::sync::atomic::AtomicBool::new(false),
@@ -295,6 +297,34 @@ impl AgentSession {
         };
         this.ensure_harness_digest_context().await?;
         Ok(this)
+    }
+
+    /// Read the named prompt, or persist one edit and apply it to the live session.
+    ///
+    /// # Errors
+    /// Returns an error for invalid edits, unsupported engines, or failed persistence.
+    pub async fn prompt_segments(
+        &self,
+        edit: Option<pa_types::daemon::PromptSegmentEdit>,
+    ) -> anyhow::Result<Vec<pa_types::daemon::SessionPromptSegment>> {
+        let prompt = self
+            .prompt_segments
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("This session has no editable system prompt"))?;
+        let mut prompt = prompt.lock().await;
+        if let Some(edit) = edit {
+            prompt.edit(edit).await?;
+            self.agent.set_system_prompt(prompt.effective()).await;
+            if let Some(telemetry) = &self.skill_telemetry {
+                telemetry.note_prompt_segment_edit();
+            }
+        }
+        Ok(prompt.list())
+    }
+
+    /// Try to read the effective system prompt without waiting for an ongoing edit.
+    pub fn try_edited_system_prompt(&self) -> Option<String> {
+        Some(self.prompt_segments.as_ref()?.try_lock().ok()?.effective())
     }
 
     /// The underlying agent loop (steering, state, subscriptions).

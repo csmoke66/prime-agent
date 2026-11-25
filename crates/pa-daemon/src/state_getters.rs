@@ -230,6 +230,32 @@ impl Worker {
         }
     }
 
+    pub(crate) async fn handle_prompt_segments(&self, payload: &Value) -> DaemonResponse {
+        const COMMAND: &str = "session_prompt_segments";
+        if let Err(response) = self.require_created(COMMAND) {
+            return response;
+        }
+        let edit = match payload
+            .get("edit")
+            .map(|edit| serde_json::from_value(edit.clone()))
+            .transpose()
+        {
+            Ok(edit) => edit,
+            Err(error) => {
+                return response_failure(
+                    None,
+                    COMMAND,
+                    &format!("Invalid segment edit: {error}"),
+                    None,
+                )
+            }
+        };
+        match self.engine.prompt_segments(edit).await {
+            Ok(rows) => response_success(None, COMMAND, Some(json!(rows))),
+            Err(error) => response_failure(None, COMMAND, &format!("{error:#}"), None),
+        }
+    }
+
     /// `get_tool_definition { name }`: the definition of one active tool; an
     /// unknown name answers success with the key omitted (the TS `undefined` field).
     pub(crate) async fn handle_get_tool_definition(&self, payload: &Value) -> DaemonResponse {

@@ -1,0 +1,1 @@
+- Edit, add, remove, or reset named system-prompt segments for the current session under `/settings` → Agents.

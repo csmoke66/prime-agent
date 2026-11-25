@@ -27,6 +27,7 @@ pub struct PromptSegment {
     /// Provenance: the layer file, or what generated the segment.
     pub source: &'static str,
     pub text: String,
+    pub(super) parts: Vec<layers::AssetSegment>,
 }
 
 impl PromptSegment {
@@ -36,7 +37,30 @@ impl PromptSegment {
             kind: SegmentKind::Static,
             source,
             text,
+            parts: Vec::new(),
         }
+    }
+
+    fn static_layer(name: &'static str, parts: &[layers::AssetSegment]) -> Self {
+        Self {
+            name,
+            kind: SegmentKind::Static,
+            source: layers::layer_source(name).unwrap_or_default(),
+            text: layers::text(parts),
+            parts: parts.to_vec(),
+        }
+    }
+
+    /// The stable names and bodies within this layer, with the exact separator after each one.
+    pub fn named_parts(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.parts
+            .iter()
+            .map(|part| (part.name.as_str(), part.body.as_str(), part.after.as_str()))
+            .chain(
+                self.parts
+                    .is_empty()
+                    .then_some((self.name, self.text.as_str(), "")),
+            )
     }
 
     fn dynamic_segment(name: &'static str, source: &'static str, text: String) -> Self {
@@ -45,6 +69,7 @@ impl PromptSegment {
             kind: SegmentKind::Dynamic,
             source,
             text,
+            parts: Vec::new(),
         }
     }
 }
@@ -69,6 +94,8 @@ pub struct BuildSystemPromptOptions<'a> {
     /// still applies.
     pub custom_prompt: Option<String>,
     pub model_prompt_extras: Option<&'a str>,
+    /// Named model additions in the same order and with the same text as `model_prompt_extras`.
+    pub model_prompt_parts: &'a [super::model_prompts::ModelPromptPart],
     /// Whether the resolved model accepts image input, when known.
     pub vision_capable: Option<bool>,
     /// Active tools. Tool schemas carry tool descriptions outside the prompt.
@@ -122,22 +149,29 @@ pub fn system_prompt_breakdown(options: &BuildSystemPromptOptions) -> SystemProm
             ));
         }
         _ => {
-            segments.push(PromptSegment::static_segment(
-                "core",
-                layers::layer_source("core").unwrap_or_default(),
-                layers::CORE_LAYER.trim().to_string(),
-            ));
-            segments.push(PromptSegment::static_segment(
-                "usage",
-                layers::layer_source("usage").unwrap_or_default(),
-                layers::USAGE_LAYER.trim().to_string(),
-            ));
-            segments.push(PromptSegment::static_segment(
+            segments.push(PromptSegment::static_layer("core", &layers::CORE));
+            segments.push(PromptSegment::static_layer("usage", &layers::USAGE));
+            segments.push(PromptSegment::static_layer(
                 "opinionated",
-                layers::layer_source("opinionated").unwrap_or_default(),
-                layers::OPINIONATED_LAYER.trim().to_string(),
+                &layers::OPINIONATED,
             ));
-            if let Some(extras) = options.model_prompt_extras {
+            if !options.model_prompt_parts.is_empty() {
+                let parts: Vec<_> = options
+                    .model_prompt_parts
+                    .iter()
+                    .enumerate()
+                    .map(|(index, part)| layers::AssetSegment {
+                        name: part.name.clone(),
+                        body: part.body.clone(),
+                        after: if index + 1 == options.model_prompt_parts.len() {
+                            String::new()
+                        } else {
+                            "\n\n".to_owned()
+                        },
+                    })
+                    .collect();
+                segments.push(PromptSegment::static_layer("model-prompts", &parts));
+            } else if let Some(extras) = options.model_prompt_extras {
                 segments.push(PromptSegment::static_segment(
                     "model-prompts",
                     layers::layer_source("model-prompts").unwrap_or_default(),

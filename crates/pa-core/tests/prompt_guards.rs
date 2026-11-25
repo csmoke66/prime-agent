@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use pa_core::prompts::layers::{CORE_LAYER, OPINIONATED_LAYER, USAGE_LAYER};
-use pa_core::prompts::model_prompts::MODEL_PROMPTS_TOML;
+use pa_core::prompts::model_prompts::MODEL_PROMPTS_JSON;
 use pa_core::prompts::system_prompt::{
     system_prompt_breakdown, BuildSystemPromptOptions, SegmentKind,
 };
@@ -60,10 +60,10 @@ const DYNAMIC_ONLY_MARKERS: &[&str] = &[
 #[test]
 fn static_layers_contain_no_dynamic_content() {
     for (name, text) in [
-        ("core", CORE_LAYER),
-        ("usage", USAGE_LAYER),
-        ("opinionated", OPINIONATED_LAYER),
-        ("model-prompts", MODEL_PROMPTS_TOML),
+        ("core", CORE_LAYER.as_str()),
+        ("usage", USAGE_LAYER.as_str()),
+        ("opinionated", OPINIONATED_LAYER.as_str()),
+        ("model-prompts", MODEL_PROMPTS_JSON),
     ] {
         for marker in DYNAMIC_ONLY_MARKERS {
             assert!(
@@ -495,7 +495,7 @@ fn core_layer_documents_the_real_tool_surface() {
         assert!(
             known,
             "prompt documents unknown tool {token:?}: a tool-surface change must \
-             update prompts/layers/core.md (and this test's token mapping)"
+             update prompts/layers/core.json (and this test's token mapping)"
         );
     }
 
@@ -510,7 +510,7 @@ fn core_layer_documents_the_real_tool_surface() {
         assert!(
             documented_form,
             "tool {token:?} is on the registered surface but the prompt does not \
-             document it: update prompts/layers/core.md"
+             document it: update prompts/layers/core.json"
         );
     }
 }

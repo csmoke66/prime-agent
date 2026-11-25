@@ -92,6 +92,64 @@ async fn assert_prompt_case(case: PromptCase) {
 }
 
 #[tokio::test]
+async fn a_live_segment_edit_changes_only_its_body_in_the_next_provider_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let model = Model {
+        id: "m".into(),
+        name: "m".into(),
+        api: "test".into(),
+        provider: "test".into(),
+        base_url: "http://localhost".into(),
+        reasoning: false,
+        cost: pa_agent::types::UsageCost::default(),
+        context_window: 100_000,
+        max_tokens: 100,
+        max_tokens_explicit: false,
+    };
+    let provider = Arc::new(ScriptedProvider::new(model.clone()));
+    provider.push_text_turn("scripted response");
+    let engine = create_session(SessionEngineConfig {
+        cwd: tmp.path().to_path_buf(),
+        agent_dir: tmp.path().join("agent"),
+        model: Some(model),
+        stream_fn: Some(provider.stream_fn()),
+        prewarm_ipython_kernel: Some(false),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let name = "releasing_tool_outputs".to_owned();
+    let before = engine
+        .session
+        .prompt_segments(None)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.name == name)
+        .unwrap()
+        .body;
+    let body = "Keep the output for this session.".to_owned();
+    let expected = engine.system_prompt.replacen(&before, &body, 1);
+    engine
+        .session
+        .prompt_segments(Some(pa_types::daemon::PromptSegmentEdit::Replace {
+            name,
+            body,
+        }))
+        .await
+        .unwrap();
+    engine
+        .prompt("hello", PromptOptions::default())
+        .await
+        .unwrap();
+    engine.session.agent().wait_for_idle().await;
+    assert_eq!(
+        provider.calls()[0].system_prompt.as_deref(),
+        Some(expected.as_str())
+    );
+}
+
+#[tokio::test]
 async fn append_system_global_reaches_provider() {
     assert_prompt_case(PromptCase {
         custom_system: true,

@@ -508,7 +508,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
         kernel_shell_path,
         kernel_command_prefix,
         websearch_env,
-        session_artifact_dir,
+        session_artifact_dir.clone(),
         cell_timeout_ms,
         on_restore,
         config.on_background_work_settled.clone(),
@@ -578,10 +578,11 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
                 &model_prompts.errors,
             ));
     }
-    let system_prompt = crate::prompts::system_prompt::build_system_prompt(
+    let prompt_breakdown = crate::prompts::system_prompt::system_prompt_breakdown(
         &crate::prompts::system_prompt::BuildSystemPromptOptions {
             custom_prompt: resources.system_prompt.clone(),
             model_prompt_extras: model_prompts.extras.as_deref(),
+            model_prompt_parts: &model_prompts.parts,
             vision_capable: prompt_vision_capable,
             cwd: cwd.display().to_string(),
             messages_path: conversation_log.clone(),
@@ -609,6 +610,13 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             ..Default::default()
         },
     );
+
+    let session_prompt = crate::prompts::session_prompt::SessionPrompt::open(
+        prompt_breakdown,
+        session_artifact_dir.as_deref(),
+    )
+    .await?;
+    let system_prompt = session_prompt.effective();
 
     // Captured before the digest context moves the local harness dir and
     // the loop wiring moves the session model: the factory host bridge's
@@ -815,6 +823,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
             .then_some(digest_context.clone()),
     )
     .await?;
+    session.prompt_segments = Some(tokio::sync::Mutex::new(session_prompt));
     // Receipts that landed after their cell's tool result persist as
     // custom entries; the build patches them onto the rebuilt tool
     // results (TS `_restoreLateIpythonSentAgentMessages`).

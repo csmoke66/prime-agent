@@ -122,6 +122,7 @@ fn assemble_breakdown(
             generic_mcp_servers: generic_servers,
             rlm_depth: Some(0),
             model_prompt_extras: model_prompts.extras.as_deref(),
+            model_prompt_parts: &model_prompts.parts,
             ..Default::default()
         },
     );
@@ -172,6 +173,9 @@ fn print_json(breakdown: &pa_core::prompts::SystemPromptBreakdown) {
                 "kind": if segment.kind == pa_core::prompts::SegmentKind::Static { "static" } else { "dynamic" },
                 "source": segment.source,
                 "chars": segment.text.chars().count(),
+                "parts": segment.named_parts().map(|(name, body, after)| {
+                    serde_json::json!({ "name": name, "body": body, "after": after })
+                }).collect::<Vec<_>>(),
             })
         })
         .collect::<Vec<_>>();

@@ -457,6 +457,21 @@ pub trait SessionEngine: Send + Sync {
         Box::pin(async { Ok(String::new()) })
     }
 
+    /// List or edit the live session’s named system-prompt segments.
+    #[allow(clippy::type_complexity)] // Dyn engine boundary boxes the future.
+    fn prompt_segments(
+        &self,
+        _edit: Option<pa_types::daemon::PromptSegmentEdit>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<pa_types::daemon::SessionPromptSegment>>>
+                + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async { anyhow::bail!("This session has no editable system prompt") })
+    }
+
     /// One tool definition by name, when the engine exposes one.
     fn tool_definition(
         &self,

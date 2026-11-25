@@ -149,6 +149,7 @@ pub const KNOWN_COMMAND_TYPES: &[&str] = &[
     "get_user_messages_for_forking",
     "get_last_assistant_text",
     "get_system_prompt",
+    "session_prompt_segments",
     "get_tool_definition",
     "set_session_entry_label",
     "prepare_update_restart",
@@ -880,6 +881,9 @@ pub fn command_active_session_id(command: &DaemonCommand) -> Option<&str> {
         | DaemonCommand::GetLastAssistantText {
             active_session_id, ..
         }
+        | DaemonCommand::SessionPromptSegments {
+            active_session_id, ..
+        }
         | DaemonCommand::GetSystemPrompt {
             active_session_id, ..
         }
@@ -1071,6 +1075,7 @@ pub fn command_type_name(command: &DaemonCommand) -> &'static str {
         DaemonCommand::GetUserMessagesForForking { .. } => "get_user_messages_for_forking",
         DaemonCommand::GetLastAssistantText { .. } => "get_last_assistant_text",
         DaemonCommand::GetSystemPrompt { .. } => "get_system_prompt",
+        DaemonCommand::SessionPromptSegments { .. } => "session_prompt_segments",
         DaemonCommand::GetToolDefinition { .. } => "get_tool_definition",
         DaemonCommand::SetSessionEntryLabel { .. } => "set_session_entry_label",
         DaemonCommand::MarkAnthropicWarningShown { .. } => "mark_anthropic_warning_shown",

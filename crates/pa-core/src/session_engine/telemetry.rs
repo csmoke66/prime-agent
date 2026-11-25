@@ -498,6 +498,13 @@ pub async fn install_session_telemetry(
 }
 
 impl SessionTelemetry {
+    pub(crate) fn note_prompt_segment_edit(&self) {
+        self.client.track(
+            "session prompt segments changed",
+            pa_telemetry::Properties::new(),
+        );
+    }
+
     /// A compaction completed (feed from the compaction seams; TS
     /// `compaction_end` handling). Counts toward the active run when one
     /// exists, exactly like the TS subscriber — compactions outside a run

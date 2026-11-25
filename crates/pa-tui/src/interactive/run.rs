@@ -1484,12 +1484,19 @@ async fn run_interactive_surface(
                 }
             }
             update = async {
-                match view.settings_menu.as_mut().and_then(|menu| menu.global_model_job.as_mut()) {
-                    Some(job) => job.await,
-                    None => std::future::pending().await,
+                let Some(menu) = view.settings_menu.as_mut() else { return std::future::pending().await; };
+                if let Some(job) = menu.global_model_job.as_mut() {
+                    Ok(job.await)
+                } else if let Some(job) = menu.prompt_segment_job.as_mut() {
+                    Err(job.await)
+                } else {
+                    std::future::pending().await
                 }
             } => {
-                session.apply_global_model_update(update, &mut view);
+                match update {
+                    Ok(update) => session.apply_global_model_update(update, &mut view),
+                    Err(update) => session.apply_prompt_segment_update(update, &mut view),
+                }
             }
             update = session.harness_work.next() => {
                 session.apply_harness_update(update, &mut view);

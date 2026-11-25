@@ -75,6 +75,7 @@ const TAB_LAYOUT: &[TabLayout] = &[
             "idle-eviction-minutes",
             "tree-filter-mode",
             "harness-refinements",
+            "system-prompt-segments",
             "web-search-provider",
             "child-models",
             "child-effort",

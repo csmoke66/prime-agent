@@ -4,6 +4,7 @@
 //! data and change actions; this module navigation and rendering.
 
 mod model_policy;
+mod prompt_segments;
 mod tabs;
 
 use crate::client_settings::{ChildModelChoices, ChildPolicy, GlobalModelChoices};
@@ -13,6 +14,8 @@ use crate::theme::{Theme, ThemeColor};
 use crate::width::wrap_text;
 use model_policy::{policy_label, ModelPolicyPicker};
 use pa_types::ai::ModelThinkingLevel;
+use pa_types::daemon::{PromptSegmentEdit, SessionPromptSegment};
+use prompt_segments::PromptSegmentsMenu;
 
 /// The reasoning-level descriptions the TS thinking submenu lists.
 fn thinking_description(level: &str) -> &'static str {
@@ -113,6 +116,8 @@ pub enum SettingsMenuAction {
     /// Open the session model picker.
     OpenPrimaryModel,
     OpenGlobalModels,
+    OpenPromptSegments,
+    ChangePromptSegment(PromptSegmentEdit),
     SaveGlobalModels(Vec<String>),
     ShowTelemetryStatus,
     /// Apply a depth to this session, optionally also saving the global default.
@@ -171,6 +176,9 @@ pub struct SettingsMenu {
     depth_edit: Option<DepthEdit>,
     autonomous_edit: Option<SearchInput>,
     model_policy: Option<ModelPolicyPicker>,
+    prompt_segments: Option<PromptSegmentsMenu>,
+    pub(crate) prompt_segment_job:
+        Option<tokio::task::JoinHandle<anyhow::Result<Vec<SessionPromptSegment>>>>,
     pub(crate) global_model_job: Option<tokio::task::JoinHandle<GlobalModelUpdate>>,
     pub(crate) child_session_file: Option<String>,
     max_visible: usize,
@@ -326,6 +334,14 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             description: "Register skills as /skill:name commands",
             current: current.skill_commands.to_string(),
             values: Some(bool_value()),
+            submenu: None,
+        },
+        SettingsMenuRow {
+            id: "system-prompt-segments",
+            label: "System prompt segments",
+            description: "Edit named system-prompt segments for this session only",
+            current: "configure".to_owned(),
+            values: None,
             submenu: None,
         },
         SettingsMenuRow {
@@ -627,6 +643,8 @@ impl SettingsMenu {
             depth_edit: None,
             autonomous_edit: None,
             model_policy: None,
+            prompt_segments: None,
+            prompt_segment_job: None,
             global_model_job: None,
             child_session_file: None,
             max_visible: 10,
@@ -652,6 +670,14 @@ impl SettingsMenu {
             row.current = policy_label(&choices.policy);
         }
         self.model_policy = Some(ModelPolicyPicker::child(choices));
+    }
+
+    pub(crate) fn apply_prompt_segments(&mut self, rows: Vec<SessionPromptSegment>) {
+        if let Some(editor) = self.prompt_segments.as_mut() {
+            editor.saved(rows);
+        } else {
+            self.prompt_segments = Some(PromptSegmentsMenu::new(rows));
+        }
     }
 
     pub(crate) fn open_global_models(&mut self, choices: GlobalModelChoices) {
@@ -695,6 +721,20 @@ impl SettingsMenu {
 
     /// One key id: the submenu, when open, takes it first.
     pub fn handle_key(&mut self, key: &str, kb: &KeybindingsManager) -> SettingsMenuAction {
+        if self.prompt_segment_job.is_some() {
+            if self.prompt_segments.is_none() && kb.matches(key, "tui.select.cancel") {
+                self.prompt_segment_job = None;
+                return SettingsMenuAction::SubmenuClosed;
+            }
+            return SettingsMenuAction::None;
+        }
+        if let Some(editor) = self.prompt_segments.as_mut() {
+            let action = editor.handle_key(key, kb);
+            if action == SettingsMenuAction::SubmenuClosed {
+                self.prompt_segments = None;
+            }
+            return action;
+        }
         if self.global_model_job.is_some() {
             // A load can be discarded; once Enter confirms a save, wait for its result.
             if self.model_policy.is_none()
@@ -845,6 +885,13 @@ impl SettingsMenu {
     /// (Space stays the row activation), and the filter re-runs when the
     /// query changed.
     pub fn paste(&mut self, text: &str) {
+        if self.prompt_segment_job.is_some() {
+            return;
+        }
+        if let Some(editor) = self.prompt_segments.as_mut() {
+            editor.paste(text);
+            return;
+        }
         if self.global_model_job.is_some() {
             return;
         }
@@ -896,6 +943,7 @@ impl SettingsMenu {
                 self.autonomous_edit = Some(SearchInput::new());
                 return SettingsMenuAction::None;
             }
+            "system-prompt-segments" => return SettingsMenuAction::OpenPromptSegments,
             "primary-model" if key == "space" => return SettingsMenuAction::OpenGlobalModels,
             "primary-model" => return SettingsMenuAction::OpenPrimaryModel,
             "fast-mode" if row.current != "Unavailable" => {
@@ -1146,6 +1194,20 @@ impl SettingsMenu {
     /// the whole list.
     #[must_use]
     pub fn render(&self, theme: &Theme, width: usize, kb: &KeybindingsManager) -> Vec<crate::Line> {
+        if self.prompt_segment_job.is_some() {
+            return vec![hint_row(
+                theme,
+                width,
+                if self.prompt_segments.is_some() {
+                    "Saving prompt segment…"
+                } else {
+                    "Loading prompt segments…"
+                },
+            )];
+        }
+        if let Some(editor) = self.prompt_segments.as_ref() {
+            return editor.render(theme, width);
+        }
         if self.global_model_job.is_some() {
             let status = if self.model_policy.is_some() {
                 "Saving global model settings…"

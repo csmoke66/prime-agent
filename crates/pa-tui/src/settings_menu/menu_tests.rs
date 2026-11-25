@@ -755,6 +755,36 @@ fn tool_result_reminder_is_advisory_and_cycles_zero_with_five_point_steps() {
 }
 
 #[test]
+fn system_prompt_settings_emit_named_multiline_edits() {
+    use pa_types::daemon::PromptSegmentState;
+
+    let mut menu = menu();
+    let kb = kb();
+    menu.handle_key("5", &kb);
+    menu.paste("system prompt");
+    assert_eq!(
+        menu.handle_key("enter", &kb),
+        SettingsMenuAction::OpenPromptSegments
+    );
+    menu.apply_prompt_segments(vec![SessionPromptSegment {
+        name: "releasing_tool_outputs".into(),
+        body: "Keep this".into(),
+        state: PromptSegmentState::Default,
+    }]);
+    menu.paste("releasing_tool_outputs");
+    menu.handle_key("enter", &kb);
+    menu.handle_key("enter", &kb);
+    menu.paste("Second line");
+    assert_eq!(
+        menu.handle_key("ctrl+s", &kb),
+        SettingsMenuAction::ChangePromptSegment(PromptSegmentEdit::Replace {
+            name: "releasing_tool_outputs".into(),
+            body: "Keep this\nSecond line".into(),
+        })
+    );
+}
+
+#[test]
 fn primary_model_space_edits_the_global_allowlist_without_switching_the_session_model() {
     use crate::client_settings::ChildModelChoice;
 

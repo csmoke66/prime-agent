@@ -467,6 +467,12 @@ impl SessionUi {
                 self.open_model_picker(view, "").await?;
                 self.track_menu_opened("model-picker", "settings");
             }
+            crate::settings_menu::SettingsMenuAction::OpenPromptSegments => {
+                self.request_prompt_segments(None, view);
+            }
+            crate::settings_menu::SettingsMenuAction::ChangePromptSegment(edit) => {
+                self.request_prompt_segments(Some(edit), view);
+            }
             crate::settings_menu::SettingsMenuAction::OpenGlobalModels => {
                 let (Some(settings), Some(menu)) =
                     (self.client_settings.clone(), view.settings_menu.as_mut())
@@ -570,6 +576,51 @@ impl SessionUi {
         }
         self.dirty = true;
         Ok(())
+    }
+
+    fn request_prompt_segments(
+        &self,
+        edit: Option<pa_types::daemon::PromptSegmentEdit>,
+        view: &mut AgentView,
+    ) {
+        let Some(menu) = view.settings_menu.as_mut() else {
+            return;
+        };
+        let client = self.client.clone();
+        let command = DaemonCommand::SessionPromptSegments {
+            id: None,
+            active_session_id: self.active_session_id.clone(),
+            edit,
+            rest: Map::default(),
+        };
+        menu.prompt_segment_job = Some(tokio::spawn(async move {
+            let value = tokio::time::timeout(
+                Duration::from_millis(UI_REQUEST_TIMEOUT_MS),
+                client.request_ok(command),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("Timed out waiting for prompt segments"))??;
+            Ok(serde_json::from_value(value)?)
+        }));
+    }
+
+    pub(crate) fn apply_prompt_segment_update(
+        &mut self,
+        update: Result<
+            anyhow::Result<Vec<pa_types::daemon::SessionPromptSegment>>,
+            tokio::task::JoinError,
+        >,
+        view: &mut AgentView,
+    ) {
+        let Some(menu) = view.settings_menu.as_mut() else {
+            return;
+        };
+        menu.prompt_segment_job = None;
+        match update.map_err(anyhow::Error::from).and_then(|rows| rows) {
+            Ok(rows) => menu.apply_prompt_segments(rows),
+            Err(error) => self.error_row(&format!("System prompt segments: {error:#}"), view),
+        }
+        self.dirty = true;
     }
 
     pub(crate) fn apply_global_model_update(

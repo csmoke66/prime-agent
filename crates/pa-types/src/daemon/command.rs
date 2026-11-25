@@ -8,6 +8,33 @@ use super::{
     DaemonResumeCursor, Deserialize, JsonMap, Serialize, Value,
 };
 
+/// Effective state of one named system-prompt segment in a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptSegmentState {
+    Default,
+    Modified,
+    Removed,
+    Added,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionPromptSegment {
+    pub name: String,
+    pub body: String,
+    pub state: PromptSegmentState,
+}
+
+/// Change one named segment without replacing edits from another client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PromptSegmentEdit {
+    Add { name: String, body: String },
+    Replace { name: String, body: String },
+    Remove { name: String },
+    Reset { name: String },
+}
+
 /// One page of the display transcript (the branch in order, each compaction as its
 /// summary row), bounded by entry-id cursors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1006,6 +1033,15 @@ pub enum DaemonCommand {
         id: Option<String>,
         active_session_id: String,
         mode: Value,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
+    SessionPromptSegments {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        edit: Option<PromptSegmentEdit>,
         #[serde(flatten)]
         rest: JsonMap,
     },

@@ -1254,6 +1254,13 @@ const CHILD_SETTINGS_CHANGED: EventRule = EventRule {
     )],
 };
 
+/// Adoption of the prompt editor; never records names or bodies.
+const SESSION_PROMPT_SEGMENTS_CHANGED: EventRule = EventRule {
+    name: "session prompt segments changed",
+    since: 2,
+    properties: &[],
+};
+
 /// Adoption of the global model allowlist editor; no selectors.
 const GLOBAL_MODEL_SETTINGS_CHANGED: EventRule = EventRule {
     name: "global model settings changed",
@@ -1278,6 +1285,7 @@ pub fn catalog() -> Vec<&'static EventRule> {
         &HARNESS_REFINEMENTS_CHANGED,
         &CHILD_SETTINGS_CHANGED,
         &GLOBAL_MODEL_SETTINGS_CHANGED,
+        &SESSION_PROMPT_SEGMENTS_CHANGED,
         &WEB_SEARCH_PROVIDER_CHANGED,
         &AGENT_STARTED,
         &AGENT_RUN_COMPLETED,

@@ -1,4 +1,4 @@
-//! Per-model system-prompt additions: a TOML rule map from model selectors to markdown files.
+//! Per-model system-prompt additions: shipped JSON rules and the user TOML rule map.
 //! Shipped rules run before the user's `<agent_dir>/model-prompts.toml` rules; any problem in
 //! either layer disables all additions for the session and is reported, never blocking.
 
@@ -9,25 +9,27 @@ use std::path::{Component, Path};
 use pa_types::session::CustomMessage;
 use serde::Deserialize;
 
-pub const MODEL_PROMPTS_TOML: &str = include_str!("layers/model_prompts.toml");
-
-const MODEL_PROMPT_FILES: &[(&str, &str)] = &[(
-    "bash-over-subprocess.md",
-    include_str!("layers/bash-over-subprocess.md"),
-)];
+pub const MODEL_PROMPTS_JSON: &str = include_str!("layers/model_prompts.json");
 
 const USER_MODEL_PROMPTS_TOML: &str = "model-prompts.toml";
 
 /// `display: true` rows of this type are dropped from LLM context by `messages::convert_to_llm`.
 pub const MODEL_PROMPT_ERROR_CUSTOM_TYPE: &str = "model_prompt_error";
 
-const SHIPPED_SOURCE: &str = "shipped model_prompts.toml";
+const SHIPPED_SOURCE: &str = "shipped model_prompts.json";
 
 /// `extras` is `None` whenever `errors` is non-empty.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ModelPromptResolution {
     pub extras: Option<String>,
+    pub parts: Vec<ModelPromptPart>,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ModelPromptPart {
+    pub name: String,
+    pub body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,10 +61,13 @@ fn compile_pattern(pattern: &str) -> Result<globset::GlobMatcher, String> {
 }
 
 fn parse_layer(toml_text: &str, source: &str) -> (Vec<ParsedRule>, Vec<String>) {
-    let doc = match toml::from_str::<ModelPromptsDoc>(toml_text) {
-        Ok(doc) => doc,
-        Err(error) => return (Vec::new(), vec![format!("{source}: {error}")]),
-    };
+    match toml::from_str::<ModelPromptsDoc>(toml_text) {
+        Ok(doc) => compile_layer(doc, source),
+        Err(error) => (Vec::new(), vec![format!("{source}: {error}")]),
+    }
+}
+
+fn compile_layer(doc: ModelPromptsDoc, source: &str) -> (Vec<ParsedRule>, Vec<String>) {
     let mut rules = Vec::new();
     let mut errors = Vec::new();
     for rule in doc.rule {
@@ -179,7 +184,7 @@ fn resolve_layer_files(
 
 fn resolve_model_prompts(
     selector: Option<&str>,
-    shipped_toml: &str,
+    shipped_json: &str,
     shipped_files: &[(&str, &str)],
     agent_dir: &Path,
 ) -> ModelPromptResolution {
@@ -189,7 +194,14 @@ fn resolve_model_prompts(
     let segments = selector.map(selector_segments);
     let mut errors = Vec::new();
 
-    let (shipped_rules, mut layer_errors) = parse_layer(shipped_toml, SHIPPED_SOURCE);
+    let (shipped_rules, mut layer_errors) = if shipped_json.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        match serde_json::from_str(shipped_json) {
+            Ok(doc) => compile_layer(doc, SHIPPED_SOURCE),
+            Err(error) => (Vec::new(), vec![format!("{SHIPPED_SOURCE}: {error}")]),
+        }
+    };
     errors.append(&mut layer_errors);
     let user_path = agent_dir.join(USER_MODEL_PROMPTS_TOML);
     let user_layer = user_path.display().to_string();
@@ -222,6 +234,7 @@ fn resolve_model_prompts(
     if !errors.is_empty() {
         return ModelPromptResolution {
             extras: None,
+            parts: Vec::new(),
             errors,
         };
     }
@@ -239,18 +252,48 @@ fn resolve_model_prompts(
             }
         }
     }
-    let parts = included
-        .iter()
-        .map(|name| contents[*name].trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>();
-    let extras = (!parts.is_empty()).then(|| parts.join("\n\n"));
-    ModelPromptResolution { extras, errors }
+    let parts: Vec<_> = included
+        .into_iter()
+        .filter_map(|name| {
+            let body = contents[name].trim();
+            if body.is_empty() {
+                return None;
+            }
+            let name = if name == "bash-over-subprocess.md" {
+                super::layers::BASH_OVER_SUBPROCESS[0].name.clone()
+            } else {
+                format!("model_prompt:{name}")
+            };
+            Some(ModelPromptPart {
+                name,
+                body: body.to_owned(),
+            })
+        })
+        .collect();
+    let extras = (!parts.is_empty()).then(|| {
+        parts
+            .iter()
+            .map(|p| p.body.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    });
+    ModelPromptResolution {
+        extras,
+        parts,
+        errors,
+    }
 }
 
 #[must_use]
 pub fn load_model_prompts(selector: Option<&str>, agent_dir: &Path) -> ModelPromptResolution {
-    resolve_model_prompts(selector, MODEL_PROMPTS_TOML, MODEL_PROMPT_FILES, agent_dir)
+    let shipped = super::layers::text(&super::layers::BASH_OVER_SUBPROCESS);
+    // The shipped JSON keeps the logical filename stable for existing user overrides.
+    resolve_model_prompts(
+        selector,
+        MODEL_PROMPTS_JSON,
+        &[("bash-over-subprocess.md", &shipped)],
+        agent_dir,
+    )
 }
 
 #[must_use]
@@ -380,11 +423,11 @@ files = ["shared.md", "user-only.md"]
         );
         write_file(dir.path(), "shared.md", "USER");
         write_file(dir.path(), "user-only.md", "USER-ONLY");
-        let shipped_toml = "[[rule]]\nmatch = [\"glm-5.3\"]\nfiles = [\"shared.md\"]\n";
+        let shipped_json = r#"{"rule":[{"match":["glm-5.3"],"files":["shared.md"]}]}"#;
         let shipped_files = [("shared.md", "SHIPPED")];
         let resolution = resolve_model_prompts(
             Some("z-ai/glm-5.3"),
-            shipped_toml,
+            shipped_json,
             &shipped_files,
             dir.path(),
         );
@@ -394,7 +437,7 @@ files = ["shared.md", "user-only.md"]
         let clean = tempfile::tempdir().unwrap();
         let resolution = resolve_model_prompts(
             Some("z-ai/glm-5.3"),
-            shipped_toml,
+            shipped_json,
             &shipped_files,
             clean.path(),
         );
@@ -440,7 +483,7 @@ files = ["shared.md", "user-only.md"]
         let dir = user_layer("[[rule]]\nmatch = [\"claude-*\"]\nfiles = [\"missing-user.md\"]\n");
         let resolution = resolve_model_prompts(
             Some("z-ai/glm-5.3"),
-            "[[rule]]\nmatch = [\"glm-5.3\"]\nfiles = [\"missing-shipped.md\"]\n",
+            r#"{"rule":[{"match":["glm-5.3"],"files":["missing-shipped.md"]}]}"#,
             &[],
             dir.path(),
         );
@@ -476,12 +519,8 @@ files = ["shared.md", "user-only.md"]
         let resolution =
             load_model_prompts(Some("prime-inference/internal/glm-5.3-fast"), empty.path());
         assert!(resolution.errors.is_empty(), "{:#?}", resolution.errors);
-        let expected = MODEL_PROMPT_FILES
-            .iter()
-            .find(|(name, _)| *name == "bash-over-subprocess.md")
-            .map(|(_, content)| (*content).trim())
-            .expect("the shipped file table names bash-over-subprocess.md");
-        assert_eq!(resolution.extras.as_deref(), Some(expected));
+        let expected = super::super::layers::text(&super::super::layers::BASH_OVER_SUBPROCESS);
+        assert_eq!(resolution.extras, Some(expected));
 
         let other = load_model_prompts(Some("anthropic/claude-sonnet-4"), empty.path());
         assert_eq!(other, ModelPromptResolution::default());
@@ -535,6 +574,10 @@ files = ["shared.md", "user-only.md"]
             resolution,
             ModelPromptResolution {
                 extras: Some("A".to_string()),
+                parts: vec![ModelPromptPart {
+                    name: "model_prompt:a.md".into(),
+                    body: "A".into()
+                }],
                 errors: Vec::new(),
             }
         );
@@ -565,6 +608,10 @@ files = ["shared.md", "user-only.md"]
                     resolution,
                     ModelPromptResolution {
                         extras: Some("INSIDE".to_string()),
+                        parts: vec![ModelPromptPart {
+                            name: "model_prompt:safe.md".into(),
+                            body: "INSIDE".into()
+                        }],
                         errors: Vec::new(),
                     }
                 );

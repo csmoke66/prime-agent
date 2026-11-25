@@ -1254,6 +1254,13 @@ const CHILD_SETTINGS_CHANGED: EventRule = EventRule {
     )],
 };
 
+/// Adoption of the global model allowlist editor; no selectors.
+const GLOBAL_MODEL_SETTINGS_CHANGED: EventRule = EventRule {
+    name: "global model settings changed",
+    since: 2,
+    properties: &[],
+};
+
 /// Adoption of the web search provider setting: the chosen provider's id only.
 const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
     name: "web search provider changed",
@@ -1270,6 +1277,7 @@ pub fn catalog() -> Vec<&'static EventRule> {
     let mut all: Vec<&'static EventRule> = vec![
         &HARNESS_REFINEMENTS_CHANGED,
         &CHILD_SETTINGS_CHANGED,
+        &GLOBAL_MODEL_SETTINGS_CHANGED,
         &WEB_SEARCH_PROVIDER_CHANGED,
         &AGENT_STARTED,
         &AGENT_RUN_COMPLETED,

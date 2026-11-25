@@ -23,7 +23,7 @@ pub struct ChildPolicy {
     pub effort: Option<ModelThinkingLevel>,
 }
 
-/// One authenticated child-model choice and its membership in both policies.
+/// One model choice and its membership in the current and inherited policies.
 #[derive(Debug)]
 pub struct ChildModelChoice {
     pub selector: String,
@@ -38,7 +38,24 @@ pub struct ChildModelChoices {
     pub models: Vec<ChildModelChoice>,
 }
 
+/// Global allowlist state and checkmarks, without a session override.
+#[derive(Debug)]
+pub struct GlobalModelChoices {
+    pub unrestricted: bool,
+    pub models: Vec<ChildModelChoice>,
+}
+
 pub trait ClientSettings: Send + Sync {
+    /// Load model choices without filtering out models blocked by the global policy.
+    fn global_model_choices(&self) -> Result<GlobalModelChoices> {
+        anyhow::bail!("Global model settings are unavailable")
+    }
+
+    /// Save the global model list; an empty list allows all models.
+    fn set_global_models(&self, _models: Vec<String>) -> Result<()> {
+        anyhow::bail!("Global model settings are unavailable")
+    }
+
     /// Read the child policy shared by this attached session's root family.
     fn child_policy(&self, _session_file: &str) -> Result<ChildPolicy> {
         anyhow::bail!("Session subagent settings are unavailable")

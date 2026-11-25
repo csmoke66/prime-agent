@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 
 use super::manager::SettingsManager;
 use super::types::{ProviderBlockDelivery, WebSearchProvider};
+use super::SettingsScope;
 
 impl SettingsManager {
     /// Global preference controlling refinement creation and context loading (default on).
@@ -494,6 +495,23 @@ impl SettingsManager {
             .get_or_insert_with(Default::default)
             .enabled = Some(enabled);
         self.save_global_scope(&["factory.enabled"])
+    }
+
+    /// Save the global `allowedModels` list. Empty means unrestricted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the global settings scope cannot be saved.
+    pub fn set_allowed_models(&mut self, models: Vec<String>) -> Result<()> {
+        if let Some(error) = self
+            .errors()
+            .iter()
+            .find(|error| error.scope == SettingsScope::Global)
+        {
+            anyhow::bail!("{}", error.message);
+        }
+        self.global_mut().allowed_models = Some(models);
+        self.save_global_scope(&["allowedModels"])
     }
 
     /// `enabledModels` (TS `getEnabledModels`/`setEnabledModels`): the

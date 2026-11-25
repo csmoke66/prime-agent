@@ -1,0 +1,1 @@
+- Edit the global model allowlist with Space on Primary model in the Models tab of `/settings`.

@@ -1483,6 +1483,14 @@ async fn run_interactive_surface(
                     session.apply_model_catalog(update, &mut view);
                 }
             }
+            update = async {
+                match view.settings_menu.as_mut().and_then(|menu| menu.global_model_job.as_mut()) {
+                    Some(job) => job.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                session.apply_global_model_update(update, &mut view);
+            }
             update = session.harness_work.next() => {
                 session.apply_harness_update(update, &mut view);
             }

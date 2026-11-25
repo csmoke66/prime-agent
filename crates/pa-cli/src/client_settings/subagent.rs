@@ -8,7 +8,7 @@ use pa_core::session::manager::read_session_header;
 use pa_core::session::subagent_policy::SessionSubagentPolicy;
 use pa_daemon::model_allowlist::{self, DaemonAllowlist};
 use pa_tui::client_settings::{
-    ChildModelChoice, ChildModelChoices, ChildPolicy, InheritedChildModels,
+    ChildModelChoice, ChildModelChoices, ChildPolicy, GlobalModelChoices, InheritedChildModels,
 };
 
 pub(super) fn owner_log(file: &Path) -> Result<Cow<'_, Path>> {
@@ -49,31 +49,85 @@ impl RootChildPolicy {
         let override_policy = self.policy.allowed_models.map(|models| {
             DaemonAllowlist::session_override(models, self.policy.exact_model_selectors)
         });
-        // The same authenticated snapshot as `rlm.find_models`, with no current policy filter:
-        // an override may replace the inherited list rather than only narrowing it.
-        let registry =
-            ModelRegistry::create(AuthStorage::create(agent_dir), agent_dir.join("models.json"));
-        let mut models: Vec<_> = registry
-            .get_rlm_searchable_models()
-            .into_iter()
-            .map(|model| {
-                let selector = format!("{}/{}", model.provider, model.id);
-                let inherited = self.global.allows(&selector);
-                let allowed = override_policy
-                    .as_ref()
-                    .map_or(inherited, |policy| policy.allows(&selector));
-                ChildModelChoice {
-                    selector,
-                    name: model.name.clone(),
-                    allowed,
-                    inherited,
-                }
-            })
-            .collect();
-        models.sort_unstable_by(|a, b| a.selector.cmp(&b.selector));
-        models.dedup_by(|a, b| a.selector == b.selector);
+        let registry = model_registry(agent_dir);
+        // Do not filter by the current policy: an override may replace it rather than narrow it.
+        let models = model_choices(
+            registry.get_rlm_searchable_models(),
+            &self.global,
+            override_policy.as_ref(),
+        );
         ChildModelChoices { policy, models }
     }
+}
+
+pub(super) fn global_model_choices(cwd: &Path, agent_dir: &Path) -> Result<GlobalModelChoices> {
+    let policy = model_allowlist::load(cwd, agent_dir);
+    if let DaemonAllowlist::Unreadable(error) = &policy {
+        anyhow::bail!("{error}");
+    }
+    let registry = model_registry(agent_dir);
+    if let Some(error) = registry.get_error() {
+        anyhow::bail!("{error}");
+    }
+    let available = registry.get_available();
+    let catalog = registry.get_all().iter().filter(|model| {
+        !pa_core::models::is_private_prime_inference_model(model) || available.contains(model)
+    });
+    let mut models = model_choices(catalog, &policy, None);
+    if let DaemonAllowlist::Allowed(rules) = &policy {
+        // Exact selectors can be temporarily absent from the catalog (e.g. a custom provider).
+        for rule in rules {
+            if !rule.contains(['*', '?', '['])
+                && rule.contains('/')
+                && !models
+                    .iter()
+                    .any(|model| model.selector.eq_ignore_ascii_case(rule))
+            {
+                models.push(ChildModelChoice {
+                    selector: rule.clone(),
+                    name: "Not in catalog".to_owned(),
+                    allowed: true,
+                    inherited: true,
+                });
+            }
+        }
+        models.sort_unstable_by(|a, b| a.selector.cmp(&b.selector));
+    }
+    Ok(GlobalModelChoices {
+        unrestricted: policy == DaemonAllowlist::Unrestricted,
+        models,
+    })
+}
+
+fn model_registry(agent_dir: &Path) -> ModelRegistry {
+    ModelRegistry::create(
+        AuthStorage::create(agent_dir),
+        agent_dir.join("models.json"),
+    )
+}
+
+fn model_choices<'a>(
+    catalog: impl IntoIterator<Item = &'a pa_types::ai::Model>,
+    global: &DaemonAllowlist,
+    override_policy: Option<&DaemonAllowlist>,
+) -> Vec<ChildModelChoice> {
+    let mut models: Vec<_> = catalog
+        .into_iter()
+        .map(|model| {
+            let selector = format!("{}/{}", model.provider, model.id);
+            let inherited = global.allows(&selector);
+            let allowed = override_policy.map_or(inherited, |policy| policy.allows(&selector));
+            ChildModelChoice {
+                selector,
+                name: model.name.clone(),
+                allowed,
+                inherited,
+            }
+        })
+        .collect();
+    models.sort_unstable_by(|a, b| a.selector.cmp(&b.selector));
+    models.dedup_by(|a, b| a.selector == b.selector);
+    models
 }
 
 #[cfg(test)]
@@ -82,6 +136,60 @@ mod tests {
     use pa_tui::client_settings::ClientSettings;
     use pa_types::ai::ModelThinkingLevel;
     use serde_json::json;
+
+    #[test]
+    fn global_model_editor_lists_blocked_models_and_persists_only_the_global_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"allowedModels":["fixture/alpha", "missing/old"], "unrelated":42}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("models.json"),
+            json!({"providers": {"fixture": {
+                "baseUrl": "http://localhost:9", "api": "openai-completions", "apiKey": "test-key",
+                "models": [
+                    {"id": "alpha", "name": "Alpha", "contextWindow": 1000, "maxTokens": 100},
+                    {"id": "beta", "name": "Beta", "contextWindow": 1000, "maxTokens": 100}
+                ]
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let settings = CliClientSettings::new(dir.to_owned(), dir.to_owned());
+        let choices = settings.global_model_choices().unwrap();
+        let checkmarks: Vec<_> = choices
+            .models
+            .iter()
+            .filter(|entry| {
+                entry.selector.starts_with("fixture/") || entry.selector == "missing/old"
+            })
+            .map(|entry| (entry.selector.as_str(), entry.allowed))
+            .collect();
+        assert_eq!(
+            checkmarks,
+            [
+                ("fixture/alpha", true),
+                ("fixture/beta", false),
+                ("missing/old", true)
+            ]
+        );
+
+        settings
+            .set_global_models(vec!["fixture/beta".into(), "missing/old".into()])
+            .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(
+            saved,
+            json!({"allowedModels": ["fixture/beta", "missing/old"], "unrelated": 42})
+        );
+        let policy = pa_daemon::model_allowlist::load(dir, dir);
+        assert!(!policy.allows("fixture/alpha"));
+        assert!(policy.allows("fixture/beta"));
+    }
 
     #[test]
     fn child_settings_resolve_catalog_patterns_and_persist_only_on_the_family_root() {

@@ -755,6 +755,41 @@ fn tool_result_reminder_is_advisory_and_cycles_zero_with_five_point_steps() {
 }
 
 #[test]
+fn primary_model_space_edits_the_global_allowlist_without_switching_the_session_model() {
+    use crate::client_settings::ChildModelChoice;
+
+    let mut menu = menu();
+    let kb = kb();
+    menu.handle_key("2", &kb);
+    menu.paste("primary model");
+    assert_eq!(
+        menu.handle_key("enter", &kb),
+        SettingsMenuAction::OpenPrimaryModel
+    );
+    assert_eq!(
+        menu.handle_key("space", &kb),
+        SettingsMenuAction::OpenGlobalModels
+    );
+
+    let model = |name: &str, allowed| ChildModelChoice {
+        selector: format!("fixture/{name}"),
+        name: name.to_owned(),
+        allowed,
+        inherited: allowed,
+    };
+    menu.open_global_models(GlobalModelChoices {
+        unrestricted: false,
+        models: vec![model("alpha", true), model("beta", false)],
+    });
+    menu.paste("beta");
+    menu.handle_key("space", &kb);
+    assert_eq!(
+        menu.handle_key("enter", &kb),
+        SettingsMenuAction::SaveGlobalModels(vec!["fixture/alpha".into(), "fixture/beta".into()])
+    );
+}
+
+#[test]
 fn child_model_draft_requires_an_explicit_allow_all_choice() {
     use crate::client_settings::{ChildModelChoice, InheritedChildModels};
 

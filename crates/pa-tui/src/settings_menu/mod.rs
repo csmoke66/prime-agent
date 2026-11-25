@@ -3,15 +3,15 @@
 //! on Tab/number keys only), Enter opens submenus, type-to-search per tab. The caller owns the row
 //! data and change actions; this module navigation and rendering.
 
-mod child_models;
+mod model_policy;
 mod tabs;
 
-use child_models::{policy_label, ChildModelPicker};
-use crate::client_settings::{ChildModelChoices, ChildPolicy};
+use crate::client_settings::{ChildModelChoices, ChildPolicy, GlobalModelChoices};
 use crate::keybindings::{format_key_text, KeybindingsManager};
 use crate::search_input::SearchInput;
 use crate::theme::{Theme, ThemeColor};
 use crate::width::wrap_text;
+use model_policy::{policy_label, ModelPolicyPicker};
 use pa_types::ai::ModelThinkingLevel;
 
 /// The reasoning-level descriptions the TS thinking submenu lists.
@@ -112,6 +112,8 @@ pub enum SettingsMenuAction {
     },
     /// Open the session model picker.
     OpenPrimaryModel,
+    OpenGlobalModels,
+    SaveGlobalModels(Vec<String>),
     ShowTelemetryStatus,
     /// Apply a depth to this session, optionally also saving the global default.
     SaveRlmDepth { depth: u64, global: bool },
@@ -146,6 +148,12 @@ struct SubmenuState {
 }
 
 #[derive(Debug)]
+pub(crate) enum GlobalModelUpdate {
+    Loaded(anyhow::Result<GlobalModelChoices>),
+    Saved(anyhow::Result<()>),
+}
+
+#[derive(Debug)]
 struct DepthEdit {
     global: bool,
     input: SearchInput,
@@ -162,7 +170,8 @@ pub struct SettingsMenu {
     sub: Option<SubmenuState>,
     depth_edit: Option<DepthEdit>,
     autonomous_edit: Option<SearchInput>,
-    child_models: Option<ChildModelPicker>,
+    model_policy: Option<ModelPolicyPicker>,
+    pub(crate) global_model_job: Option<tokio::task::JoinHandle<GlobalModelUpdate>>,
     pub(crate) child_session_file: Option<String>,
     max_visible: usize,
 }
@@ -476,7 +485,7 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         SettingsMenuRow {
             id: "primary-model",
             label: "Primary model",
-            description: "Choose the main model for this session",
+            description: "Enter: choose this session's model. Space: edit which models are allowed globally.",
             current: current.primary_model.clone(),
             values: None,
             submenu: None,
@@ -617,7 +626,8 @@ impl SettingsMenu {
             sub: None,
             depth_edit: None,
             autonomous_edit: None,
-            child_models: None,
+            model_policy: None,
+            global_model_job: None,
             child_session_file: None,
             max_visible: 10,
         }
@@ -641,15 +651,26 @@ impl SettingsMenu {
         if let Some(row) = self.rows.iter_mut().find(|row| row.id == "child-models") {
             row.current = policy_label(&choices.policy);
         }
-        self.child_models = Some(ChildModelPicker::new(choices));
+        self.model_policy = Some(ModelPolicyPicker::child(choices));
+    }
+
+    pub(crate) fn open_global_models(&mut self, choices: GlobalModelChoices) {
+        self.model_policy = Some(ModelPolicyPicker::global(choices));
+    }
+
+    pub(crate) fn global_models_saved(&mut self) {
+        self.model_policy = None;
     }
 
     pub(crate) fn child_models_saved(&mut self, model_rules: Option<usize>) {
-        let Some(picker) = self.child_models.take() else {
+        let Some(mut policy) = self
+            .model_policy
+            .take()
+            .and_then(ModelPolicyPicker::into_child_policy)
+        else {
             return;
         };
         if let Some(row) = self.rows.iter_mut().find(|row| row.id == "child-models") {
-            let mut policy = picker.into_policy();
             policy.model_rules = model_rules;
             row.current = policy_label(&policy);
         }
@@ -674,6 +695,16 @@ impl SettingsMenu {
 
     /// One key id: the submenu, when open, takes it first.
     pub fn handle_key(&mut self, key: &str, kb: &KeybindingsManager) -> SettingsMenuAction {
+        if self.global_model_job.is_some() {
+            // A load can be discarded; once Enter confirms a save, wait for its result.
+            if self.model_policy.is_none()
+                && (kb.matches(key, "tui.select.cancel") || key == "ctrl+c")
+            {
+                self.global_model_job = None;
+                return SettingsMenuAction::SubmenuClosed;
+            }
+            return SettingsMenuAction::None;
+        }
         if let Some(input) = &mut self.autonomous_edit {
             if kb.matches(key, "tui.select.cancel") || key == "ctrl+c" {
                 self.autonomous_edit = None;
@@ -706,10 +737,10 @@ impl SettingsMenu {
             }
             return SettingsMenuAction::None;
         }
-        if let Some(picker) = &mut self.child_models {
+        if let Some(picker) = &mut self.model_policy {
             let action = picker.handle_key(key, kb);
             if action == SettingsMenuAction::SubmenuClosed {
-                self.child_models = None;
+                self.model_policy = None;
             }
             return action;
         }
@@ -789,7 +820,7 @@ impl SettingsMenu {
             return SettingsMenuAction::None;
         }
         if key == "space" || kb.matches(key, "tui.select.confirm") {
-            return self.activate_selected();
+            return self.activate_selected(key);
         }
         if kb.matches(key, "tui.select.cancel") || key == "ctrl+c" {
             return SettingsMenuAction::Cancel;
@@ -814,6 +845,9 @@ impl SettingsMenu {
     /// (Space stays the row activation), and the filter re-runs when the
     /// query changed.
     pub fn paste(&mut self, text: &str) {
+        if self.global_model_job.is_some() {
+            return;
+        }
         if let Some(input) = &mut self.autonomous_edit {
             input.paste(text);
             return;
@@ -822,7 +856,7 @@ impl SettingsMenu {
             edit.input.paste(text);
             return;
         }
-        if let Some(picker) = &mut self.child_models {
+        if let Some(picker) = &mut self.model_policy {
             picker.paste(text);
             return;
         }
@@ -848,7 +882,7 @@ impl SettingsMenu {
 
     /// Enter/Space on the selection (TS `activateItem`): submenus open;
     /// value rows cycle to the next value.
-    fn activate_selected(&mut self) -> SettingsMenuAction {
+    fn activate_selected(&mut self, key: &str) -> SettingsMenuAction {
         let Some(tab) = self.tabs.get(self.tab) else {
             return SettingsMenuAction::None;
         };
@@ -862,6 +896,7 @@ impl SettingsMenu {
                 self.autonomous_edit = Some(SearchInput::new());
                 return SettingsMenuAction::None;
             }
+            "primary-model" if key == "space" => return SettingsMenuAction::OpenGlobalModels,
             "primary-model" => return SettingsMenuAction::OpenPrimaryModel,
             "fast-mode" if row.current != "Unavailable" => {
                 return SettingsMenuAction::Change {
@@ -1111,6 +1146,14 @@ impl SettingsMenu {
     /// the whole list.
     #[must_use]
     pub fn render(&self, theme: &Theme, width: usize, kb: &KeybindingsManager) -> Vec<crate::Line> {
+        if self.global_model_job.is_some() {
+            let status = if self.model_policy.is_some() {
+                "Saving global model settings…"
+            } else {
+                "Loading global model settings…"
+            };
+            return vec![hint_row(theme, width, status)];
+        }
         if let Some(input) = &self.autonomous_edit {
             let mut lines = vec![hint_row(theme, width, "Autonomous mode · Enter to apply, Esc to cancel")];
             lines.extend(crate::menu_panel::search_field_lines(theme, width, input.value(), input.cursor(), true, "status, off, or on [options]"));
@@ -1144,7 +1187,7 @@ impl SettingsMenu {
             lines.push(hint_row(theme, width, &submenu_hint(kb)));
             return lines;
         }
-        if let Some(picker) = &self.child_models {
+        if let Some(picker) = &self.model_policy {
             return picker.render(theme, width, kb);
         }
         if let Some(sub) = &self.sub {

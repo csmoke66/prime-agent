@@ -8,7 +8,7 @@ use pa_core::refinement::{self, HarnessScope};
 use pa_core::session_engine::harness_digest::local_harness_dir_for_log;
 use pa_core::session::subagent_policy::SessionSubagentPolicy;
 use pa_core::settings::ThinkingLevelSetting;
-use pa_tui::client_settings::{ChildModelChoices, ChildPolicy, ClientSettings};
+use pa_tui::client_settings::{ChildModelChoices, ChildPolicy, ClientSettings, GlobalModelChoices};
 use pa_types::ai::ModelThinkingLevel;
 use serde_json::Value;
 
@@ -76,6 +76,28 @@ macro_rules! str_setting {
 }
 
 impl ClientSettings for CliClientSettings {
+    fn global_model_choices(&self) -> Result<GlobalModelChoices> {
+        subagent::global_model_choices(&self.cwd, &self.agent_dir)
+    }
+
+    fn set_global_models(&self, models: Vec<String>) -> Result<()> {
+        self.manager().set_allowed_models(models)?;
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let settings = self.clone();
+            runtime.spawn_blocking(move || {
+                let client = pa_core::session_engine::telemetry::build_client(
+                    &settings.manager(),
+                    &settings.agent_dir,
+                );
+                client.track(
+                    "global model settings changed",
+                    pa_telemetry::Properties::new(),
+                );
+            });
+        }
+        Ok(())
+    }
+
     fn child_policy(&self, session_file: &str) -> Result<ChildPolicy> {
         Ok(subagent::RootChildPolicy::load(Path::new(session_file), &self.cwd, &self.agent_dir)?
             .summary())

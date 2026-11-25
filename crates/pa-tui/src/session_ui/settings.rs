@@ -1,4 +1,6 @@
 //! The `/settings` menu, `/import` confirmation, and `/reload` flow.
+use crate::settings_menu::GlobalModelUpdate;
+
 use super::{
     key_event_to_id, AgentView, DaemonCommand, Duration, KeyEvent, Map, PathBuf, Result, SessionUi,
     Value, UI_REQUEST_TIMEOUT_MS,
@@ -465,6 +467,26 @@ impl SessionUi {
                 self.open_model_picker(view, "").await?;
                 self.track_menu_opened("model-picker", "settings");
             }
+            crate::settings_menu::SettingsMenuAction::OpenGlobalModels => {
+                let (Some(settings), Some(menu)) =
+                    (self.client_settings.clone(), view.settings_menu.as_mut())
+                else {
+                    return Ok(());
+                };
+                menu.global_model_job = Some(tokio::task::spawn_blocking(move || {
+                    GlobalModelUpdate::Loaded(settings.global_model_choices())
+                }));
+            }
+            crate::settings_menu::SettingsMenuAction::SaveGlobalModels(models) => {
+                let (Some(settings), Some(menu)) =
+                    (self.client_settings.clone(), view.settings_menu.as_mut())
+                else {
+                    return Ok(());
+                };
+                menu.global_model_job = Some(tokio::task::spawn_blocking(move || {
+                    GlobalModelUpdate::Saved(settings.set_global_models(models))
+                }));
+            }
             crate::settings_menu::SettingsMenuAction::SaveRlmDepth { depth, global } => {
                 self.set_rlm_max_depth(depth, global, view).await;
             }
@@ -548,6 +570,44 @@ impl SessionUi {
         }
         self.dirty = true;
         Ok(())
+    }
+
+    pub(crate) fn apply_global_model_update(
+        &mut self,
+        update: Result<GlobalModelUpdate, tokio::task::JoinError>,
+        view: &mut AgentView,
+    ) {
+        let Some(menu) = view.settings_menu.as_mut() else {
+            return;
+        };
+        menu.global_model_job = None;
+        match update {
+            Ok(GlobalModelUpdate::Loaded(Ok(choices))) => menu.open_global_models(choices),
+            Ok(GlobalModelUpdate::Saved(Ok(()))) => {
+                menu.global_models_saved();
+                self.spawn_model_catalog_refresh();
+                self.note("Global model settings saved.", view);
+            }
+            Ok(GlobalModelUpdate::Loaded(Err(error))) => {
+                self.error_row(
+                    &format!("Cannot load global model settings: {error:#}"),
+                    view,
+                );
+            }
+            Ok(GlobalModelUpdate::Saved(Err(error))) => {
+                self.error_row(
+                    &format!("Cannot save global model settings: {error:#}"),
+                    view,
+                );
+            }
+            Err(error) => {
+                self.error_row(
+                    &format!("Global model settings job failed: {error:#}"),
+                    view,
+                );
+            }
+        }
+        self.dirty = true;
     }
 
     /// One settings row's change: daemon commands for session-owned switches,

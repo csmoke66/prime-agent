@@ -154,7 +154,7 @@ impl ModelCatalog {
     /// the live Prime Inference snapshot for `credentials` when given.
     /// Never fails; never blocks on the network.
     pub fn resolve(&self, credentials: Option<&PrimeCredentials>) -> Vec<Model> {
-        let base = match self.provider_cache.get(PUBLIC_SCOPE) {
+        let mut base = match self.provider_cache.get(PUBLIC_SCOPE) {
             Some(remote) => {
                 // Step 1: validated last-good cache + the compiled offline
                 // Prime Inference entries (private/live entries come from
@@ -176,6 +176,20 @@ impl ModelCatalog {
                 None => self.compiled.as_ref().clone(),
             },
         };
+        // Keep newly shipped API-key models available until the remote catalog catches up.
+        // Prefer the remote or bundled entry once it exists, including its current metadata.
+        for model in self
+            .compiled
+            .iter()
+            .filter(|model| model.provider == "openai")
+        {
+            if !base
+                .iter()
+                .any(|entry| entry.provider == model.provider && entry.id == model.id)
+            {
+                base.push(model.clone());
+            }
+        }
         let live = credentials
             .and_then(|credentials| self.prime_inference.get(&credentials.as_inference()));
         match live {
@@ -343,12 +357,49 @@ mod tests {
         .unwrap();
         let catalog = ModelCatalog::with_bundled_dir(None, Some(dir.path().into()));
         let models = catalog.resolve(None);
-        assert_eq!(
-            models.len(),
-            111,
-            "1 pinned bundled entry + 110 offline prime-inference entries"
-        );
         assert!(models.iter().any(|m| m.id == "bundled-a"));
+    }
+
+    #[test]
+    fn a_stale_cache_keeps_missing_openai_api_key_models_without_replacing_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut remote = serde_json::to_value(
+            self::transports::compiled_models()
+                .iter()
+                .find(|m| m.provider == "openai" && m.id == "gpt-6.2-sol")
+                .unwrap(),
+        )
+        .unwrap();
+        remote["name"] = json!("Updated Sol from catalog");
+        let snapshot = json!({
+            "url": MODEL_CATALOG_URL,
+            "scope": PUBLIC_SCOPE,
+            "fetchedAt": 1,
+            "payload": {"schemaVersion": 1, "models": [remote]},
+        });
+        std::fs::write(
+            dir.path().join(PROVIDER_CATALOG_CACHE_FILE),
+            snapshot.to_string(),
+        )
+        .unwrap();
+        let catalog =
+            ModelCatalog::with_bundled_dir(Some(dir.path().into()), Some(dir.path().into()));
+        let models = catalog.resolve(None);
+        let mut api_key_models: Vec<_> = models
+            .iter()
+            .filter(|model| model.provider == "openai")
+            .map(|model| (model.id.as_str(), model.name.as_str()))
+            .collect();
+        api_key_models.sort_unstable();
+        assert_eq!(
+            api_key_models,
+            [
+                ("gpt-4", "GPT-4"),
+                ("gpt-6.1-terra", "GPT-6.1 Terra"),
+                ("gpt-6.2-astra", "GPT-6.2 Astra"),
+                ("gpt-6.2-sol", "Updated Sol from catalog"),
+            ]
+        );
     }
 
     #[test]

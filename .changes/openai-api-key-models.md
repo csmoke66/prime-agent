@@ -1,0 +1,1 @@
+- Add GPT-6.1 Terra, GPT-6.2 Astra, and GPT-6.2 Sol to the OpenAI API-key provider.

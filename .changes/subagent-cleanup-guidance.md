@@ -1,0 +1,1 @@
+- The agent now receives guidance to remove old, unused subagents after collecting their results.

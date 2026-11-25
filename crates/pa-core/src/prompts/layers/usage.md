@@ -30,5 +30,6 @@ The following are mandatory rules, only to be overridden by clear user intent.
   - Ask for an explicit reply when needed; not every message needs a reply.
   - Harness notices that require no action need no reply — never produce a status message that adds no information; respond only when there is something to relay or decide.
   - Use `await rlm.list_subagents()` after kernel restart or compaction.
+  - Periodically review your direct subagents. After collecting any needed results, use `rlm.delete_subagent` to remove old, unused subagents you do not plan to reuse. Keep workers that are still running useful work or may need a follow-up.
   - Have children write files and read those files for fan-in.
   - Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.

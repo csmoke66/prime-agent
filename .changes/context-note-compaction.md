@@ -1,0 +1,1 @@
+- Agent context notes now reset after successful compaction, even when their tool results are retained.

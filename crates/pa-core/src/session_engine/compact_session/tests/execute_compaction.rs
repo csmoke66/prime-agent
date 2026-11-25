@@ -59,6 +59,51 @@ async fn execute_compaction_persists_and_rebuilds() {
     registration.unregister();
 }
 
+#[test]
+fn compaction_clears_a_context_note_from_a_retained_tool_result() {
+    use crate::session_engine::{messages::loop_convert_to_llm, rebuilt_loop_messages};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let mut session = SessionManager::in_memory(tmp.path());
+    let note_result = |note| {
+        serde_json::from_value(serde_json::json!({
+            "role": "toolResult", "toolCallId": note, "toolName": pa_types::ai::PYTHON_TOOL_NAME,
+            "content": [{"type": "text", "text": "retained output"}], "isError": false,
+            "timestamp": 0, "details": {"contextNote": note}
+        }))
+        .unwrap()
+    };
+    let project = |session: &SessionManager| {
+        loop_convert_to_llm(rebuilt_loop_messages(rebuilt_context_after_compaction(
+            session,
+        )))
+    };
+
+    let first_kept_entry_id = session.append_message(note_result("old note")).unwrap();
+    assert!(project(&session)
+        .tail_context
+        .unwrap()
+        .ends_with("\nold note"));
+    session
+        .append_compaction(pa_types::session::CompactionEntry {
+            summary: "summarized history".to_string(),
+            first_kept_entry_id,
+            ..Default::default()
+        })
+        .unwrap();
+    let compacted = project(&session);
+    assert!(compacted.tail_context.is_none());
+    assert!(compacted.messages.iter().any(|message| matches!(message,
+        pa_agent::types::Message::ToolResult(result) if result.tool_call_id == "old note"
+    )));
+
+    session.append_message(note_result("new note")).unwrap();
+    assert!(project(&session)
+        .tail_context
+        .unwrap()
+        .ends_with("\nnew note"));
+}
+
 #[tokio::test]
 async fn rebuilt_live_context_prevents_repeat_auto_compaction_until_new_usage() {
     let registration = faux_registration();

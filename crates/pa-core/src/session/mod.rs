@@ -462,6 +462,23 @@ pub fn build_session_context(entries: &[FileEntry], leaf_id: Option<&str>) -> Se
                 append_message(&entries[index], &mut retained, keep_digest_entry_id);
             }
         }
+        // The retained tail still predates compaction. Keep its tool results,
+        // but do not let an old note become the active scratchpad again.
+        for message in &mut retained {
+            let AgentMessage::ToolResult(result) = message else {
+                continue;
+            };
+            if result.tool_name != pa_types::ai::PYTHON_TOOL_NAME {
+                continue;
+            }
+            if let Some(details) = result
+                .details
+                .as_mut()
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                details.remove("contextNote");
+            }
+        }
         let summary_harness_digest = if summary_yields_snapshot {
             None
         } else {

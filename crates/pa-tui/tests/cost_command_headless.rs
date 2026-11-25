@@ -100,11 +100,11 @@ fn wait_render(needle: &str) -> HeadlessStep {
 #[test]
 fn cost_command_child_mode() {
     if std::env::var_os(CHILD_ENV).is_none() {
-        // The title consumes the same resettable rollup as the command panel.
-        wait_render("$0.42"),
         return;
     }
     let steps = vec![
+        // The title consumes the same resettable rollup as the command panel.
+        wait_render("$0.42"),
         HeadlessStep::Submit("/cost".to_string()),
         wait_render("Total: $0.4200"),
         wait_render("Uncached input: $0.1000"),
@@ -117,14 +117,14 @@ fn cost_command_child_mode() {
         HeadlessStep::Submit("/cost reset".to_string()),
         wait_render("Total: $0.0000"),
         wait_render("Cache write: $0.0000"),
-    ];
-    let outcome = run_headless(
         HeadlessStep::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
         HeadlessStep::WaitGone {
             needle: "Session Cost".to_string(),
             timeout_ms: 30_000,
         },
         wait_render("$0.00"),
+    ];
+    let outcome = run_headless(
         HeadlessPlan {
             steps,
             width: 100,

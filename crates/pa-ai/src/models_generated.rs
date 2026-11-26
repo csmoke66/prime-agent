@@ -597,7 +597,7 @@ compat: Some(RawCompat {
         ],
         input: &[ModelInput::Text, ModelInput::Image],
         cost: (1.0, 5.0, 0.05, 1.25),
-        context_window: 1_050_000,
+        context_window: 272_000,
         max_tokens: 128_000,
         featured: None,
         headers: &[],
@@ -617,7 +617,7 @@ compat: Some(RawCompat {
         ],
         input: &[ModelInput::Text, ModelInput::Image],
         cost: (8.0, 40.0, 0.4, 10.0),
-        context_window: 1_050_000,
+        context_window: 272_000,
         max_tokens: 128_000,
         featured: None,
         headers: &[],
@@ -637,7 +637,7 @@ compat: Some(RawCompat {
         ],
         input: &[ModelInput::Text, ModelInput::Image],
         cost: (2.0, 10.0, 0.1, 2.5),
-        context_window: 1_050_000,
+        context_window: 272_000,
         max_tokens: 128_000,
         featured: None,
         headers: &[],
@@ -4547,7 +4547,7 @@ mod tests {
             .iter()
             .map(|provider| get_models(provider).len())
             .sum();
-        assert_eq!(total, 152, "the TS fallback model list");
+        assert_eq!(total, 155, "the compiled fallback model list");
         assert_eq!(
             get_models("prime-inference").len(),
             110,

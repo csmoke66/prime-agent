@@ -1,0 +1,1 @@
+- Use a 272,000-token context limit for GPT-6.1 Terra, GPT-6.2 Astra, and GPT-6.2 Sol on the OpenAI API-key provider.

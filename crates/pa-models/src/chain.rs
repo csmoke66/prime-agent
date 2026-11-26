@@ -176,17 +176,25 @@ impl ModelCatalog {
                 None => self.compiled.as_ref().clone(),
             },
         };
-        // Keep newly shipped API-key models available until the remote catalog catches up.
-        // Prefer the remote or bundled entry once it exists, including its current metadata.
+        // Keep shipped API-key entries available even when the remote catalog omits them.
         for model in self
             .compiled
             .iter()
             .filter(|model| model.provider == "openai")
         {
-            if !base
-                .iter()
-                .any(|entry| entry.provider == model.provider && entry.id == model.id)
+            if let Some(entry) = base
+                .iter_mut()
+                .find(|entry| entry.provider == model.provider && entry.id == model.id)
             {
+                // These API-key models use the standard context budget in Prime Agent.
+                // Keep other catalog metadata and honor a smaller upstream limit.
+                if matches!(
+                    model.id.as_str(),
+                    "gpt-6.1-terra" | "gpt-6.2-astra" | "gpt-6.2-sol"
+                ) {
+                    entry.context_window = entry.context_window.min(model.context_window);
+                }
+            } else {
                 base.push(model.clone());
             }
         }
@@ -371,6 +379,7 @@ mod tests {
         )
         .unwrap();
         remote["name"] = json!("Updated Sol from catalog");
+        remote["contextWindow"] = json!(1_050_000);
         let snapshot = json!({
             "url": MODEL_CATALOG_URL,
             "scope": PUBLIC_SCOPE,
@@ -388,16 +397,16 @@ mod tests {
         let mut api_key_models: Vec<_> = models
             .iter()
             .filter(|model| model.provider == "openai")
-            .map(|model| (model.id.as_str(), model.name.as_str()))
+            .map(|model| (model.id.as_str(), model.name.as_str(), model.context_window))
             .collect();
         api_key_models.sort_unstable();
         assert_eq!(
             api_key_models,
             [
-                ("gpt-4", "GPT-4"),
-                ("gpt-6.1-terra", "GPT-6.1 Terra"),
-                ("gpt-6.2-astra", "GPT-6.2 Astra"),
-                ("gpt-6.2-sol", "Updated Sol from catalog"),
+                ("gpt-4", "GPT-4", 8_192),
+                ("gpt-6.1-terra", "GPT-6.1 Terra", 272_000),
+                ("gpt-6.2-astra", "GPT-6.2 Astra", 272_000),
+                ("gpt-6.2-sol", "Updated Sol from catalog", 272_000),
             ]
         );
     }

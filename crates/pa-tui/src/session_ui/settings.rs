@@ -27,9 +27,6 @@ pub(super) enum PendingConfirm {
     /// The import's stored session cwd is gone: `Yes` retries with the
     /// fallback cwd.
     ImportCwdFallback { path: String, fallback_cwd: String },
-    /// `/update`: `Yes` spawns the out-of-band installer run (the confirm
-    /// guards the binary replacement, not the session).
-    Update,
 }
 
 impl SessionUi {
@@ -96,9 +93,6 @@ impl SessionUi {
                         }
                         Some(PendingConfirm::ImportCwdFallback { path, fallback_cwd }) => {
                             self.run_import(&path, Some(&fallback_cwd), view).await?;
-                        }
-                        Some(PendingConfirm::Update) => {
-                            self.spawn_update(view);
                         }
                         None => {}
                     }
@@ -355,7 +349,6 @@ impl SessionUi {
         if let Some(settings) = &settings {
             values.factory_enabled = Some(settings.factory_enabled());
             values.telemetry_enabled = Some(settings.telemetry_enabled());
-            values.update_channel = Some(settings.effective_update_channel(&view.chrome.version));
             values.compaction_threshold_percent = settings.compaction_threshold_percent();
             values.tool_output_reminder_percent = Some(settings.tool_output_reminder_percent());
             values.show_images = settings.show_images();
@@ -693,13 +686,12 @@ impl SessionUi {
                     self.error_row(&format!("{err:#}"), view);
                 }
             }
-            "factory" | "telemetry" | "update-channel" => {
+            "factory" | "telemetry" => {
                 let Some(settings) = self.client_settings.clone() else { return };
                 let enabled = value == "true";
                 let previous = match id {
                     "factory" => settings.factory_enabled().to_string(),
-                    "telemetry" => settings.telemetry_enabled().to_string(),
-                    _ => settings.effective_update_channel(&view.chrome.version),
+                    _ => settings.telemetry_enabled().to_string(),
                 };
                 let result = match id {
                     "factory" => {
@@ -713,8 +705,7 @@ impl SessionUi {
                             else { "The factory is disabled." }.to_owned()
                         })
                     }
-                    "telemetry" => settings.set_telemetry_enabled(enabled),
-                    _ => settings.set_update_channel(value).map(|()| format!("Updates now follow the {value} channel. Run /update to install.")),
+                    _ => settings.set_telemetry_enabled(enabled),
                 };
                 match result {
                     Ok(message) => self.note(&message, view),

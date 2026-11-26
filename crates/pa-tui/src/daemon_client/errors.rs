@@ -22,7 +22,7 @@ pub struct RequestRejected {
     /// The daemon's raw error string.
     pub message: String,
     /// The typed refusal info (`errorInfo`), when the daemon typed it
-    /// (`update_restarting` per TS #2391, `session_already_active`,
+    /// (`session_already_active`,
     /// `model_provider_unauthenticated`, ...); `None` for untyped refusals
     /// and older daemons.
     pub error_info: Option<DaemonErrorInfo>,
@@ -47,24 +47,6 @@ pub fn is_daemon_rejection(error: &anyhow::Error) -> bool {
     error
         .chain()
         .any(|cause| cause.downcast_ref::<RequestRejected>().is_some())
-}
-
-/// True when an open failure is the update-restart transient state (TS
-/// `isDaemonUpdateRestartingError`): a typed `update_restarting`
-/// rejection, or the exact-message fallback for older daemons rejecting
-/// with the same plain string.
-#[must_use]
-pub fn is_update_restarting_rejection(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .downcast_ref::<RequestRejected>()
-            .is_some_and(|rejected| {
-                matches!(
-                    &rejected.error_info,
-                    Some(pa_types::daemon::DaemonErrorInfo::UpdateRestarting)
-                ) || rejected.message == pa_types::daemon::UPDATE_RESTART_PREPARING_MESSAGE
-            })
-    })
 }
 
 /// Whether an error is a response/handshake timeout: a transient

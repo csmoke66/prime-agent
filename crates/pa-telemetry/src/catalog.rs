@@ -5,9 +5,9 @@
 //! `agent run completed` per run (TS parity), per-session facts ride
 //! `agent session ended`, the interactive client's adoption counters ride
 //! its one `tui exit`; the remaining events are lifecycle moments
-//! (startup, onboarding, installation, update, daemon incidents). Schema
+//! (startup, onboarding, daemon incidents). Schema
 //! version 2 is the #2117 vocabulary (the v2 enrichment on the legacy
-//! events and the onboarding/startup/installation stages).
+//! events and the onboarding/startup stages).
 //!
 //! [`sanitize`] is the platform adjust layer: before a batch reaches any
 //! sink, every catalogued event's properties are normalized against its
@@ -321,50 +321,6 @@ pub const VALIDATION_SCOPES: &[&str] = &[
 
 pub const TIMING_SCOPES: &[&str] = &["system_work", "elapsed_including_user_wait"];
 
-pub const INSTALLATION_STAGES: &[&str] = &[
-    "started",
-    "requirements",
-    "release_lookup",
-    "download",
-    "verification",
-    "package_install",
-    "daemon_restart",
-    "session_restore",
-    "relaunch",
-    "ready",
-    "completed",
-];
-
-pub const INSTALLATION_OUTCOMES: &[&str] = &[
-    "started",
-    "success",
-    "failed",
-    "cancelled",
-    "skipped",
-    "unavailable",
-];
-
-pub const INSTALLATION_REASONS: &[&str] = &[
-    "up_to_date",
-    "unsupported_install",
-    "declined",
-    "requirements_unavailable",
-    "release_lookup_failed",
-    "download_failed",
-    "verification_failed",
-    "install_failed",
-    "daemon_restart_failed",
-    "session_restore_failed",
-    "relaunch_failed",
-    "version_mismatch",
-    "interrupted",
-    "unknown",
-];
-
-pub const INSTALLATION_ACTIONS: &[&str] = &["install", "update"];
-
-pub const INSTALLATION_SOURCES: &[&str] = &["shell_installer", "cli", "interactive"];
-
 pub const READY_KINDS: &[&str] = &["interactive", "headless"];
 
 pub const INPUT_STAGES: &[&str] = &[
@@ -509,10 +465,6 @@ const fn duration() -> PropKind {
 
 const fn uuid() -> PropKind {
     PropKind::Uuid
-}
-
-const fn version() -> PropKind {
-    PropKind::Version
 }
 
 const fn boolean() -> PropKind {
@@ -850,51 +802,6 @@ const AGENT_STARTUP_STAGE: EventRule = EventRule {
     ],
 };
 
-/// `agent installation stage` (v2): installer/updater stage outcomes.
-const AGENT_INSTALLATION_STAGE: EventRule = EventRule {
-    name: "agent installation stage",
-    since: 2,
-    properties: &[
-        ("installation_attempt_id", required(uuid())),
-        (
-            "installation_action",
-            required(enum_rule(INSTALLATION_ACTIONS, "update")),
-        ),
-        (
-            "installation_source",
-            required(enum_rule(INSTALLATION_SOURCES, "cli")),
-        ),
-        ("stage", required(enum_rule(INSTALLATION_STAGES, "unknown"))),
-        (
-            "outcome",
-            required(enum_rule(INSTALLATION_OUTCOMES, "unknown")),
-        ),
-        (
-            "reason",
-            optional(enum_rule(INSTALLATION_REASONS, "unknown")),
-        ),
-        ("from_version", optional(version())),
-        ("target_version", optional(version())),
-        ("observed_version", optional(version())),
-        ("duration_ms", optional(duration())),
-        (
-            "exit_code",
-            optional(PropKind::Number {
-                max: 255,
-                integer: true,
-                nullable: true,
-            }),
-        ),
-        ("error_id", optional(uuid())),
-        (
-            "ready_kind",
-            optional(enum_rule(READY_KINDS, "interactive")),
-        ),
-        ("session_restore_total", optional(count())),
-        ("session_restore_failed", optional(count())),
-    ],
-};
-
 /// `startup` (v1): process entry to ready interactive session environment.
 const STARTUP: EventRule = EventRule {
     name: "startup",
@@ -918,7 +825,6 @@ const DAEMON_EVENT: EventRule = EventRule {
         ),
         ("count", optional(count())),
         ("source", optional(free_string(32))),
-        ("boot", optional(enum_rule(&["plain", "update"], "plain"))),
         ("adopted_live", optional(count())),
         ("revived", optional(count())),
         ("skipped_idle", optional(count())),
@@ -1112,132 +1018,6 @@ const TUI_EXIT: EventRule = EventRule {
     ],
 };
 
-/// `update completed` plus the per-phase events (one per status
-/// transition, the same names the `phase` property carries).
-const UPDATE_EVENTS: &[EventRule] = &[
-    EventRule {
-        name: "update completed",
-        since: 1,
-        properties: &[
-            (
-                "outcome",
-                required(enum_rule(
-                    &["complete", "skipped", "aborted", "failed"],
-                    "failed",
-                )),
-            ),
-            ("sessions_total", required(count())),
-            ("sessions_restored", required(count())),
-            ("sessions_failed", required(count())),
-        ],
-    },
-    EventRule {
-        name: "update_download_started",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-            ("sessions_total", optional(count())),
-            ("sessions_restored", optional(count())),
-            ("sessions_failed", optional(count())),
-        ],
-    },
-    EventRule {
-        name: "update_staged",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_prepare_started",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_prepared",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_stopping",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_restarting",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_restoring",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_complete",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-            ("sessions_total", optional(count())),
-            ("sessions_restored", optional(count())),
-            ("sessions_failed", optional(count())),
-        ],
-    },
-    EventRule {
-        name: "update_rollback",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-            ("sessions_total", optional(count())),
-            ("sessions_restored", optional(count())),
-            ("sessions_failed", optional(count())),
-        ],
-    },
-    // The installer funnel refuses a Homebrew-owned executable before
-    // downloading or running the installer. `kind` is the package layout,
-    // never an executable path; invalid values normalize to `formula`.
-    EventRule {
-        name: "update_homebrew_refusal",
-        since: 2,
-        properties: &[("kind", required(enum_rule(&["formula", "cask"], "formula")))],
-    },
-    EventRule {
-        name: "update_aborted",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-    EventRule {
-        name: "update_failed",
-        since: 1,
-        properties: &[
-            ("phase", required(free_string(64))),
-            ("duration_ms", required(duration())),
-        ],
-    },
-];
-
 const HARNESS_REFINEMENTS_CHANGED: EventRule = EventRule {
     name: "harness refinements changed",
     since: 2,
@@ -1281,7 +1061,7 @@ const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
 /// Every catalogued event, flattened.
 #[must_use]
 pub fn catalog() -> Vec<&'static EventRule> {
-    let mut all: Vec<&'static EventRule> = vec![
+    let all: Vec<&'static EventRule> = vec![
         &HARNESS_REFINEMENTS_CHANGED,
         &CHILD_SETTINGS_CHANGED,
         &GLOBAL_MODEL_SETTINGS_CHANGED,
@@ -1295,7 +1075,6 @@ pub fn catalog() -> Vec<&'static EventRule> {
         &ONBOARDING_STAGE,
         &ONBOARDING_COMPLETED,
         &AGENT_STARTUP_STAGE,
-        &AGENT_INSTALLATION_STAGE,
         &STARTUP,
         &DAEMON_EVENT,
         &MODEL_REFUSED,
@@ -1303,7 +1082,6 @@ pub fn catalog() -> Vec<&'static EventRule> {
         &TUI_EXIT,
         &TUI_IPYTHON_BASH_RENDERED,
     ];
-    all.extend(UPDATE_EVENTS.iter());
     all
 }
 
@@ -1429,12 +1207,10 @@ mod tests {
             "onboarding completed",
             "onboarding stage",
             "agent startup stage",
-            "agent installation stage",
             "session archived",
             "startup",
             "daemon event",
             "model refused",
-            "update completed",
             "tui exit",
         ] {
             assert!(names.contains(&name), "{name} stays catalogued");

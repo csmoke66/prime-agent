@@ -765,7 +765,6 @@ mod tests {
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
-            mpsc::unbounded_channel().0,
             ActivityUpdates {
                 heartbeats: mpsc::unbounded_channel().0,
                 bash: mpsc::unbounded_channel().0,

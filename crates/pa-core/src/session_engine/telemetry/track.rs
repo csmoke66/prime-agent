@@ -64,7 +64,6 @@ pub fn track_model_refused(
 /// `skipped_idle` counts the dead descriptors the busy-evidence filter parked.
 pub fn track_worker_adoption(
     client: &TelemetryClient,
-    boot: &str,
     adopted_live: usize,
     revived: usize,
     skipped_idle: usize,
@@ -73,7 +72,6 @@ pub fn track_worker_adoption(
 ) {
     let mut properties = base_properties("daemon");
     properties.set("kind", Value::from("worker_adoption"));
-    properties.set("boot", Value::from(boot));
     properties.set("adopted_live", Value::from(adopted_live));
     properties.set("revived", Value::from(revived));
     properties.set("skipped_idle", Value::from(skipped_idle));

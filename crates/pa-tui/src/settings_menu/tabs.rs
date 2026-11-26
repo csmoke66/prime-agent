@@ -27,7 +27,6 @@ const TAB_LAYOUT: &[TabLayout] = &[
             "provider-block-target",
             "autocompact-threshold",
             "tool-output-reminder",
-            "update-channel",
             "telemetry",
             "telemetry-status",
             "trace-sharing",

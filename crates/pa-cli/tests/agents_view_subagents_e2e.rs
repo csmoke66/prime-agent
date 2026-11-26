@@ -330,7 +330,6 @@ async fn panel_expand_drill_in_and_back_re_expands_the_tree() {
         client_auth: None,
         traces: None,
         provider_auth: None,
-        update_commands: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: view.opened_rlm_depth,

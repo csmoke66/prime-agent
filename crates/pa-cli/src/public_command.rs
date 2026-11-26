@@ -14,14 +14,6 @@ use crate::global_flags::{extract_help_command_path, rotate_global_flags_before_
 use crate::mcp_command::run_mcp_management_command;
 use crate::package_command::handle_package_command;
 
-/// Environment flag marking an interactive self-update child process.
-pub const SELF_UPDATE_INTERACTIVE_CHILD_ENV: &str = "PRIME_AGENT_INTERACTIVE_SELF_UPDATE";
-
-/// Internal update-restart coordinator flags.
-pub const DAEMON_UPDATE_RESTART_COORDINATOR_FLAG: &str = "--internal-update-restart-coordinator";
-pub const DAEMON_UPDATE_RESTART_STATUS_FLAG: &str = "--internal-update-restart-status";
-pub const DAEMON_UPDATE_RESTART_ORIGIN_FLAG: &str = "--internal-update-restart-origin";
-
 /// The outcome of routing the argv through the public command layer.
 #[derive(Debug, Clone)]
 pub struct PublicCommandResult {
@@ -50,7 +42,6 @@ fn continue_with(args: Vec<String>) -> PublicCommandResult {
         exit_code: None,
     }
 }
-use std::io::IsTerminal as _;
 
 /// The error message used when a routed command needs a runtime subsystem that is not linked into
 /// this build yet.
@@ -123,19 +114,6 @@ pub fn handle_public_command(args: &[String]) -> PublicCommandResult {
     if !public.contains(command) {
         return continue_with(args.clone());
     }
-    if command == "update"
-        && args
-            .iter()
-            .any(|a| a == DAEMON_UPDATE_RESTART_COORDINATOR_FLAG)
-    {
-        if let Err(error) = crate::config::require_agent_dir() {
-            eprintln!("Error: {error}");
-            return handled_failed();
-        }
-        let result = handle_package_command(&args);
-        return handled_with_exit(result.exit_code.unwrap_or(0));
-    }
-
     let separator_index = args.iter().position(|a| a == "--");
     let help_index = args.iter().enumerate().position(|(index, arg)| {
         index > 0
@@ -184,7 +162,6 @@ pub fn handle_public_command(args: &[String]) -> PublicCommandResult {
         "shutdown" => run_shutdown(&rest),
         "package" => run_package(&rest),
         "mcp" => run_mcp(&rest),
-        "update" => run_update(&rest),
         "model" => rewrite_nested_command("model", "list", "--list-models", &rest),
         "session" => rewrite_nested_command("session", "export", "--export", &rest),
         "prompt" => handled_with_exit(crate::prompt_command::run_prompt_command(&rest)),
@@ -250,7 +227,6 @@ fn reject_removed_command(args: &[String]) -> PublicCommandResult {
     let subcommand = args.get(1).map(String::as_str);
     let replacement = match (command, subcommand) {
         ("daemon", _) => Some("Run \"prime-agent help\" to see the agent commands.".to_string()),
-        ("app", Some("update")) => Some("Use \"prime-agent update\".".to_string()),
         ("install", _) => Some("Use \"prime-agent package install\".".to_string()),
         ("remove" | "uninstall", _) => Some("Use \"prime-agent package remove\".".to_string()),
         ("manage", _) => Some("Use \"prime-agent agents\".".to_string()),
@@ -339,99 +315,6 @@ fn validate_schedule_args(args: &[String]) -> bool {
         return false;
     }
     true
-}
-
-/// Parse `update`'s options into the shared [`crate::self_update::SelfUpdateOptions`]:
-/// the TS booleans plus the direct-install pair (`--archive <path>` with
-/// `--source <https-url>`, which only a managed install takes and requires).
-/// Returns `None` on a usage failure
-/// (already reported).
-fn parse_update_options(args: &[String]) -> Option<crate::self_update::SelfUpdateOptions> {
-    let mut invocation = crate::self_update::SelfUpdateOptions::default();
-    let mut index = 0;
-    let mut channel: Option<&str> = None;
-    while index < args.len() {
-        let arg = args[index].as_str();
-        match arg {
-            "--force" => invocation.force = true,
-            "--rollback" => invocation.rollback = true,
-            "--nightly" | "--stable" => {
-                if channel.is_some() && channel != Some(arg) {
-                    fail(
-                        "--nightly and --stable are exclusive.",
-                        Some("Pick one update channel.".to_string()),
-                    );
-                    return None;
-                }
-                channel = Some(arg);
-            }
-            "--archive" | "--source" => {
-                let value = match args.get(index + 1) {
-                    Some(value) if !value.starts_with('-') => value.clone(),
-                    _ => {
-                        fail(
-                            format!("Missing value for {arg}."),
-                            Some(format!("Run \"{APP_NAME} help update\" for usage.")),
-                        );
-                        return None;
-                    }
-                };
-                if arg == "--archive" {
-                    invocation.archive = Some(std::path::PathBuf::from(value));
-                } else {
-                    invocation.source = Some(value);
-                }
-                index += 1;
-            }
-            other => {
-                fail(
-                    format!("Unknown option for update: {other}"),
-                    Some(format!("Run \"{APP_NAME} help update\" for usage.")),
-                );
-                return None;
-            }
-        }
-        index += 1;
-    }
-    invocation.channel = match channel {
-        Some("--nightly") => Some(pa_core::update::version::UpdateChannel::Nightly),
-        Some("--stable") => Some(pa_core::update::version::UpdateChannel::Stable),
-        _ => None,
-    };
-    if invocation.archive.is_some() {
-        if invocation.rollback {
-            fail(
-                "--archive and --rollback are exclusive.",
-                Some("Run them separately.".to_string()),
-            );
-            return None;
-        }
-        if invocation.channel.is_some() {
-            fail(
-                "--archive ignores the channel flags.",
-                Some("A direct install does not resolve a channel.".to_string()),
-            );
-            return None;
-        }
-        if invocation
-            .source
-            .as_deref()
-            .is_some_and(|source| !pa_core::update::install::install_source_is_valid(source))
-        {
-            fail(
-                "--source must be an http(s) URL.",
-                Some(format!("Run \"{APP_NAME} help update\" for usage.")),
-            );
-            return None;
-        }
-    } else if invocation.source.is_some() {
-        fail(
-            "--source is only valid with --archive.",
-            Some(format!("Run \"{APP_NAME} help update\" for usage.")),
-        );
-        return None;
-    }
-    Some(invocation)
 }
 
 fn parse_boolean_options(
@@ -607,18 +490,10 @@ fn run_package(args: &[String]) -> PublicCommandResult {
         if rest.iter().any(|arg| {
             arg == "--self" || arg == "--extensions" || arg == "--extension" || arg == "--force"
         }) {
-            return fail(
-                "Package updates accept only an optional source. Use \"prime-agent update\" to update Prime Agent.",
-                None,
-            );
+            return fail("Package updates accept only an optional source.", None);
         }
         if rest.len() > 1 {
             return fail(format!("Usage: {APP_NAME} package update [source]"), None);
-        }
-        if let Some(source) = rest.first() {
-            if is_self_update_source(source) {
-                return fail("Use \"prime-agent update\" to update Prime Agent.", None);
-            }
         }
         let mut package_args: Vec<String> = vec!["update".to_string()];
         if rest.is_empty() {
@@ -645,120 +520,6 @@ fn run_package(args: &[String]) -> PublicCommandResult {
         attach_agent: None,
         exit_code: result.exit_code,
     }
-}
-
-fn is_self_update_source(source: &str) -> bool {
-    source == "self" || source == "pi" || source == APP_NAME
-}
-
-/// A `--check` invocation: `--check` (or `--version`) with at most one
-/// `--nightly` / `--stable`. `None` when the arguments are not a check.
-fn check_invocation(args: &[String]) -> Option<crate::installer_update::UpdateOptions> {
-    use pa_core::update::version::UpdateChannel;
-    let mut check = false;
-    let mut channel = None;
-    for arg in args {
-        match arg.as_str() {
-            "--check" | "--version" => check = true,
-            "--nightly" if channel.is_none() => channel = Some(UpdateChannel::Nightly),
-            "--stable" if channel.is_none() => channel = Some(UpdateChannel::Stable),
-            _ => return None,
-        }
-    }
-    check.then_some(crate::installer_update::UpdateOptions {
-        check: true,
-        channel,
-    })
-}
-
-fn run_update(args: &[String]) -> PublicCommandResult {
-    // `--check` (alias `--version`) reports without installing, optionally
-    // for one channel flag; mixed with anything else the parse below
-    // rejects it.
-    if let Some(options) = check_invocation(args) {
-        return handled_with_exit(crate::installer_update::run(&options));
-    }
-    let Some(options) = parse_update_options(args) else {
-        return handled_failed();
-    };
-    // `--rollback` and `--archive` on an installer install run the bundled
-    // installer; any other binary stays on the managed-install flow.
-    if options.rollback || options.archive.is_some() {
-        if let Some(prefix) = pa_core::update::installer::running_installer_prefix() {
-            if options.source.is_some() {
-                return fail(
-                    "--source only applies to managed installs.",
-                    Some(
-                        "An installer install keeps updating from its release channel.".to_string(),
-                    ),
-                );
-            }
-            if options.channel.is_some() {
-                return fail(
-                    "--nightly and --stable do not apply to --rollback or --archive.",
-                    Some(format!(
-                        "Switch channels with \"{APP_NAME} update --nightly\" or \"--stable\"."
-                    )),
-                );
-            }
-            // The CLI's --force is the nightly-switch confirmation skip;
-            // the installer's own forced daemon stop is a different flag
-            // the funnel never forwards either — so the local modes refuse
-            // it instead of silently dropping it.
-            if options.force {
-                return fail(
-                    "--force does not apply to --rollback or --archive.",
-                    Some(format!(
-                        "To stop busy daemons first, run \"{APP_NAME} shutdown --force\" and re-run."
-                    )),
-                );
-            }
-            return handled_with_exit(crate::installer_update::run_local(
-                &prefix,
-                options.archive.as_deref(),
-            ));
-        }
-    }
-    let persisted_wire = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| {
-            pa_core::settings::SettingsManager::create(&cwd, crate::config::get_agent_dir())
-                .get_update_channel()
-        })
-        .map(crate::self_update::settings_channel_wire_name)
-        .map(str::to_string);
-    if let Some(abort_code) = crate::self_update::confirm_nightly_switch(
-        options.force,
-        options.channel,
-        persisted_wire.as_deref(),
-        std::io::stdin().is_terminal(),
-    ) {
-        return handled_with_exit(abort_code);
-    }
-    // A Rust archive activated by a historical TS installer still belongs
-    // to that managed root. Keep using its atomic launcher activation so a
-    // custom root/public-bin pair is not silently replaced by ~/.local.
-    let managed_install = std::env::current_exe()
-        .ok()
-        .and_then(|exe| pa_core::update::install::install_root_of(&exe))
-        .is_some();
-    if !managed_install && !options.rollback && options.archive.is_none() {
-        let update = crate::installer_update::UpdateOptions {
-            check: false,
-            channel: options.channel,
-        };
-        return handled_with_exit(crate::installer_update::run(&update));
-    }
-    if options.archive.is_some() && options.source.is_none() {
-        return fail(
-            "--archive needs --source <https-url>.",
-            Some(
-                "The install source is recorded in the release and future updates resolve from it."
-                    .to_string(),
-            ),
-        );
-    }
-    handled_with_exit(crate::self_update::run(&options, persisted_wire.as_deref()))
 }
 
 fn run_attach(rest: &[String]) -> PublicCommandResult {
@@ -987,127 +748,5 @@ mod incident_dispatch_tests {
             help.contains("Times without a timezone are read as UTC"),
             "{help}"
         );
-    }
-}
-
-#[cfg(test)]
-mod update_options_tests {
-    use super::*;
-
-    fn parse(args: &[&str]) -> Option<crate::self_update::SelfUpdateOptions> {
-        let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
-        parse_update_options(&args)
-    }
-
-    /// The staged parse keeps its TS shape exactly.
-    #[test]
-    fn the_bare_and_check_invocations_short_circuit_the_staged_parse() {
-        let check = ["--check"];
-        let version = ["--version"];
-        for args in [&check, &version] {
-            let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
-            // The staged parse rejects the new flag: only the dispatch accepts it.
-            assert!(parse_update_options(&args).is_none(), "{args:?}");
-        }
-        // The staged flags still parse (the managed-install flow keeps its surface).
-        assert!(parse(&["--force"]).is_some());
-    }
-
-    #[test]
-    fn check_combines_with_one_channel_flag() {
-        use pa_core::update::version::UpdateChannel;
-        let channel = |args: &[&str]| {
-            let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
-            check_invocation(&args).map(|options| options.channel)
-        };
-        assert_eq!(channel(&["--check"]), Some(None));
-        assert_eq!(
-            channel(&["--nightly", "--version"]),
-            Some(Some(UpdateChannel::Nightly))
-        );
-        assert_eq!(
-            channel(&["--check", "--stable"]),
-            Some(Some(UpdateChannel::Stable))
-        );
-        assert_eq!(channel(&[]), None);
-        assert_eq!(channel(&["--nightly"]), None);
-        assert_eq!(channel(&["--check", "--nightly", "--stable"]), None);
-        assert_eq!(channel(&["--check", "--force"]), None);
-        assert_eq!(channel(&["--check", "--rollback"]), None);
-    }
-
-    #[test]
-    fn invalid_restart_coordinator_preserves_the_failure_exit_code() {
-        let args = vec![
-            "update".to_string(),
-            DAEMON_UPDATE_RESTART_COORDINATOR_FLAG.to_string(),
-        ];
-        let result = handle_public_command(&args);
-        assert!(result.handled);
-        assert_eq!(result.exit_code, Some(1));
-    }
-
-    #[test]
-    fn parses_the_ts_booleans() {
-        let invocation = parse(&["--force"]).unwrap();
-        assert!(invocation.force && !invocation.rollback);
-        assert_eq!(invocation.channel, None);
-        assert_eq!(invocation.archive, None);
-        let invocation = parse(&["--nightly"]).unwrap();
-        assert_eq!(
-            invocation.channel,
-            Some(pa_core::update::version::UpdateChannel::Nightly)
-        );
-        assert!(parse(&["--nightly", "--stable"]).is_none());
-        assert!(parse(&["--unknown"]).is_none());
-    }
-
-    #[test]
-    fn parses_the_direct_install_pair() {
-        let invocation = parse(&[
-            "--archive",
-            "/tmp/payload",
-            "--source",
-            "https://example.com",
-        ])
-        .unwrap();
-        assert_eq!(
-            invocation.archive,
-            Some(std::path::PathBuf::from("/tmp/payload"))
-        );
-        assert_eq!(invocation.source.as_deref(), Some("https://example.com"));
-        // An installer install takes the archive alone (the managed flow's
-        // --source requirement is checked once the install type is known).
-        let invocation = parse(&["--archive", "/tmp/payload"]).unwrap();
-        assert_eq!(invocation.source, None);
-        // The source must be an http(s) URL and must not appear alone.
-        assert!(parse(&[
-            "--archive",
-            "/tmp/payload",
-            "--source",
-            "file:///tmp/payload"
-        ])
-        .is_none());
-        assert!(parse(&["--source", "https://example.com"]).is_none());
-        // The direct install is exclusive with the channel and rollback.
-        assert!(parse(&[
-            "--archive",
-            "/tmp/payload",
-            "--source",
-            "https://example.com",
-            "--nightly"
-        ])
-        .is_none());
-        assert!(parse(&[
-            "--archive",
-            "/tmp/payload",
-            "--source",
-            "https://example.com",
-            "--rollback"
-        ])
-        .is_none());
-        // A missing value fails.
-        assert!(parse(&["--archive"]).is_none());
-        assert!(parse(&["--archive", "--source"]).is_none());
     }
 }

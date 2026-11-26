@@ -369,10 +369,6 @@ const WIRE_FIXTURES: &[(&str, &str)] = &[
         r#"{"type": "set_session_entry_label", "activeSessionId": "sess", "entryId": "e"}"#,
     ),
     (
-        "prepare_update_restart",
-        r#"{"type": "prepare_update_restart"}"#,
-    ),
-    (
         "retry_worker",
         r#"{"type": "retry_worker", "activeSessionId": "sess"}"#,
     ),
@@ -389,14 +385,6 @@ const WIRE_FIXTURES: &[(&str, &str)] = &[
     (
         "get_worker_peer_transport",
         r#"{"type": "get_worker_peer_transport", "workerToken": "token", "targetActiveSessionId": "target"}"#,
-    ),
-    (
-        "commit_update_restart",
-        r#"{"type": "commit_update_restart"}"#,
-    ),
-    (
-        "update_restore_status",
-        r#"{"type": "update_restore_status"}"#,
     ),
     (
         "get_mcp_connections",

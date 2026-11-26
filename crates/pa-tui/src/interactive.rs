@@ -364,9 +364,6 @@ pub struct InteractiveOptions {
     /// `/login` + `/logout`: the provider auth flows the composition root owns (credential
     /// storage, OAuth, the provider catalog); `None` reports the commands as unavailable.
     pub provider_auth: Option<crate::provider_auth::ProviderAuthCommandsHandle>,
-    /// `/update`: the CLI child runner + the post-update relaunch the composition root owns;
-    /// `None` reports the command as unavailable.
-    pub update_commands: Option<crate::update_command::UpdateCommandsHandle>,
     /// Adoption telemetry for the interactive view; `None` drops events.
     pub telemetry: Option<std::sync::Arc<dyn InteractionTelemetry>>,
     /// The effective keybindings (defaults merged with the user's `keybindings.json`, loaded by the

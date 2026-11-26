@@ -349,7 +349,6 @@ impl SessionUi {
             client_auth: self.client_auth.clone(),
             traces: self.traces.clone(),
             provider_auth: self.provider_auth.clone(),
-            update_commands: self.update_commands.clone(),
             telemetry: self.telemetry.clone(),
             keybindings: self.keybindings.clone(),
             // The `/new` run keeps this process's stash store: a draft stashed for the fresh

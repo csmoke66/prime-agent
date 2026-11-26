@@ -669,135 +669,6 @@ async fn a_superseded_watch_in_backoff_does_not_relaunch_over_the_new_owner() {
     );
 }
 
-/// The abandon-update resident: the commit's stop acked and exited, with
-/// the give-up budget at the cap so a supervised failure settles at once.
-fn abandon_update_resident(dir: &std::path::Path, worker_id: &str) -> Arc<ResidentWorker> {
-    let descriptor: DaemonWorkerDescriptor = serde_json::from_value(serde_json::json!({
-        "version": 2,
-        "workerId": worker_id,
-        "pid": 0,
-        "socketPath": "/tmp/none.sock",
-        "recoveryJournalPath": dir.join(format!("{worker_id}.recovery.jsonl")).to_string_lossy(),
-        "supervisorSocketPath": "/tmp/none.sock",
-        "authenticationToken": "token",
-        "rootActiveSessionId": worker_id,
-        "createdAt": "t",
-        "updatedAt": "t",
-        "lifecycle": "ready",
-        "createCommand": {},
-        "consecutiveFailures": 0,
-    }))
-    .expect("descriptor");
-    let resident = ResidentWorker::new(
-        worker_id.to_string(),
-        descriptor,
-        dir.join(format!("{worker_id}.descriptor.json")),
-    );
-    resident
-        .consecutive_failures
-        .store(MAX_CONSECUTIVE_FAILURES, Ordering::SeqCst);
-    resident
-}
-
-/// The update commit's abandon (a stop refusal in the budget) re-opens
-/// supervision for the worker that already stopped: when the relaunch
-/// fails, the resident is handed back to the crash path instead of
-/// staying unsupervised in the registry. On the unfixed tree the failed
-/// relaunch is only logged.
-#[tokio::test(start_paused = true)]
-async fn an_abandoned_updates_failed_relaunch_arms_supervision_again() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let agent_dir = dir.path().join("agent");
-    std::fs::create_dir_all(&agent_dir).unwrap();
-    // The abandon's relaunch fails deterministically: a file stands where
-    // the logs dir would go.
-    std::fs::write(agent_dir.join("logs"), "not a directory").unwrap();
-    let supervisor = Arc::new(
-        Supervisor::new(SupervisorOptions {
-            socket_path: dir.path().join("daemon.sock"),
-            agent_dir,
-        })
-        .expect("supervisor"),
-    );
-    // The stopped worker acks the graceful stop (pid 0 is already gone for
-    // the exit wait); the refuser never answers inside the budget.
-    let stopped = abandon_update_resident(dir.path(), "w-abandon-stopped");
-    let (stopped_tx, mut stopped_rx) = mpsc::channel::<WorkerRequest>(1);
-    stopped
-        .install_command_channel(stopped.begin_connection(), stopped_tx)
-        .await;
-    let pump_resident = Arc::clone(&stopped);
-    tokio::spawn(async move {
-        let request = stopped_rx.recv().await.expect("the stop routes a shutdown");
-        let reply = pump_resident
-            .pending
-            .lock()
-            .await
-            .remove(&request.request_id)
-            .expect("the routed shutdown holds a reply slot");
-        let _ = reply.send(WorkerReply::Typed(crate::protocol::response_success(
-            None, "shutdown", None,
-        )));
-    });
-    supervisor.registry.insert(Arc::clone(&stopped)).await;
-    let refused = abandon_update_resident(dir.path(), "w-abandon-refused");
-    let (refused_tx, mut refused_rx) = mpsc::channel::<WorkerRequest>(1);
-    refused
-        .install_command_channel(refused.begin_connection(), refused_tx)
-        .await;
-    tokio::spawn(async move {
-        // The refuser never answers: the shutdown request runs out of budget.
-        let _ = refused_rx.recv().await;
-    });
-    supervisor.registry.insert(Arc::clone(&refused)).await;
-
-    // Reach the committed stop window without the prepare machinery's
-    // snapshot phase: the update state machine is driven directly.
-    let update_id = UpdateId::from("u-abandon".to_string());
-    let budget = UpdateTimeoutBudget::from_env();
-    supervisor
-        .update_prepare
-        .begin(update_id.clone(), util::now_ms(), &budget);
-    supervisor.update_prepare.drain_complete(&update_id);
-    supervisor
-        .update_prepare
-        .snapshot_written(&update_id, util::now_ms(), &budget);
-    supervisor.update_prepare.prepare_acked(&update_id);
-    let command = DaemonCommand::CommitUpdateRestart {
-        id: None,
-        update_id: Some("u-abandon".to_string()),
-        rest: Map::default(),
-    };
-    let (lines, ok) = supervisor
-        .handle_commit_update_restart("commit-1", "commit_update_restart", &command)
-        .await;
-    assert!(!ok, "the refusal abandons the update: {lines:?}");
-
-    // The stopped worker's failed relaunch re-arms supervision: the give-up
-    // (the resident's budget was at the cap) removes the resident instead
-    // of leaving the dead channel in the registry.
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while supervisor.registry.get("w-abandon-stopped").await.is_some() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .expect("the abandoned relaunch's failure reaches the give-up");
-    assert_eq!(
-        stopped.descriptor.lock().await.lifecycle,
-        DaemonWorkerLifecycle::Failed
-    );
-    assert_eq!(
-        stopped.consecutive_failures.load(Ordering::SeqCst),
-        MAX_CONSECUTIVE_FAILURES + 1
-    );
-    // The refuser's session is untouched: it keeps running.
-    assert!(
-        supervisor.registry.get("w-abandon-refused").await.is_some(),
-        "the refusal keeps its session running"
-    );
-}
-
 /// The saved-session surfaces (the `list --all` summary row and the
 /// `list_saved_sessions` catalog row) carry the persisted thinking
 /// level: the agents-view Model column renders "model:level" for
@@ -1378,7 +1249,7 @@ async fn adoption_settles_then_seeds_the_roster_once() {
     // Adoption adopts nothing (the descriptor dir is empty) and hands
     // back the boot seed task; the seed publishes the anchored family.
     supervisor
-        .adopt_persisted_workers(AdoptionBoot::PlainStartup)
+        .adopt_persisted_workers()
         .await;
     crate::supervisor_roster_seed::tests::drain_pending_seeds_for_tests(&supervisor).await;
     let row = supervisor
@@ -1879,8 +1750,8 @@ async fn a_signal_during_an_in_flight_shutdown_forces() {
         "a signal racing the shutdown command forces"
     );
 
-    // An update exit published accept_exit before the gate: the
-    // signal forces without flipping the gate.
+    // A published accept_exit before the gate: the signal forces without
+    // flipping the gate.
     let dir = tempfile::TempDir::new().unwrap();
     let options = SupervisorOptions {
         socket_path: dir.path().join("daemon.sock"),
@@ -1890,45 +1761,11 @@ async fn a_signal_during_an_in_flight_shutdown_forces() {
     supervisor.accept_exit.store(true, Ordering::SeqCst);
     assert!(
         !supervisor.begin_signal_drain(),
-        "a signal racing the update exit forces"
+        "a signal racing a published exit forces"
     );
     assert!(
         !supervisor.shutting_down.load(Ordering::SeqCst),
-        "the update exit must not become a terminal stop pass"
-    );
-
-    // The update's committed stop window: a signal forces without flipping
-    // the gate, so the terminal pass can never tombstone and delete the
-    // descriptors the successor must adopt.
-    let dir = tempfile::TempDir::new().unwrap();
-    let options = SupervisorOptions {
-        socket_path: dir.path().join("daemon.sock"),
-        agent_dir: dir.path().join("agent"),
-    };
-    let supervisor = Arc::new(Supervisor::new(options).expect("supervisor"));
-    let update_id = UpdateId::from("u-signal".to_string());
-    let budget = UpdateTimeoutBudget::from_env();
-    supervisor
-        .update_prepare
-        .begin(update_id.clone(), util::now_ms(), &budget);
-    supervisor.update_prepare.drain_complete(&update_id);
-    supervisor
-        .update_prepare
-        .snapshot_written(&update_id, util::now_ms(), &budget);
-    supervisor.update_prepare.prepare_acked(&update_id);
-    supervisor.update_prepare.commit(&update_id);
-    assert_eq!(
-        supervisor.update_prepare.active_state(),
-        Some(PrepareState::Stopping),
-        "the transaction reached the committed stop window"
-    );
-    assert!(
-        !supervisor.begin_signal_drain(),
-        "a signal racing the committed update stop forces"
-    );
-    assert!(
-        !supervisor.shutting_down.load(Ordering::SeqCst),
-        "the committed update stop must not become a terminal stop pass"
+        "a published exit must not become a terminal stop pass"
     );
 }
 

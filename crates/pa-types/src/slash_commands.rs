@@ -42,7 +42,7 @@ pub struct BuiltinSlashCommand {
 pub fn moved_to_settings(name: &str) -> bool {
     matches!(
         name,
-        "model" | "effort" | "thinking" | "subagent-settings" | "fast" | "tier" | "nightly"
+        "model" | "effort" | "thinking" | "subagent-settings" | "fast" | "tier"
             | "factory" | "telemetry" | "rlm-max-depth" | "speed" | "autonomous"
     )
 }
@@ -62,7 +62,6 @@ const CANONICAL_BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     BuiltinSlashCommand { name: "traces", description: "Inspect, preview, or upload Prime Agent traces", execution: SlashCommandExecution::Client, argument_hint: Some("[status|preview|upload|upload-current|upload-all|login]"), aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "context", description: "Show token, cost, and context usage for agent and sub-agents", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &["usage"], takes_argument: false },
     BuiltinSlashCommand { name: "changelog", description: "Show changelog entries", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },
-    BuiltinSlashCommand { name: "update", description: "Update to the latest version (sessions preserved)", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "hotkeys", description: "Show all keyboard shortcuts", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "fork", description: "Create a new fork from a previous user message", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },
     BuiltinSlashCommand { name: "clone", description: "Duplicate the current session at the current position", execution: SlashCommandExecution::Client, argument_hint: None, aliases: &[], takes_argument: false },

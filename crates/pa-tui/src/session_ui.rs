@@ -46,7 +46,7 @@ pub(crate) use prompt::SubmitBehavior;
 use sessions_fork::{create_session, terminal_columns};
 use settings::PendingConfirm;
 pub(crate) use settings::ReloadNote;
-pub(crate) use share::{ShareNote, TracesUploadNote, UpdateNote};
+pub(crate) use share::{ShareNote, TracesUploadNote};
 use share::{ShareRun, TraceUploadAllRun, TracesLoginIntent};
 use stream::already_running_warning;
 pub(crate) use stream::resume_hint_from_stats;
@@ -288,9 +288,6 @@ pub(crate) struct SessionUi {
     /// The running panel login's cooperative cancel signal: armed only by flows that
     /// check it between poll steps; a cancelled flow never writes its credential.
     auth_panel_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    update_commands: Option<crate::update_command::UpdateCommandsHandle>,
-    update_notes: mpsc::UnboundedSender<UpdateNote>,
-    update_in_flight: bool,
     pub(crate) exit_requested: bool,
     pub(crate) open_agents_view: bool,
     pub(crate) scoped_agents_view: Option<crate::agents_view::AgentsViewScope>,

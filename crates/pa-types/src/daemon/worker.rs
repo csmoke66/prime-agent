@@ -1,11 +1,9 @@
-//! Worker protocol: the supervisor <-> worker command/event unions, worker
-//! descriptors, and the update-restart manifest.
+//! Worker protocol: the supervisor <-> worker command/event unions and worker
+//! descriptors.
 
 #[cfg(test)]
 use super::rt;
-use super::{
-    AgentMessage, DaemonClientCapability, Deserialize, JsonMap, Serialize, SnapshotPurpose, Value,
-};
+use super::{DaemonClientCapability, Deserialize, JsonMap, Serialize, SnapshotPurpose, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -262,54 +260,6 @@ pub struct DaemonWorkerDescriptor {
     pub rest: JsonMap,
 }
 
-pub const DAEMON_UPDATE_RESTART_FORMAT_VERSION: u64 = 1;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DaemonUpdateRestartQueue {
-    pub actions: Value,
-    pub next_turn: Vec<AgentMessage>,
-}
-
-// Wire/API contract: the per-session state flags serialize as-is; reshaping
-// them into enums changes the restart-session schema.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DaemonUpdateRestartSession {
-    pub active_session_id: String,
-    pub session_id: String,
-    pub session_file: String,
-    pub cwd: String,
-    pub config: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_metadata: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_env: Option<std::collections::BTreeMap<String, String>>,
-    pub queue: DaemonUpdateRestartQueue,
-    pub should_resume: bool,
-    pub was_streaming: bool,
-    pub was_compacting: bool,
-    pub was_bash_running: bool,
-    pub had_running_rlm_children: bool,
-    pub was_retrying: bool,
-    pub had_accepted_prompt_in_flight: bool,
-    #[serde(flatten)]
-    pub rest: JsonMap,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DaemonUpdateRestartManifest {
-    pub format_version: u64,
-    pub created_at: String,
-    pub sessions: Vec<DaemonUpdateRestartSession>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub discarded_active_session_ids: Option<Vec<String>>,
-    #[serde(flatten)]
-    pub rest: JsonMap,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,13 +277,6 @@ mod tests {
         );
         rt::<DaemonPeerCommand>(
             r#"{"type":"peer_auth","grantId":"g","token":"t","workerInstanceId":"w","purpose":"session_client"}"#,
-        );
-    }
-
-    #[test]
-    fn update_restart_manifest_roundtrip() {
-        rt::<DaemonUpdateRestartManifest>(
-            r#"{"formatVersion":1,"createdAt":"t","sessions":[{"activeSessionId":"a","sessionId":"s","sessionFile":"/f","cwd":"/w","config":{"x":1},"queue":{"actions":{"a":[]},"nextTurn":[]},"shouldResume":true,"wasStreaming":false,"wasCompacting":false,"wasBashRunning":false,"hadRunningRlmChildren":false,"wasRetrying":false,"hadAcceptedPromptInFlight":false}],"discardedActiveSessionIds":["z"]}"#,
         );
     }
 }

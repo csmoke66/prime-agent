@@ -152,7 +152,6 @@ pub const KNOWN_COMMAND_TYPES: &[&str] = &[
     "session_prompt_segments",
     "get_tool_definition",
     "set_session_entry_label",
-    "prepare_update_restart",
     "retry_worker",
     "restart",
     "shutdown",
@@ -162,8 +161,6 @@ pub const KNOWN_COMMAND_TYPES: &[&str] = &[
     "worker_register",
     "worker_roster_delta",
     "get_worker_peer_transport",
-    "commit_update_restart",
-    "update_restore_status",
     "get_mcp_connections",
     "set_mcp_static_token",
     "remove_mcp_connection",
@@ -943,9 +940,6 @@ pub fn command_active_session_id(command: &DaemonCommand) -> Option<&str> {
         | DaemonCommand::Create { .. }
         | DaemonCommand::SendMessage { .. }
         | DaemonCommand::AckResult { .. }
-        | DaemonCommand::PrepareUpdateRestart { .. }
-        | DaemonCommand::CommitUpdateRestart { .. }
-        | DaemonCommand::UpdateRestoreStatus { .. }
         | DaemonCommand::ListPersistentShells { .. }
         | DaemonCommand::SearchSessionContent { .. }
         | DaemonCommand::TailPersistentShell { .. }
@@ -1080,10 +1074,7 @@ pub fn command_type_name(command: &DaemonCommand) -> &'static str {
         DaemonCommand::SetSessionEntryLabel { .. } => "set_session_entry_label",
         DaemonCommand::MarkAnthropicWarningShown { .. } => "mark_anthropic_warning_shown",
         DaemonCommand::AckResult { .. } => "ack_result",
-        DaemonCommand::PrepareUpdateRestart { .. } => "prepare_update_restart",
-        DaemonCommand::CommitUpdateRestart { .. } => "commit_update_restart",
         DaemonCommand::RetryWorker { .. } => "retry_worker",
-        DaemonCommand::UpdateRestoreStatus { .. } => "update_restore_status",
         DaemonCommand::Restart { .. } => "restart",
         DaemonCommand::Shutdown { .. } => "shutdown",
         DaemonCommand::WorkerRegister { .. } => "worker_register",
@@ -1267,22 +1258,6 @@ mod tests {
         assert_eq!(
             info.reason.as_deref(),
             Some("resume_cursor_ahead_of_session")
-        );
-    }
-
-    /// The preparing-restart refusal keeps the TS plain message for old
-    /// clients and carries the typed `update_restarting` info.
-    #[test]
-    fn update_preparing_refusal_carries_the_typed_error_info() {
-        let failure = response_failure(
-            Some("k3"),
-            "create",
-            crate::update_prepare::UPDATE_PREPARING_MESSAGE,
-            Some(DaemonErrorInfo::UpdateRestarting),
-        );
-        assert_eq!(
-            serde_json::to_string(&response_line(&failure)).unwrap(),
-            "{\"id\":\"k3\",\"type\":\"response\",\"command\":\"create\",\"success\":false,\"error\":\"Daemon is preparing an update restart\",\"errorInfo\":{\"code\":\"update_restarting\"}}"
         );
     }
 

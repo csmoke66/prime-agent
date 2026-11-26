@@ -318,38 +318,6 @@ fn plain_errors_are_not_rejections() {
     assert!(!is_daemon_rejection(&error));
 }
 
-/// TS #2391 `update_restarting` wire round-trip: the typed info
-/// survives the wire to a `RequestRejected`, and an unrelated refusal
-/// never classifies as the update-restart transient state.
-#[test]
-fn update_restarting_rejection_round_trips_the_wire() {
-    let line = serde_json::from_str::<DaemonResponse>(
-        r#"{"type":"response","command":"create","success":false,"error":"Daemon is preparing an update restart","errorInfo":{"code":"update_restarting"}}"#,
-    )
-    .expect("typed refusal parses");
-    let error = response_data_or_error("create", line).unwrap_err();
-    assert!(is_update_restarting_rejection(&error));
-    let rejection = error
-        .downcast_ref::<RequestRejected>()
-        .expect("typed rejection");
-    assert_eq!(
-        rejection.error_info,
-        Some(pa_types::daemon::DaemonErrorInfo::UpdateRestarting)
-    );
-    let legacy = serde_json::from_str::<DaemonResponse>(
-        r#"{"type":"response","command":"create","success":false,"error":"Daemon is preparing an update restart"}"#,
-    )
-    .expect("legacy refusal parses");
-    let error = response_data_or_error("create", legacy).unwrap_err();
-    assert!(is_update_restarting_rejection(&error));
-    let other = serde_json::from_str::<DaemonResponse>(
-        r#"{"type":"response","command":"create","success":false,"error":"Unknown active session: active-gap"}"#,
-    )
-    .expect("unrelated refusal parses");
-    let error = response_data_or_error("create", other).unwrap_err();
-    assert!(!is_update_restarting_rejection(&error));
-}
-
 /// The session-addressed lanes' kernel-not-running refusal (the
 /// `/factory off` guard's definitive-zero class): the exact wire string
 /// classifies through the plain-message predicate, and no other refusal

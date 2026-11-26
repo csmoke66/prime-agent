@@ -6,6 +6,9 @@ use super::{
     QueuedItem, SessionFile, TurnPolicy, Value, Worker, SIDE_QUESTION_SETTLE_TIMEOUT,
 };
 
+/// Queued for a turn that a daemon-wide shutdown interrupted, so the next boot resumes it.
+const RESTART_CONTINUATION_PROMPT: &str = "The daemon restarted. Continue the interrupted task from the saved transcript and restored tool/kernel state. Inspect current state before retrying commands when needed.";
+
 /// How long the shutdown waits for the connections' fan-outs to flush.
 const SHUTDOWN_FLUSH_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -114,7 +117,7 @@ impl Worker {
                 core.steering.push_front(QueuedItem {
                     priority: QueuePriority::Human,
                     preview: None,
-                    message: crate::update_restore::UPDATE_RESTART_CONTINUATION_PROMPT.to_string(),
+                    message: RESTART_CONTINUATION_PROMPT.to_string(),
                     custom_message: None,
                     agent_message: None,
                     queue_key: None,

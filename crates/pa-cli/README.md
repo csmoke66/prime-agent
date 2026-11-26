@@ -93,29 +93,3 @@ each discovered daemon, and the reap/shutdown planners and executors. Containmen
 the contract: every scan, probe, and stop is scoped to an explicit `DaemonStateRoot`
 (the env-resolved current root for the CLI). All e2e daemons live in
 test-created fixture directories only.
-
-## Update flow (staged activation)
-
-`prime-agent update` (the `update_flow` module): the invoking CLI plans, downloads, and
-stages the candidate (`Acquire`..`Staged`), then spawns the detached
-coordinator - the new binary running from its release dir - which adopts the
-status file and owns the FSM to a terminal state (`Preparing..Complete`,
-`Rollback` first-class). `intent.json` is the coordinator lock (Join on a
-live holder, dead-holder steal), the status file keeps the TS schema plus
-`updateId`/`state`/`epoch`, and the activation owns the bin-symlink swap
-(`bin/previous` rollback pointer, `.activation-state` recovery record).
-Mechanism support (version/channel policy, install-root layout, manifest
-fetch, archive staging) lives in pa-core's `update` module; the daemon-side
-prepare/commit/stop drivers and the boot restore pass are pa-daemon
-(slices 2-3 and 5): the coordinator's `Restoring` phase polls the
-successor's `update_restore_status` RPC for the real per-session counts.
-The legacy restart adapter accepts the fresh status path supplied by shipped
-TypeScript updaters after they activate a release. It reports the original
-`requestId`/`phase` status schema, translates their session checkpoint to a
-Rust roster, and restarts the daemon without repeating activation. Recovery
-rosters remain on disk when restoration fails. Socket-scoped checkpoints resume
-after an interrupted handoff when no daemon is running, and reject a different
-installed version. The adapter holds the shipped TypeScript shutdown-admission
-lease in both historic supervisor registries until Rust owns the replacement
-socket, preventing old clients from launching a competing daemon. Admission
-records are refreshed and removed only while their ownership token matches.

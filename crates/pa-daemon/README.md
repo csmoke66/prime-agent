@@ -211,41 +211,6 @@ round-trips through a real worker session and kernel - the kernel cell's
 session's host handlers, spawn the fixture
 (`tests/fixtures/mcp_echo_server.py`), and echo back.
 
-Update-prepare transaction (`update_prepare.rs`): the supervisor-side FSM
-`Draining -> Fenced -> Snapshotted -> Prepared -> Stopping` with the
-mutation-drain latch + admission gate (mutating commands refused with
-"Daemon is preparing an update restart" while active; reads/attach and the
-TS abort-family drain commands stay served), the hard prepare deadline
-(90 s default) and the durable 45 s marker self-expiry as watchdogs — both
-re-checked on a timer and on any later command — idempotent
-`prepare_update_restart` on `updateId` (a different id is a typed refusal
-the coordinator maps to Join), and `Aborted -> Serving` with prepared-dir
-cleanup as the failure default. The prepare RPC drives accept
-through the mutation drain to `Fenced`, snapshots every resident worker
-(`update_snapshot`, `worker.rs`), assembles the roster (`update_roster.rs`:
-sessions/workers/subagents from the ledger + displays, heartbeats as a
-read-only `scheduled-jobs.json` projection), writes
-`prepared/<id>/{roster,marker}.json` durably, and acks `Prepared` — all
-inside the prepare budget. `commit_update_restart` consumes the
-transaction (`update_stop.rs`): the acked worker `shutdown` (its handler is
-the flush barrier) with the 30s + 30s budgets, abandon-on-refusal (the
-supervisor resumes `Serving`, refused sessions untouched, stopped workers
-relaunched — never a kill), or the update exit when all workers stopped
-(descriptors survive for the new supervisor's create-or-adopt restore).
-The new supervisor's boot owns the update's restore side
-(`update_restore.rs`, spec §6): it consumes `PRIME_AGENT_UPDATE_ROSTER`
-from its spawn env before the unconditional scratch-dir sweep (this
-socket's `update-restarts/` subtree plus the TS-era legacy names — no
-liveness checks, no exceptions), then restores the roster rows bottom-up
-(create-or-adopt; per-session failure records, restore never fails the
-boot), re-arms scheduled work (a boot scan of `scheduled-jobs.json`;
-due active jobs of sessionless files are woken once, never archived), and
-reports the pass over `update_restore_status` while `hello.update_resume`
-carries the settle state; client attaches to a not-yet-restored roster row
-queue behind the pass instead of failing.
-For historical TypeScript update manifests, the restore pass recreates parents
-before their children, remaps active parent IDs, and restores pending context
-and action queues explicitly because those manifests predate Rust's journals.
 Attaches remain gated until that replay completes.
 The heartbeat-catalog change
 broadcast owns its surface here too (the worker's cron-store
@@ -266,6 +231,5 @@ pa-types, pa-core (one-way).
 
 The composition root initializes the packaged product version with
 `protocol::configure_app_version` before entering daemon or worker mode.
-`protocol::app_version` supplies that identity to both hello frames and update
-checkpoints; library embedders fall back to the compiled version. Release
+`protocol::app_version` supplies that identity to hello frames; library embedders fall back to the compiled version. Release
 manifest restamping therefore remains consistent with CLI `--version`.

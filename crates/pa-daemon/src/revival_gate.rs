@@ -54,14 +54,11 @@ impl RevivalVeto {
     }
 }
 
-/// Whether a boot may relaunch one dead descriptor. `kept_by_update` is
-/// the update roster's kept set (exempt from the freshness bound);
-/// `busy_recorded_at` is the newest `busy` record's timestamp when the
-/// journal proves live work (a kept row may carry `None`).
+/// Whether a boot may relaunch one dead descriptor. `busy_recorded_at` is the
+/// newest `busy` record's timestamp when the journal proves live work.
 pub(crate) fn revival_veto(
     agent_dir: &Path,
     descriptor: &DaemonWorkerDescriptor,
-    kept_by_update: bool,
     busy_recorded_at: Option<&str>,
 ) -> Option<RevivalVeto> {
     if matches!(descriptor.lifecycle, DaemonWorkerLifecycle::Failed) {
@@ -76,23 +73,21 @@ pub(crate) fn revival_veto(
             return Some(RevivalVeto::LiveLeaseHeld { pid: owner.pid });
         }
     }
-    if !kept_by_update {
-        // The busy-evidence path: the journal's proof must be fresh. A
-        // missing timestamp cannot prove freshness — uncertainty must not
-        // revive a session.
-        let recorded_at = busy_recorded_at?;
-        let now = crate::util::now_ms();
-        let fresh = crate::util::iso_to_unix_ms(recorded_at).is_some_and(|at| {
-            at <= now.saturating_add(REVIVAL_CLOCK_SKEW_MS)
-                && now.saturating_sub(at) <= REVIVAL_BUSY_EVIDENCE_MAX_AGE_MS
-        });
-        if !fresh {
-            return Some(RevivalVeto::StaleBusyEvidence {
-                recorded_at: recorded_at.to_string(),
-            });
-        }
+    // The busy-evidence path: the journal's proof must be fresh. A missing
+    // timestamp cannot prove freshness — uncertainty must not revive a session.
+    let recorded_at = busy_recorded_at?;
+    let now = crate::util::now_ms();
+    let fresh = crate::util::iso_to_unix_ms(recorded_at).is_some_and(|at| {
+        at <= now.saturating_add(REVIVAL_CLOCK_SKEW_MS)
+            && now.saturating_sub(at) <= REVIVAL_BUSY_EVIDENCE_MAX_AGE_MS
+    });
+    if fresh {
+        None
+    } else {
+        Some(RevivalVeto::StaleBusyEvidence {
+            recorded_at: recorded_at.to_string(),
+        })
     }
-    None
 }
 
 /// The session file's durable state is the archived belt: an unreadable
@@ -171,13 +166,7 @@ mod tests {
         let file = session_file(Some("active"));
         let recorded_at = iso_from_unix_ms(now_ms() - 1_000);
         let agent_dir = agent_dir();
-        assert!(revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at)
-        )
-        .is_none());
+        assert!(revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at)).is_none());
     }
 
     #[test]
@@ -186,13 +175,8 @@ mod tests {
         // The storm shape: a busy record written five hours before the boot.
         let recorded_at = iso_from_unix_ms(now_ms() - 5 * 60 * 60 * 1000);
         let agent_dir = agent_dir();
-        let veto = revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at),
-        )
-        .expect("stale busy evidence must veto");
+        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at))
+            .expect("stale busy evidence must veto");
         assert!(matches!(veto, RevivalVeto::StaleBusyEvidence { .. }));
     }
 
@@ -200,7 +184,7 @@ mod tests {
     fn an_unparsable_evidence_timestamp_vetoes_the_revival() {
         let file = session_file(Some("active"));
         let agent_dir = agent_dir();
-        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), false, Some("when?"))
+        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), Some("when?"))
             .expect("uncertainty must not revive");
         assert!(matches!(veto, RevivalVeto::StaleBusyEvidence { .. }));
     }
@@ -212,13 +196,8 @@ mod tests {
         // zero the age through saturating_sub: uncertainty never revives.
         let recorded_at = iso_from_unix_ms(now_ms() + 2 * 60 * 60 * 1000);
         let agent_dir = agent_dir();
-        let veto = revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at),
-        )
-        .expect("a future stamp is not freshness proof");
+        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at))
+            .expect("a future stamp is not freshness proof");
         assert!(matches!(veto, RevivalVeto::StaleBusyEvidence { .. }));
     }
 
@@ -230,24 +209,8 @@ mod tests {
         let recorded_at = iso_from_unix_ms(now_ms() + 30 * 1000);
         let agent_dir = agent_dir();
         assert!(
-            revival_veto(
-                &agent_dir,
-                &descriptor(Some(&file)),
-                false,
-                Some(&recorded_at)
-            )
-            .is_none(),
+            revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at)).is_none(),
             "a small skew is tolerated"
-        );
-    }
-
-    #[test]
-    fn a_kept_update_row_skips_the_freshness_bound() {
-        let file = session_file(Some("active"));
-        let agent_dir = agent_dir();
-        assert!(
-            revival_veto(&agent_dir, &descriptor(Some(&file)), true, None).is_none(),
-            "the roster's kept set is the update's own point-in-time intent"
         );
     }
 
@@ -258,7 +221,7 @@ mod tests {
         let agent_dir = agent_dir();
         let mut descriptor = descriptor(Some(&file));
         descriptor.lifecycle = DaemonWorkerLifecycle::Failed;
-        let veto = revival_veto(&agent_dir, &descriptor, false, Some(&recorded_at))
+        let veto = revival_veto(&agent_dir, &descriptor, Some(&recorded_at))
             .expect("failed lifecycle must veto");
         assert!(matches!(veto, RevivalVeto::GaveUp));
     }
@@ -269,24 +232,8 @@ mod tests {
         let file = session_file(Some("archived"));
         let recorded_at = iso_from_unix_ms(now_ms());
         let agent_dir = agent_dir();
-        let veto = revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at),
-        )
-        .expect("an archived session must not revive");
-        assert!(matches!(veto, RevivalVeto::SessionArchived));
-    }
-
-    #[test]
-    fn the_archived_belt_vetoes_a_kept_update_row() {
-        // A stop that landed during the update window is durable intent:
-        // the roster's kept set cannot override it.
-        let file = session_file(Some("archived"));
-        let agent_dir = agent_dir();
-        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), true, None)
-            .expect("the belt must veto");
+        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at))
+            .expect("an archived session must not revive");
         assert!(matches!(veto, RevivalVeto::SessionArchived));
     }
 
@@ -301,13 +248,8 @@ mod tests {
         let lease = crate::lease::acquire_runtime_session_lease(&file, &agent_dir);
         std::env::remove_var(crate::lease::SESSION_LEASES_ENABLED_ENV);
         let _lease = lease.expect("the test process acquires the lease");
-        let veto = revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at),
-        )
-        .expect("a live lease must veto");
+        let veto = revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at))
+            .expect("a live lease must veto");
         assert!(matches!(veto, RevivalVeto::LiveLeaseHeld { .. }));
     }
 
@@ -323,12 +265,6 @@ mod tests {
         let lease = crate::lease::acquire_runtime_session_lease(&file, &agent_dir);
         std::env::remove_var(crate::lease::SESSION_LEASES_ENABLED_ENV);
         drop(lease.expect("the test process acquires the lease"));
-        assert!(revival_veto(
-            &agent_dir,
-            &descriptor(Some(&file)),
-            false,
-            Some(&recorded_at)
-        )
-        .is_none());
+        assert!(revival_veto(&agent_dir, &descriptor(Some(&file)), Some(&recorded_at)).is_none());
     }
 }

@@ -871,10 +871,7 @@ fn wave_b10_catalog_slices_served_without_reforwarding() {
     // Hello is written before this connection subscribes to broadcasts. A local,
     // read-only RPC response proves the subscribed command loop is now running;
     // it neither consults a worker nor refreshes or invalidates a catalog slice.
-    observer.send_command(
-        "observer-ready",
-        &json!({ "type": "update_restore_status" }),
-    );
+    observer.send_command("observer-ready", &json!({ "type": "roster_unsubscribe" }));
     let ready = observer.read_response("observer-ready");
     assert_eq!(ready["success"], true, "{ready}");
 

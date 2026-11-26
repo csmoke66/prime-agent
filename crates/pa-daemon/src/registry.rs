@@ -129,13 +129,6 @@ impl WorkerRouteState {
                     WorkerEnd::Stopped | WorkerEnd::GaveUp => WorkerEnd::Stopped,
                 }
             }
-            // A retired worker stays retired.
-            WorkerTransition::ResumeStopped => {
-                self.end = match self.end {
-                    WorkerEnd::Stopping => WorkerEnd::Live,
-                    end @ (WorkerEnd::Live | WorkerEnd::Stopped | WorkerEnd::GaveUp) => end,
-                }
-            }
             WorkerTransition::RetireStopped => self.end = WorkerEnd::Stopped,
             // A stop that raced the give-up keeps the stop's end.
             WorkerTransition::GiveUp => {
@@ -159,8 +152,6 @@ pub(crate) enum WorkerTransition {
     /// A replacement's create replay is pending.
     SessionReplaying,
     RequestStop,
-    /// An abandoned update stop hands the worker back to supervision.
-    ResumeStopped,
     RetireStopped,
     GiveUp,
 }

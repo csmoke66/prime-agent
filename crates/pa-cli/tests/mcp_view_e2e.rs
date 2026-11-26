@@ -283,7 +283,6 @@ fn headless_options(socket: &Path, dir: &Path) -> pa_tui::interactive::Interacti
         client_auth: None,
         traces: None,
         provider_auth: None,
-        update_commands: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,

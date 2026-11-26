@@ -9,9 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use super::load::from_value_lenient;
 use super::merge::{deep_merge, migrate};
 use super::storage::{SettingsScope, SettingsStorage};
-use super::types::{
-    QueueModeSetting, Settings, ThinkingLevelSetting, TransportSetting, UpdateChannel,
-};
+use super::types::{QueueModeSetting, Settings, ThinkingLevelSetting, TransportSetting};
 
 pub const RECENT_MODELS_LIMIT: usize = 20;
 pub const DEFAULT_IDLE_EVICTION_MINUTES: u64 = 90;
@@ -314,14 +312,6 @@ impl SettingsManager {
     pub fn set_theme(&mut self, theme: String) -> Result<()> {
         self.global.theme = Some(theme);
         self.save_global(&["theme"])
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error when the global settings file cannot be written.
-    pub fn set_update_channel(&mut self, channel: UpdateChannel) -> Result<()> {
-        self.global.update_channel = Some(channel);
-        self.save_global(&["updateChannel"])
     }
 
     /// # Errors
@@ -717,12 +707,6 @@ impl SettingsManager {
     #[must_use]
     pub fn get_theme(&self) -> Option<&str> {
         self.merged.theme.as_deref()
-    }
-
-    /// Global-only read of the two known values; anything else is unset.
-    #[must_use]
-    pub fn get_update_channel(&self) -> Option<UpdateChannel> {
-        self.global.update_channel
     }
 
     #[must_use]

@@ -211,12 +211,6 @@ impl pa_tui::client_settings::ClientSettings for StubSettings {
     fn set_warnings_anthropic_extra_usage(&self, _enabled: bool) -> Result<()> {
         Ok(())
     }
-    fn update_channel(&self) -> Option<String> {
-        None
-    }
-    fn set_update_channel(&self, _channel: &str) -> Result<()> {
-        Ok(())
-    }
     fn telemetry_status(&self) -> String {
         let (state, reason) = self.state();
         format!("Telemetry is {state} ({reason}).\nInstallation id: stub-id")
@@ -234,9 +228,6 @@ impl pa_tui::client_settings::ClientSettings for StubSettings {
             "Telemetry turned off."
         };
         Ok(format!("{headline}\n{}", self.telemetry_status()))
-    }
-    fn effective_update_channel(&self, _version: &str) -> String {
-        "stable".to_string()
     }
     fn telemetry_notice_due(&self) -> bool {
         // Like the real funnel: a due notice stops being due once the

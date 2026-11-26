@@ -216,7 +216,6 @@ use pa_tui::traces::{
     TraceUploadAllNoteSender, TraceUploadAllReport, TraceUploadCancel, TraceUploadStatus,
     TracesCommands, TracesCommandsHandle, TracesFuture,
 };
-use pa_tui::update_command::{UpdateCommands, UpdateCommandsHandle};
 
 struct ScriptedTraces {
     credential: Mutex<Option<String>>,
@@ -531,20 +530,6 @@ impl ProviderAuthCommands for ScriptedProviderAuth {
     }
 }
 
-/// The `/update` funnel the verifier scripts: record the run, answer a fixed outcome.
-struct ScriptedUpdate {
-    calls: Mutex<u32>,
-    outcome: Result<String, String>,
-}
-
-impl UpdateCommands for ScriptedUpdate {
-    fn run_update(&self) -> pa_tui::update_command::UpdateRunFuture {
-        *self.calls.lock().unwrap() += 1;
-        let outcome = self.outcome.clone();
-        Box::pin(async move { outcome })
-    }
-}
-
 /// The interactive options over one attached scripted session, hooks injected.
 #[allow(clippy::too_many_arguments)]
 fn command_options(
@@ -555,7 +540,6 @@ fn command_options(
     session_id: &str,
     traces: Option<TracesCommandsHandle>,
     provider_auth: Option<pa_tui::provider_auth::ProviderAuthCommandsHandle>,
-    update_commands: Option<UpdateCommandsHandle>,
 ) -> pa_tui::interactive::InteractiveOptions {
     pa_tui::interactive::InteractiveOptions {
         models: None,
@@ -584,7 +568,6 @@ fn command_options(
         client_auth: None,
         traces,
         provider_auth,
-        update_commands,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,
@@ -688,7 +671,6 @@ async fn tui_copy_emits_the_ts_osc52_sequence() {
         &session_id,
         None,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -765,7 +747,6 @@ async fn tui_copy_toast_coalesces_consecutive_copies_and_auto_dismisses() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         None,
         None,
     );
@@ -885,7 +866,6 @@ async fn tui_prime_login_renders_the_inline_team_picker() {
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1008,7 +988,6 @@ async fn tui_prime_login_escape_keeps_the_default_team_status() {
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1077,7 +1056,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         None,
         None,
     );
@@ -1151,7 +1129,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &fresh_id,
         None,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1216,7 +1193,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &fresh_id,
         None,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![pa_tui::interactive::HeadlessStep::Submit(
@@ -1266,7 +1242,6 @@ async fn tui_traces_renders_status_and_toggles_the_setting() {
         &script_path,
         &session_id,
         Some(traces.handle()),
-        None,
         None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
@@ -1379,7 +1354,6 @@ async fn tui_traces_upload_all_sweeps_with_live_progress() {
         &session_id,
         Some(traces.handle()),
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1449,7 +1423,6 @@ async fn tui_traces_without_a_credential_runs_the_login_flow() {
         &session_id,
         Some(traces.handle()),
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1487,7 +1460,6 @@ async fn tui_traces_without_a_credential_runs_the_login_flow() {
         &script_path,
         &session_id,
         Some(traces.handle()),
-        None,
         None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
@@ -1559,7 +1531,6 @@ async fn tui_traces_login_enables_and_uploads() {
         &session_id,
         Some(traces.handle()),
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1629,7 +1600,6 @@ async fn tui_login_and_logout_run_the_provider_flows() {
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1693,7 +1663,6 @@ async fn tui_login_and_logout_run_the_provider_flows() {
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1716,163 +1685,6 @@ async fn tui_login_and_logout_run_the_provider_flows() {
         rendered.contains("Usage: /logout"),
         "the logout usage error renders"
     );
-}
-
-// /update
-
-/// `/update` runs OUT-OF-BAND, mid-turn: the confirm renders while the turn
-/// streams (the update replaces only the binary; the daemon keeps running);
-/// the outcome lands as a note row; a second in-flight run is refused.
-#[tokio::test]
-async fn tui_update_runs_out_of_band_during_a_turn() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    // A slow scripted turn keeps the session busy while the update runs.
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "slow turn", "delayMs": 2500 },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let update = Arc::new(ScriptedUpdate {
-        calls: Mutex::new(0),
-        outcome: Ok("9.9.9-continuous.0123456789abcdef".to_string()),
-    });
-    let update_view = Arc::clone(&update);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        None,
-        None,
-        Some(UpdateCommandsHandle(
-            Arc::clone(&update) as Arc<dyn UpdateCommands>
-        )),
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(800),
-            pa_tui::interactive::HeadlessStep::Submit("/update".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(400),
-            enter(),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "updated to".to_string(),
-                timeout_ms: 10_000,
-            },
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        !rendered.contains("Wait for the current work to finish before updating."),
-        "the out-of-band update has no busy guard:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("your sessions and configuration (~/.prime/agent) are never touched"),
-        "the confirm carries the preserve invariant:\n{rendered}"
-    );
-    assert!(
-        rendered.contains(
-            "updated to 9.9.9-continuous.0123456789abcdef — restart prime-agent to run it"
-        ),
-        "the outcome note renders:\n{rendered}"
-    );
-    assert_eq!(
-        *update_view.calls.lock().unwrap(),
-        1,
-        "the confirmed run spawned exactly one funnel task"
-    );
-}
-
-#[tokio::test]
-async fn tui_update_failure_lands_the_error_row() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let update = Arc::new(ScriptedUpdate {
-        calls: Mutex::new(0),
-        outcome: Err("the installer exited with code 3".to_string()),
-    });
-    let update_view = Arc::clone(&update);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        None,
-        None,
-        Some(UpdateCommandsHandle(
-            Arc::clone(&update) as Arc<dyn UpdateCommands>
-        )),
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/update".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(300),
-            enter(),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "the installer exited with code 3".to_string(),
-                timeout_ms: 10_000,
-            },
-            // The outcome landed: the guard is clear; a second run confirms again.
-            pa_tui::interactive::HeadlessStep::Submit("/update".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(400),
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        rendered.contains("the installer exited with code 3"),
-        "the failure lands as the error row:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("An update is already running"),
-        "the guard clears when the outcome lands:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Update installs the latest Prime Agent build"),
-        "the second run re-opens the confirm:\n{rendered}"
-    );
-    assert_eq!(*update_view.calls.lock().unwrap(), 1, "one funnel run");
 }
 
 #[tokio::test]
@@ -1903,7 +1715,6 @@ async fn tui_logout_with_no_stored_credentials_reports_the_ts_status() {
         &session_id,
         None,
         Some(ScriptedProviderAuth::new().handle()),
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![pa_tui::interactive::HeadlessStep::Submit(

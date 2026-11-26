@@ -206,7 +206,6 @@ async fn run_interactive_surface(
     let (prompt_tx, mut prompt_rx) =
         mpsc::unbounded_channel::<crate::session_ui::PromptSubmitNote>();
     let (share_tx, mut share_rx) = mpsc::unbounded_channel::<crate::session_ui::ShareNote>();
-    let (update_tx, mut update_rx) = mpsc::unbounded_channel::<crate::session_ui::UpdateNote>();
     let (reload_tx, mut reload_rx) = mpsc::unbounded_channel::<crate::session_ui::ReloadNote>();
     let (traces_upload_tx, mut traces_upload_rx) =
         mpsc::unbounded_channel::<crate::session_ui::TracesUploadNote>();
@@ -328,7 +327,6 @@ async fn run_interactive_surface(
         let share_tx = share_tx.clone();
         let reload_tx = reload_tx.clone();
         let traces_upload_tx = traces_upload_tx.clone();
-        let update_tx = update_tx.clone();
         let catalog_tx = catalog_tx.clone();
         let auth_panel_tx = auth_panel_tx.clone();
         let heartbeats_tx = heartbeats_tx.clone();
@@ -336,69 +334,59 @@ async fn run_interactive_surface(
         let factory_tx = factory_tx.clone();
         let commands_tx = commands_tx.clone();
         let page_tx = page_tx.clone();
-        let waits_through_update_restart = !matches!(route, SessionOpenRoute::Cli);
         tokio::spawn(async move {
-            crate::update_restart_wait::wait_through_update_restart(
-                waits_through_update_restart,
-                crate::update_restart_wait::DAEMON_UPDATE_RESTART_OPEN_WAIT_MS,
-                crate::update_restart_wait::DAEMON_UPDATE_RESTART_OPEN_RETRY_MS,
-                || {
-                    // The attempt future owns everything it touches (an
-                    // `async move` over clones taken here): an `FnMut`
-                    // closure's captures may not escape into the returned
-                    // future, so the synchronous body moves the pieces out
-                    // instead.
-                    let first = first_connection.take();
-                    let options = options.clone();
-                    let notes_tx = notes_tx.clone();
-                    let compaction_abort_tx = compaction_abort_tx.clone();
-                    let prompt_tx = prompt_tx.clone();
-                    let share_tx = share_tx.clone();
-                    let reload_tx = reload_tx.clone();
-                    let traces_upload_tx = traces_upload_tx.clone();
-                    let update_tx = update_tx.clone();
-                    let catalog_tx = catalog_tx.clone();
-                    let auth_panel_tx = auth_panel_tx.clone();
-                    let heartbeats_tx = heartbeats_tx.clone();
-                    let bash_tx = bash_tx.clone();
-                    let factory_tx = factory_tx.clone();
-                    let commands_tx = commands_tx.clone();
-                    let page_tx = page_tx.clone();
-                    async move {
-                        let (client, events) = match first {
-                            Some(first) => first,
-                            None => DaemonClient::connect(&options.socket_path)
-                                .await
-                                .with_context(|| {
-                                    "the interactive UI could not attach to the daemon"
-                                })?,
-                        };
-                        let session = SessionUi::open(
-                            client,
-                            &options,
-                            notes_tx,
-                            compaction_abort_tx,
-                            prompt_tx,
-                            share_tx,
-                            reload_tx,
-                            update_tx,
-                            traces_upload_tx,
-                            catalog_tx,
-                            auth_panel_tx,
-                            crate::session_ui::ActivityUpdates {
-                                heartbeats: heartbeats_tx,
-                                bash: bash_tx,
-                                factory: factory_tx,
-                                commands: commands_tx,
-                            },
-                            page_tx,
-                        )
-                        .await?;
-                        Ok((events, session))
-                    }
-                },
-            )
-            .await
+            let mut attempt = || {
+                // The attempt future owns everything it touches (an
+                // `async move` over clones taken here): an `FnMut`
+                // closure's captures may not escape into the returned
+                // future, so the synchronous body moves the pieces out
+                // instead.
+                let first = first_connection.take();
+                let options = options.clone();
+                let notes_tx = notes_tx.clone();
+                let compaction_abort_tx = compaction_abort_tx.clone();
+                let prompt_tx = prompt_tx.clone();
+                let share_tx = share_tx.clone();
+                let reload_tx = reload_tx.clone();
+                let traces_upload_tx = traces_upload_tx.clone();
+                let catalog_tx = catalog_tx.clone();
+                let auth_panel_tx = auth_panel_tx.clone();
+                let heartbeats_tx = heartbeats_tx.clone();
+                let bash_tx = bash_tx.clone();
+                let factory_tx = factory_tx.clone();
+                let commands_tx = commands_tx.clone();
+                let page_tx = page_tx.clone();
+                async move {
+                    let (client, events) = match first {
+                        Some(first) => first,
+                        None => DaemonClient::connect(&options.socket_path)
+                            .await
+                            .with_context(|| "the interactive UI could not attach to the daemon")?,
+                    };
+                    let session = SessionUi::open(
+                        client,
+                        &options,
+                        notes_tx,
+                        compaction_abort_tx,
+                        prompt_tx,
+                        share_tx,
+                        reload_tx,
+                        traces_upload_tx,
+                        catalog_tx,
+                        auth_panel_tx,
+                        crate::session_ui::ActivityUpdates {
+                            heartbeats: heartbeats_tx,
+                            bash: bash_tx,
+                            factory: factory_tx,
+                            commands: commands_tx,
+                        },
+                        page_tx,
+                    )
+                    .await?;
+                    Ok((events, session))
+                }
+            };
+            attempt().await
         })
     };
     // The opening phase: the input surface serves keystrokes while the
@@ -606,7 +594,7 @@ async fn run_interactive_surface(
             }
         }
     };
-    let ((events, mut session), waited_for_update_restart) = match open_outcome {
+    let (events, mut session) = match open_outcome {
         Ok(opened) => opened,
         Err(error) => {
             // A daemon refusal for the startup create/attach/resume: the pane hands off to the
@@ -661,18 +649,6 @@ async fn run_interactive_surface(
                     ..Default::default()
                 });
             }
-            // The open wait's deadline failure is the same handoff: the guidance to retry must land
-            // on the view the user came from.
-            if crate::update_restart_wait::is_update_restart_deadline_error(&error) {
-                exit_guard.cancel();
-                let frames = renderer.finish(&mut view, true);
-                return Ok(InteractiveOutcome {
-                    return_to_agents_view: true,
-                    agents_view_notice: Some(format!("{error:#}")),
-                    frames,
-                    ..Default::default()
-                });
-            }
             // The surface is already up: hand the terminal back before the CLI reports the failure.
             if renderer.is_terminal() {
                 exit_guard.arm_for_exit();
@@ -705,15 +681,6 @@ async fn run_interactive_surface(
         );
     }
     if let Some(notice) = check_tmux_keyboard_setup().await {
-        view.push_entry(crate::chat::ChatEntry::Status {
-            text: format!("\u{26a0} {notice}"),
-            kind: crate::chat::StatusKind::Warning,
-        });
-        session.dirty = true;
-    }
-    // An open that waited through the update restart says so in the session's first status row.
-    if waited_for_update_restart {
-        let notice = crate::update_restart_wait::DAEMON_UPDATE_RESTART_WAIT_NOTICE;
         view.push_entry(crate::chat::ChatEntry::Status {
             text: format!("\u{26a0} {notice}"),
             kind: crate::chat::StatusKind::Warning,
@@ -1463,11 +1430,6 @@ async fn run_interactive_surface(
                     session.apply_share_outcome(outcome, &mut view);
                 }
             }
-            maybe_update = update_rx.recv() => {
-                if let Some(outcome) = maybe_update {
-                    session.apply_update_note(outcome, &mut view);
-                }
-            }
             maybe_reload = reload_rx.recv() => {
                 if let Some(outcome) = maybe_reload {
                     session.apply_reload_outcome(outcome, &mut view).await;
@@ -1933,12 +1895,7 @@ async fn run_interactive_surface(
         selection_origin: session.pending_selection_origin,
         copies: std::mem::take(&mut session.copies),
         opened_urls: std::mem::take(&mut session.opened_urls),
-        // The view's status line keeps the wait notice when the chat hands back.
-        agents_view_notice: if waited_for_update_restart && preserve_alt_screen {
-            Some(crate::update_restart_wait::DAEMON_UPDATE_RESTART_WAIT_NOTICE.to_string())
-        } else {
-            None
-        },
+        agents_view_notice: None,
         handoff_seeds: view.handoff_seeds,
     };
     // The agents-view handoff's background detach owns this connection now; every other exit

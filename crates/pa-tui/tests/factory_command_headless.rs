@@ -28,7 +28,6 @@
 mod support;
 
 use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -313,15 +312,6 @@ impl pa_tui::client_settings::ClientSettings for RecordingSettings {
     }
     fn set_warnings_anthropic_extra_usage(&self, _enabled: bool) -> Result<()> {
         Ok(())
-    }
-    fn update_channel(&self) -> Option<String> {
-        None
-    }
-    fn set_update_channel(&self, _channel: &str) -> Result<()> {
-        Ok(())
-    }
-    fn effective_update_channel(&self, _version: &str) -> String {
-        "stable".to_string()
     }
 }
 

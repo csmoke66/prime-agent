@@ -533,11 +533,6 @@ fn build_tui_options(
         traces: Some(pa_tui::traces::TracesCommandsHandle(std::sync::Arc::new(
             crate::client_traces::ClientTraces::new(config.cwd.clone(), config.agent_dir.clone()),
         ))),
-        // `/update`: the same body `prime-agent update` runs, output
-        // captured — the TUI stays mounted.
-        update_commands: Some(pa_tui::update_command::UpdateCommandsHandle(
-            std::sync::Arc::new(crate::client_update::ClientUpdate),
-        )),
         provider_auth: Some(provider_auth),
         telemetry: Some(std::sync::Arc::new(CliInteractionTelemetry::new(
             config.cwd.clone(),

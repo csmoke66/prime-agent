@@ -227,39 +227,30 @@ impl Supervisor {
         let timeout = client_route_timeout(command);
         // Resolve the session (the generic route's wake-aware resolution).
         let mut rebound_to: Option<String> = None;
-        let resident = if let Ok(resident) = self.registry.resolve(active_session_id).await {
-            resident
-        } else {
-            self.await_restore_target(active_session_id).await;
-            match self.registry.resolve(active_session_id).await {
-                Ok(resident) => resident,
-                Err(_) => {
-                    // The stale-active-id rebind: the admission id stays the
-                    // idempotency key — the prompt never reached a worker,
-                    // so routing to the current resident is exactly-once.
-                    if let Some(resident) = self.binding_target(active_session_id).await {
-                        let current = self
-                            .rebind_connection(active_session_id, &resident, attached)
-                            .await;
-                        // The admission follows the rebind: a cancel by the
-                        // advertised current id must find it in flight.
-                        let rekeyed = prompt_admission_key(
-                            &current,
-                            input_admission_id(command).unwrap_or_default(),
-                        );
-                        if connection.prompt_admissions.rekey(&key, &rekeyed) {
-                            key = rekeyed;
-                        }
-                        rebound_to = Some(current);
-                        resident
-                    } else {
-                        let message =
-                            self.restore_failure_for(active_session_id)
-                                .unwrap_or_else(|| {
-                                    format!("Unknown active session: {active_session_id}")
-                                });
-                        return Self::admission_failure(&command_id, &type_name, &message);
+        let resident = match self.registry.resolve(active_session_id).await {
+            Ok(resident) => resident,
+            Err(_) => {
+                // The stale-active-id rebind: the admission id stays the
+                // idempotency key — the prompt never reached a worker,
+                // so routing to the current resident is exactly-once.
+                if let Some(resident) = self.binding_target(active_session_id).await {
+                    let current = self
+                        .rebind_connection(active_session_id, &resident, attached)
+                        .await;
+                    // The admission follows the rebind: a cancel by the
+                    // advertised current id must find it in flight.
+                    let rekeyed = prompt_admission_key(
+                        &current,
+                        input_admission_id(command).unwrap_or_default(),
+                    );
+                    if connection.prompt_admissions.rekey(&key, &rekeyed) {
+                        key = rekeyed;
                     }
+                    rebound_to = Some(current);
+                    resident
+                } else {
+                    let message = format!("Unknown active session: {active_session_id}");
+                    return Self::admission_failure(&command_id, &type_name, &message);
                 }
             }
         };

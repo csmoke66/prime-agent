@@ -341,177 +341,157 @@ impl Supervisor {
         // The rebind target when the selector addresses a superseded id: the
         // routed command is rewritten to the current id.
         let mut rebound_to: Option<String> = None;
-        let resident = if let Ok(resident) = self.registry.resolve(&selector).await {
-            resident
-        } else {
-            // Spec §10.4: attach-by-durable-id at any time. A restore pass may still be
-            // bringing the session up, so the command queues server-side behind it.
-            self.await_restore_target(&selector).await;
-            match self.registry.resolve(&selector).await {
-                Ok(resident) => resident,
-                Err(_) => {
-                    // The stale-active-id rebind: the command never reached a worker, so
-                    // routing once to the current resident delivers it exactly once.
-                    if let Some(resident) = self.binding_target(&selector).await {
-                        // A detach addressed to a superseded id has no worker to reach:
-                        // forwarding it would drop the client's fresh attach, so retire
-                        // the stale address here.
-                        if matches!(command, DaemonCommand::Detach { .. }) {
-                            attached.detach(&self.session_subscribers, &selector);
-                            return (
-                                vec![response_line(&response_success(
+        let resident = match self.registry.resolve(&selector).await {
+            Ok(resident) => resident,
+            Err(_) => {
+                // The stale-active-id rebind: the command never reached a worker, so
+                // routing once to the current resident delivers it exactly once.
+                if let Some(resident) = self.binding_target(&selector).await {
+                    // A detach addressed to a superseded id has no worker to reach:
+                    // forwarding it would drop the client's fresh attach, so retire
+                    // the stale address here.
+                    if matches!(command, DaemonCommand::Detach { .. }) {
+                        attached.detach(&self.session_subscribers, &selector);
+                        return (
+                            vec![response_line(&response_success(
+                                Some(&command_id),
+                                &type_name,
+                                None,
+                            ))],
+                            false,
+                        );
+                    }
+                    rebound_to = Some(self.rebind_connection(&selector, &resident, attached).await);
+                    resident
+                } else {
+                    // The passivated-session surfaces (TS's
+                    // whole-worker idle eviction: the worker is gone,
+                    // the session file survives). A prompt-family
+                    // command (or an attach) aimed at a session whose
+                    // worker stopped resolves the SAVED session and
+                    // wakes it (reuse a resident host, otherwise launch
+                    // a fresh worker over the file — TS's tier-2
+                    // relaunch); a delete's kill marker resolves the
+                    // ledger edge and tombstones without a worker. A
+                    // parent-directed rename must hydrate its target
+                    // the same way (TS `renameAgentFamilySession`
+                    // resolves through the hydrated target).
+                    if matches!(
+                        command,
+                        DaemonCommand::Prompt { .. }
+                            | DaemonCommand::PromptAndWait { .. }
+                            | DaemonCommand::Steer { .. }
+                            | DaemonCommand::FollowUp { .. }
+                            | DaemonCommand::Attach { .. }
+                            | DaemonCommand::Reattach { .. }
+                            | DaemonCommand::Rename { .. }
+                            | DaemonCommand::WaitForIdle { .. }
+                    ) {
+                        match self.wake_saved_session(&selector).await {
+                            WakeRoute::Woken(resident) => {
+                                rebound_to = Some(
+                                    self.rebind_connection(&selector, &resident, attached).await,
+                                );
+                                resident
+                            }
+                            WakeRoute::Fallthrough(message) => {
+                                return (
+                                    vec![response_line(&response_failure(
+                                        Some(&command_id),
+                                        &type_name,
+                                        &message,
+                                        None,
+                                    ))],
+                                    false,
+                                );
+                            }
+                        }
+                    } else if let DaemonCommand::GetSessionMessages {
+                        start,
+                        limit,
+                        roles,
+                        session_file: Some(session_file),
+                        ..
+                    } = command
+                    {
+                        // A family member's read of a session no worker holds (a
+                        // passivated child): a read-only open of its file, never a wake.
+                        let response =
+                            match saved_session_messages(session_file, *start, *limit, roles).await
+                            {
+                                Ok(data) => {
+                                    response_success(Some(&command_id), &type_name, Some(data))
+                                }
+                                Err(error) => response_failure(
                                     Some(&command_id),
                                     &type_name,
+                                    &format!("{error:#}"),
                                     None,
-                                ))],
-                                false,
-                            );
-                        }
-                        rebound_to =
-                            Some(self.rebind_connection(&selector, &resident, attached).await);
-                        resident
-                    } else {
-                        // The passivated-session surfaces (TS's
-                        // whole-worker idle eviction: the worker is gone,
-                        // the session file survives). A prompt-family
-                        // command (or an attach) aimed at a session whose
-                        // worker stopped resolves the SAVED session and
-                        // wakes it (reuse a resident host, otherwise launch
-                        // a fresh worker over the file — TS's tier-2
-                        // relaunch); a delete's kill marker resolves the
-                        // ledger edge and tombstones without a worker. A
-                        // parent-directed rename must hydrate its target
-                        // the same way (TS `renameAgentFamilySession`
-                        // resolves through the hydrated target).
-                        if matches!(
-                            command,
-                            DaemonCommand::Prompt { .. }
-                                | DaemonCommand::PromptAndWait { .. }
-                                | DaemonCommand::Steer { .. }
-                                | DaemonCommand::FollowUp { .. }
-                                | DaemonCommand::Attach { .. }
-                                | DaemonCommand::Reattach { .. }
-                                | DaemonCommand::Rename { .. }
-                                | DaemonCommand::WaitForIdle { .. }
-                        ) {
-                            match self.wake_saved_session(&selector).await {
-                                WakeRoute::Woken(resident) => {
-                                    rebound_to = Some(
-                                        self.rebind_connection(&selector, &resident, attached)
-                                            .await,
+                                ),
+                            };
+                        return (vec![response_line(&response)], false);
+                    } else if let DaemonCommand::Kill { rest, .. } = command {
+                        if let Some(reason) = rest
+                            .get("rlmLedgerDelete")
+                            .and_then(Value::as_str)
+                            .and_then(crate::rlm_ledger::RlmLedgerDeleteReason::from_wire)
+                        {
+                            // The delete of a stopped child: no worker to kill — the ledger
+                            // tombstone IS the deletion boundary.
+                            let child_id = rest
+                                .get("rlmChildId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                            match self
+                                .tombstone_saved_rlm_child(&selector, child_id.as_deref(), reason)
+                                .await
+                            {
+                                Ok(()) => {
+                                    return (
+                                        vec![response_line(&response_success(
+                                            Some(&command_id),
+                                            &type_name,
+                                            None,
+                                        ))],
+                                        false,
                                     );
-                                    resident
                                 }
-                                WakeRoute::Fallthrough(message) => {
+                                Err(error) => {
                                     return (
                                         vec![response_line(&response_failure(
                                             Some(&command_id),
                                             &type_name,
-                                            &message,
+                                            &format!("Failed to delete RLM subagent: {error:#}"),
                                             None,
                                         ))],
                                         false,
                                     );
                                 }
                             }
-                        } else if let DaemonCommand::GetSessionMessages {
-                            start,
-                            limit,
-                            roles,
-                            session_file: Some(session_file),
-                            ..
-                        } = command
-                        {
-                            // A family member's read of a session no worker holds (a
-                            // passivated child): a read-only open of its file, never a wake.
-                            let response =
-                                match saved_session_messages(session_file, *start, *limit, roles)
-                                    .await
-                                {
-                                    Ok(data) => {
-                                        response_success(Some(&command_id), &type_name, Some(data))
-                                    }
-                                    Err(error) => response_failure(
-                                        Some(&command_id),
-                                        &type_name,
-                                        &format!("{error:#}"),
-                                        None,
-                                    ),
-                                };
-                            return (vec![response_line(&response)], false);
-                        } else if let DaemonCommand::Kill { rest, .. } = command {
-                            if let Some(reason) = rest
-                                .get("rlmLedgerDelete")
-                                .and_then(Value::as_str)
-                                .and_then(crate::rlm_ledger::RlmLedgerDeleteReason::from_wire)
-                            {
-                                // The delete of a stopped child: no worker to kill — the ledger
-                                // tombstone IS the deletion boundary.
-                                let child_id = rest
-                                    .get("rlmChildId")
-                                    .and_then(Value::as_str)
-                                    .map(str::to_string);
-                                match self
-                                    .tombstone_saved_rlm_child(
-                                        &selector,
-                                        child_id.as_deref(),
-                                        reason,
-                                    )
-                                    .await
-                                {
-                                    Ok(()) => {
-                                        return (
-                                            vec![response_line(&response_success(
-                                                Some(&command_id),
-                                                &type_name,
-                                                None,
-                                            ))],
-                                            false,
-                                        );
-                                    }
-                                    Err(error) => {
-                                        return (
-                                            vec![response_line(&response_failure(
-                                                Some(&command_id),
-                                                &type_name,
-                                                &format!(
-                                                    "Failed to delete RLM subagent: {error:#}"
-                                                ),
-                                                None,
-                                            ))],
-                                            false,
-                                        );
-                                    }
-                                }
-                            }
-                            // No delete marker: a kill of a stopped session stays the plain
-                            // unknown-session error — nothing to kill.
-                            let message = self
-                                .restore_failure_for(&selector)
-                                .unwrap_or_else(|| format!("Unknown active session: {selector}"));
-                            return (
-                                vec![response_line(&response_failure(
-                                    Some(&command_id),
-                                    &type_name,
-                                    &message,
-                                    None,
-                                ))],
-                                false,
-                            );
-                        } else {
-                            let message = self
-                                .restore_failure_for(&selector)
-                                .unwrap_or_else(|| format!("Unknown active session: {selector}"));
-                            return (
-                                vec![response_line(&response_failure(
-                                    Some(&command_id),
-                                    &type_name,
-                                    &message,
-                                    None,
-                                ))],
-                                false,
-                            );
                         }
+                        // No delete marker: a kill of a stopped session stays the plain
+                        // unknown-session error — nothing to kill.
+                        let message = format!("Unknown active session: {selector}");
+                        return (
+                            vec![response_line(&response_failure(
+                                Some(&command_id),
+                                &type_name,
+                                &message,
+                                None,
+                            ))],
+                            false,
+                        );
+                    } else {
+                        let message = format!("Unknown active session: {selector}");
+                        return (
+                            vec![response_line(&response_failure(
+                                Some(&command_id),
+                                &type_name,
+                                &message,
+                                None,
+                            ))],
+                            false,
+                        );
                     }
                 }
             }
@@ -946,10 +926,9 @@ impl Supervisor {
                     Some(crate::messaging::WakeOutcome::Failed(message)) => {
                         WakeRoute::Fallthrough(message)
                     }
-                    Some(crate::messaging::WakeOutcome::Unknown) | None => WakeRoute::Fallthrough(
-                        self.restore_failure_for(selector)
-                            .unwrap_or_else(|| format!("Unknown active session: {selector}")),
-                    ),
+                    Some(crate::messaging::WakeOutcome::Unknown) | None => {
+                        WakeRoute::Fallthrough(format!("Unknown active session: {selector}"))
+                    }
                 }
             }
             crate::messaging::WakeOutcome::Failed(message) => WakeRoute::Fallthrough(message),

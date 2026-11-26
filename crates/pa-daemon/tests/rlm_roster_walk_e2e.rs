@@ -81,20 +81,27 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
     panic!("supervisor socket never appeared");
 }
 
-fn drain_boot_seed(socket: &Path) {
+/// Wait for the boot adoption pass, which logs once it has enqueued the boot seed;
+/// `roster_subscribe` then waits for that seed.
+fn drain_boot_seed(socket: &Path, agent_dir: &Path) {
     let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let (mut client, hello) = Client::connect(socket);
-        if hello["updateResume"]["complete"] == true {
-            // Restore completion follows adoption, which has already enqueued the boot seed.
-            let subscribed =
-                client.send_command("boot-seed", &json!({ "type": "roster_subscribe" }));
-            assert_eq!(subscribed["success"], true, "{subscribed}");
-            return;
-        }
+    let settled = || {
+        std::fs::read_dir(agent_dir.join("logs"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                std::fs::read_to_string(entry.path())
+                    .is_ok_and(|log| log.contains("boot adoption settled"))
+            })
+    };
+    while !settled() {
         assert!(Instant::now() < deadline, "boot adoption never settled");
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(20));
     }
+    let (mut client, _) = Client::connect(socket);
+    let subscribed = client.send_command("boot-seed", &json!({ "type": "roster_subscribe" }));
+    assert_eq!(subscribed["success"], true, "{subscribed}");
 }
 
 /// Gate registration requests while other worker-to-supervisor traffic keeps flowing.
@@ -635,7 +642,7 @@ fn open_resume_publishes_the_family_in_the_first_subscribe_snapshot() {
     let (root_path, live) = write_synthetic_family(&agent_dir, 2);
     assert_eq!(live, 2, "two passive ledger children");
     let _daemon = spawn_daemon(&socket, &agent_dir);
-    drain_boot_seed(&socket);
+    drain_boot_seed(&socket, &agent_dir);
     let backend = root.join("backend.sock");
     let registration = RegistrationGate::bind(&socket, &backend);
     let (mut client, hello) = Client::connect(&backend);
@@ -716,7 +723,7 @@ fn a_disconnected_create_still_seeds_its_family_before_registration() {
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
     let (root, _) = write_synthetic_family(&agent_dir, 1);
     let _daemon = spawn_daemon(&socket, &agent_dir);
-    drain_boot_seed(&socket);
+    drain_boot_seed(&socket, &agent_dir);
     let registration = RegistrationGate::bind(&socket, &backend);
     let (mut opener, _) = Client::connect(&backend);
     let create = json!({

@@ -1,15 +1,8 @@
 //! Package command validation and help.
 
 use pa_core::packages::{PackageManager, ProgressEvent, ProgressEventKind, UserOrProject};
-use pa_core::update::version::UpdateChannel;
 
 use crate::config::{get_agent_dir, APP_NAME, CONFIG_DIR_NAME};
-use crate::self_update::SelfUpdateOptions;
-
-use crate::public_command::{
-    DAEMON_UPDATE_RESTART_COORDINATOR_FLAG, DAEMON_UPDATE_RESTART_ORIGIN_FLAG,
-    DAEMON_UPDATE_RESTART_STATUS_FLAG,
-};
 
 /// Result of running a package command: printed output is handled here, and the
 /// exit code is reported for the caller to propagate.
@@ -29,10 +22,6 @@ fn fail(message: &str, hint: Option<&str>) -> PackageCommandOutcome {
     PackageCommandOutcome { exit_code: Some(1) }
 }
 
-fn is_self_update_source(source: &str) -> bool {
-    source == "self" || source == "pi" || source == APP_NAME
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PackageCommand {
     Install,
@@ -46,52 +35,21 @@ impl PackageCommand {
         match self {
             PackageCommand::Install => format!("{APP_NAME} package install <source> [--local]"),
             PackageCommand::Remove => format!("{APP_NAME} package remove <source> [--local]"),
-            PackageCommand::Update => format!(
-                "{APP_NAME} update [--force] [--rollback] [--nightly|--stable] or {APP_NAME} package update [source]"
-            ),
+            PackageCommand::Update => format!("{APP_NAME} package update [source]"),
             PackageCommand::List => format!("{APP_NAME} package list"),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum UpdateTarget {
-    All,
-    SelfOnly,
-    Extensions { source: Option<String> },
-}
-
-impl UpdateTarget {
-    fn includes_self(&self) -> bool {
-        matches!(self, UpdateTarget::All | UpdateTarget::SelfOnly)
-    }
-
-    fn includes_extensions(&self) -> bool {
-        match self {
-            UpdateTarget::Extensions { .. } | UpdateTarget::All => true,
-            UpdateTarget::SelfOnly => false,
-        }
-    }
-}
-
 #[derive(Debug, Default)]
-#[allow(clippy::struct_excessive_bools)] // the package command's flag set is the deliberate surface
 struct PackageCommandOptions {
     local: bool,
     help: bool,
-    force: bool,
-    rollback: bool,
-    channel: Option<UpdateChannel>,
-    update_target: Option<UpdateTarget>,
     invalid_option: Option<String>,
     invalid_argument: Option<String>,
     missing_option_value: Option<String>,
     conflicting_options: Option<String>,
     source: Option<String>,
-    restart_coordinator: bool,
-    restart_daemon_socket: Option<String>,
-    restart_status_path: Option<String>,
-    restart_origin_active_session_id: Option<String>,
 }
 
 fn parse_package_command(args: &[String]) -> Option<PackageCommandOptions> {
@@ -104,11 +62,7 @@ fn parse_package_command(args: &[String]) -> Option<PackageCommandOptions> {
     }?;
     let rest = &args[1..];
     let mut options = PackageCommandOptions::default();
-    let mut channel: Option<&str> = None;
-    let mut self_flag = false;
-    let mut extensions_flag = false;
     let mut extension_flag_source: Option<String> = None;
-    let mut daemon_socket_seen = false;
 
     let mut index = 0;
     while index < rest.len() {
@@ -117,158 +71,28 @@ fn parse_package_command(args: &[String]) -> Option<PackageCommandOptions> {
             "-h" | "--help" => {
                 options.help = true;
             }
-            "--local" => {
-                if matches!(command, PackageCommand::Install | PackageCommand::Remove) {
-                    options.local = true;
-                } else {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                }
+            "--local" if matches!(command, PackageCommand::Install | PackageCommand::Remove) => {
+                options.local = true;
             }
-            "--self" => {
-                if command == PackageCommand::Update {
-                    self_flag = true;
-                } else {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                }
-            }
-            "--extensions" => {
-                if command == PackageCommand::Update {
-                    extensions_flag = true;
-                } else {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                }
-            }
-            "--force" => {
-                if command == PackageCommand::Update {
-                    options.force = true;
-                } else {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                }
-            }
-            "--rollback" => {
-                if command == PackageCommand::Update {
-                    options.rollback = true;
-                    self_flag = true;
-                } else {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                }
-            }
-            "--nightly" | "--stable" => {
-                if command != PackageCommand::Update {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
+            // `--extensions` names the default target: every installed package.
+            "--extensions" if command == PackageCommand::Update => {}
+            "--extension" if command == PackageCommand::Update => match rest.get(index + 1) {
+                Some(value) if !value.starts_with('-') => {
+                    if extension_flag_source.is_some() {
+                        options.conflicting_options.get_or_insert_with(|| {
+                            "--extension can only be provided once".to_string()
+                        });
+                    } else {
+                        extension_flag_source = Some(value.clone());
+                    }
                     index += 1;
-                    continue;
                 }
-                let requested = if arg == "--nightly" {
-                    "nightly"
-                } else {
-                    "stable"
-                };
-                if channel.is_some() && channel != Some(requested) {
-                    options.conflicting_options.get_or_insert_with(|| {
-                        "--nightly and --stable cannot be combined".to_string()
-                    });
-                }
-                channel = Some(requested);
-            }
-            "--daemon-socket" => {
-                if command != PackageCommand::Update {
+                _ => {
                     options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                    index += 1;
-                    continue;
-                }
-                match rest.get(index + 1) {
-                    Some(value) if !value.starts_with('-') => {
-                        if daemon_socket_seen {
-                            options.conflicting_options.get_or_insert_with(|| {
-                                "--daemon-socket can only be provided once".to_string()
-                            });
-                        } else {
-                            daemon_socket_seen = true;
-                            options.restart_daemon_socket = Some(value.clone());
-                        }
-                        index += 1;
-                    }
-                    _ => {
-                        options
-                            .missing_option_value
-                            .get_or_insert_with(|| arg.to_string());
-                    }
-                }
-            }
-            DAEMON_UPDATE_RESTART_COORDINATOR_FLAG => {
-                if command == PackageCommand::Update {
-                    options.restart_coordinator = true;
-                } else {
-                    options
-                        .invalid_option
+                        .missing_option_value
                         .get_or_insert_with(|| arg.to_string());
                 }
-            }
-            DAEMON_UPDATE_RESTART_STATUS_FLAG | DAEMON_UPDATE_RESTART_ORIGIN_FLAG => {
-                if command != PackageCommand::Update {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                    index += 1;
-                    continue;
-                }
-                match rest.get(index + 1) {
-                    Some(value) if !value.starts_with('-') => {
-                        if arg == DAEMON_UPDATE_RESTART_STATUS_FLAG {
-                            options.restart_status_path = Some(value.clone());
-                        } else {
-                            options.restart_origin_active_session_id = Some(value.clone());
-                        }
-                        index += 1;
-                    }
-                    _ => {
-                        options
-                            .missing_option_value
-                            .get_or_insert_with(|| arg.to_string());
-                    }
-                }
-            }
-            "--extension" => {
-                if command != PackageCommand::Update {
-                    options
-                        .invalid_option
-                        .get_or_insert_with(|| arg.to_string());
-                    index += 1;
-                    continue;
-                }
-                match rest.get(index + 1) {
-                    Some(value) if !value.starts_with('-') => {
-                        if extension_flag_source.is_some() {
-                            options.conflicting_options.get_or_insert_with(|| {
-                                "--extension can only be provided once".to_string()
-                            });
-                        } else {
-                            extension_flag_source = Some(value.clone());
-                        }
-                        index += 1;
-                    }
-                    _ => {
-                        options
-                            .missing_option_value
-                            .get_or_insert_with(|| arg.to_string());
-                    }
-                }
-            }
+            },
             _ if arg.starts_with('-') => {
                 options
                     .invalid_option
@@ -287,73 +111,13 @@ fn parse_package_command(args: &[String]) -> Option<PackageCommandOptions> {
         index += 1;
     }
 
-    if command == PackageCommand::Update {
-        options.channel = channel.and_then(UpdateChannel::from_wire);
-        if extension_flag_source.is_some() {
-            if self_flag || extensions_flag {
-                options.conflicting_options.get_or_insert_with(|| {
-                    "--extension cannot be combined with --self or --extensions".to_string()
-                });
-            }
-            if options.source.is_some() {
-                options.conflicting_options.get_or_insert_with(|| {
-                    "--extension cannot be combined with a positional source".to_string()
-                });
-            }
-        } else if let Some(source) = &options.source {
-            if !is_self_update_source(source) && (extensions_flag || self_flag) {
-                options.conflicting_options.get_or_insert_with(|| {
-                    "positional update targets cannot be combined with --self or --extensions"
-                        .to_string()
-                });
-            }
-        }
-        let positional_source_not_self = options
-            .source
-            .as_deref()
-            .is_some_and(|source| !is_self_update_source(source));
-        if options.rollback
-            && (extensions_flag || extension_flag_source.is_some() || positional_source_not_self)
-        {
-            options.conflicting_options =
-                Some("--rollback only applies to Prime Agent itself".to_string());
-        }
-        if channel.is_some()
-            && (extensions_flag || extension_flag_source.is_some() || positional_source_not_self)
-        {
+    if let Some(extension_source) = extension_flag_source {
+        if options.source.is_some() {
             options.conflicting_options.get_or_insert_with(|| {
-                "--nightly and --stable only apply to Prime Agent itself".to_string()
+                "--extension cannot be combined with a positional source".to_string()
             });
         }
-    }
-
-    if command == PackageCommand::Update {
-        let update_target = if let Some(extension_source) = extension_flag_source {
-            UpdateTarget::Extensions {
-                source: Some(extension_source),
-            }
-        } else if let Some(source) = &options.source {
-            if is_self_update_source(source) {
-                if extensions_flag {
-                    UpdateTarget::All
-                } else {
-                    UpdateTarget::SelfOnly
-                }
-            } else {
-                UpdateTarget::Extensions {
-                    source: Some(source.clone()),
-                }
-            }
-        } else if self_flag && extensions_flag {
-            UpdateTarget::All
-        } else if self_flag {
-            UpdateTarget::SelfOnly
-        } else if extensions_flag {
-            UpdateTarget::Extensions { source: None }
-        } else {
-            UpdateTarget::All
-        };
-        options.update_target = Some(update_target);
+        options.source = Some(extension_source);
     }
 
     Some(options)
@@ -369,7 +133,7 @@ fn print_package_command_help(command: PackageCommand) {
             "Usage:\n  {usage}\n\nRemove a package and its source from settings.\n\nOptions:\n  --local    Remove from project settings ({CONFIG_DIR_NAME}/settings.json)\n\nExamples:\n  {APP_NAME} package remove npm:@foo/bar\n"
         ),
         PackageCommand::Update => println!(
-            "Usage:\n  {usage}\n\nUpdate {APP_NAME} or installed packages.\n\nOptions:\n  --self                  Update {APP_NAME} only\n  --extensions            Update installed packages only\n  --extension <source>    Update one package only\n  --force                 Reinstall {APP_NAME} even if the current version is latest\n  --rollback              Restore the previous compiled release\n  --nightly               Switch updates to the nightly channel (unreleased builds, may be broken)\n  --stable                Return updates to the stable channel\n  --daemon-socket <path>  Restart the daemon listening on this exact socket\n\nCommands:\n  {APP_NAME} update                Update {APP_NAME}\n  {APP_NAME} package update        Update installed packages\n  {APP_NAME} package update <source> Update one package\n"
+            "Usage:\n  {usage}\n\nUpdate installed packages, or one package when a source is given.\n\nOptions:\n  --extension <source>    Update one package only\n"
         ),
         PackageCommand::List => println!(
             "Usage:\n  {usage}\n\nList active packages from user settings.\n"
@@ -377,8 +141,7 @@ fn print_package_command_help(command: PackageCommand) {
     }
 }
 
-/// Validation and help here, the package manager subsystem below, and the
-/// update case's self target through the native self-update flow.
+/// Validation and help here, the package manager subsystem below.
 pub fn handle_package_command(args: &[String]) -> PackageCommandOutcome {
     let Some(options) = parse_package_command(args) else {
         return PackageCommandOutcome { exit_code: None };
@@ -431,51 +194,6 @@ pub fn handle_package_command(args: &[String]) -> PackageCommandOutcome {
     if let Some(conflict) = &options.conflicting_options {
         return fail(conflict, Some(&format!("Usage: {}", command.usage())));
     }
-    if options.restart_coordinator {
-        // The detached coordinator mode (spec §4): this process adopts the staged
-        // status file and drives the FSM to a terminal state.
-        let (Some(socket), Some(status_path)) = (
-            options.restart_daemon_socket.clone(),
-            options.restart_status_path,
-        ) else {
-            return fail(
-                "Invalid daemon update restart coordinator invocation.",
-                None,
-            );
-        };
-        let socket_path = std::path::PathBuf::from(socket);
-        let status_path = std::path::PathBuf::from(status_path);
-        let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                return fail(
-                    &format!("Could not start the update coordinator runtime: {error}."),
-                    None,
-                );
-            }
-        };
-        let exit_code = runtime.block_on(crate::update_flow::update_command::run_coordinator_mode(
-            socket_path,
-            status_path,
-            options.restart_origin_active_session_id.as_deref(),
-        ));
-        return match exit_code {
-            Ok(code) => PackageCommandOutcome {
-                exit_code: Some(code),
-            },
-            Err(error) => fail(&format!("{error:#}"), None),
-        };
-    }
-    if options.restart_status_path.is_some() || options.restart_origin_active_session_id.is_some() {
-        return fail(
-            "Invalid daemon update restart coordinator invocation.",
-            None,
-        );
-    }
-
     let source_missing = matches!(command, PackageCommand::Install | PackageCommand::Remove)
         && options.source.is_none();
     if source_missing {
@@ -542,75 +260,16 @@ pub fn handle_package_command(args: &[String]) -> PackageCommandOutcome {
             print_package_list(&manager.list_configured_packages());
             HANDLED_OK
         }
-        PackageCommand::Update => run_package_update(
-            &mut manager,
-            options,
-            std::io::IsTerminal::is_terminal(&std::io::stdin()),
-            &crate::self_update::run,
-        ),
-    }
-}
-
-/// The `package update` case: the nightly-switch confirmation runs before any
-/// update work so declining changes nothing, then the extensions half, then the
-/// self target through the native flow. An unsupported self-update surfaces the
-/// installer-ownership message instead of a misleading refusal.
-fn run_package_update(
-    manager: &mut PackageManager,
-    options: PackageCommandOptions,
-    stdin_is_terminal: bool,
-    self_update: &dyn Fn(&SelfUpdateOptions, Option<&str>) -> i32,
-) -> PackageCommandOutcome {
-    let target = options.update_target.unwrap_or(UpdateTarget::All);
-    let persisted_wire = manager
-        .settings()
-        .get_update_channel()
-        .map(crate::self_update::settings_channel_wire_name)
-        .map(str::to_string);
-    let abort_code = if target.includes_self() {
-        crate::self_update::confirm_nightly_switch(
-            options.force,
-            options.channel,
-            persisted_wire.as_deref(),
-            stdin_is_terminal,
-        )
-    } else {
-        None
-    };
-    if let Some(abort_code) = abort_code {
-        return PackageCommandOutcome {
-            exit_code: Some(abort_code),
-        };
-    }
-    if target.includes_extensions() {
-        let update_source = match &target {
-            UpdateTarget::Extensions { source } => source.as_deref(),
-            _ => None,
-        };
-        if let Err(error) = manager.update(update_source) {
-            return fail(&format!("Error: {error}"), None);
-        }
-        match update_source {
-            Some(source) => println!("Updated {source}"),
-            None => println!("Updated packages"),
-        }
-    }
-    if !target.includes_self() {
-        return HANDLED_OK;
-    }
-    let invocation = SelfUpdateOptions {
-        force: options.force,
-        rollback: options.rollback,
-        channel: options.channel,
-        archive: None,
-        source: None,
-    };
-    let code = self_update(&invocation, persisted_wire.as_deref());
-    if code == 0 {
-        HANDLED_OK
-    } else {
-        PackageCommandOutcome {
-            exit_code: Some(code),
+        PackageCommand::Update => {
+            let source = options.source.as_deref();
+            if let Err(error) = manager.update(source) {
+                return fail(&format!("Error: {error}"), None);
+            }
+            match source {
+                Some(source) => println!("Updated {source}"),
+                None => println!("Updated packages"),
+            }
+            HANDLED_OK
         }
     }
 }
@@ -670,212 +329,5 @@ pub(crate) fn report_settings_errors(
             pa_core::settings::SettingsScope::Project => "project",
         };
         eprintln!("Warning ({context}, {scope} settings): {}", error.message);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(args: &[&str]) -> PackageCommandOptions {
-        let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
-        parse_package_command(&args).expect("the args parse")
-    }
-
-    #[test]
-    fn update_options_store_force_and_the_channel() {
-        let options = parse(&["update", "--force", "--nightly"]);
-        assert!(options.force, "--force must reach the self target");
-        assert_eq!(options.channel, Some(UpdateChannel::Nightly));
-        assert_eq!(options.update_target, Some(UpdateTarget::All));
-        let options = parse(&["update", "--stable"]);
-        assert_eq!(options.channel, Some(UpdateChannel::Stable));
-        // The conflict survives: both channel flags never resolve to one.
-        assert!(parse(&["update", "--nightly", "--stable"])
-            .conflicting_options
-            .is_some());
-        // The other commands reject both flags outright.
-        assert!(parse(&["install", "--force"]).invalid_option.is_some());
-        assert!(parse(&["remove", "--nightly"]).invalid_option.is_some());
-    }
-
-    /// An empty package-manager store in its own sandbox: the extensions half is
-    /// a no-op and the self target is the only thing under observation.
-    fn sandbox_manager(dir: &std::path::Path, update_channel: Option<&str>) -> PackageManager {
-        let cwd = dir.join("cwd");
-        let agent_dir = dir.join("agent");
-        std::fs::create_dir_all(&cwd).unwrap();
-        std::fs::create_dir_all(&agent_dir).unwrap();
-        if let Some(channel) = update_channel {
-            std::fs::write(
-                agent_dir.join("settings.json"),
-                format!(r#"{{"updateChannel": "{channel}"}}"#),
-            )
-            .unwrap();
-        }
-        let settings = pa_core::settings::SettingsManager::create(&cwd, &agent_dir);
-        PackageManager::new(cwd, agent_dir, settings)
-    }
-
-    /// A recording self-update runner: the invoked options plus the
-    /// persisted channel, and the exit code to hand back.
-    struct RecordedSelfUpdates {
-        seen: std::sync::Mutex<Vec<(SelfUpdateOptions, Option<String>)>>,
-        code: i32,
-    }
-
-    impl RecordedSelfUpdates {
-        fn new(code: i32) -> Self {
-            Self {
-                seen: std::sync::Mutex::new(Vec::new()),
-                code,
-            }
-        }
-
-        fn runner(&self) -> impl Fn(&SelfUpdateOptions, Option<&str>) -> i32 + '_ {
-            move |options, persisted| {
-                self.seen
-                    .lock()
-                    .unwrap()
-                    .push((options.clone(), persisted.map(str::to_string)));
-                self.code
-            }
-        }
-
-        fn invocations(&self) -> Vec<(SelfUpdateOptions, Option<String>)> {
-            self.seen.lock().unwrap().clone()
-        }
-    }
-
-    /// The self-update invocation the flags produce (no direct-install payload:
-    /// the package path cannot carry `--archive`).
-    fn expected_invocation(
-        force: bool,
-        rollback: bool,
-        channel: Option<UpdateChannel>,
-    ) -> SelfUpdateOptions {
-        SelfUpdateOptions {
-            force,
-            rollback,
-            channel,
-            archive: None,
-            source: None,
-        }
-    }
-
-    #[test]
-    fn a_declined_nightly_switch_changes_nothing() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), Some("stable"));
-        let options = parse(&["update", "--nightly"]);
-        let recorded = RecordedSelfUpdates::new(0);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(
-            outcome.exit_code,
-            Some(1),
-            "an unconfirmed switch on a non-tty run aborts with failure"
-        );
-        assert!(
-            recorded.invocations().is_empty(),
-            "declining runs neither half"
-        );
-    }
-
-    #[test]
-    fn force_confirms_the_switch_and_the_self_target_sees_the_flags() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), Some("stable"));
-        let options = parse(&["update", "--force", "--nightly"]);
-        let recorded = RecordedSelfUpdates::new(0);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(outcome.exit_code, None, "a completed run exits 0");
-        assert_eq!(
-            recorded.invocations(),
-            vec![(
-                expected_invocation(true, false, Some(UpdateChannel::Nightly)),
-                Some("stable".to_string())
-            )]
-        );
-    }
-
-    #[test]
-    fn a_rollback_runs_the_self_target_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), None);
-        // `--rollback` parses as the self target; with no persisted channel
-        // the runner receives none either.
-        let options = parse(&["update", "--rollback"]);
-        let recorded = RecordedSelfUpdates::new(0);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(outcome.exit_code, None);
-        assert_eq!(
-            recorded.invocations(),
-            vec![(expected_invocation(false, true, None), None)]
-        );
-    }
-
-    #[test]
-    fn the_extensions_only_target_never_runs_the_self_target() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), None);
-        let options = parse(&["update", "--extensions"]);
-        let recorded = RecordedSelfUpdates::new(0);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(outcome.exit_code, None);
-        assert!(recorded.invocations().is_empty());
-    }
-
-    #[test]
-    fn the_no_change_exit_code_reaches_the_caller() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), None);
-        let options = parse(&["update", "--self"]);
-        let recorded = RecordedSelfUpdates::new(75);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(
-            outcome.exit_code,
-            Some(75),
-            "the interactive child's not-attempted code is the process exit code"
-        );
-    }
-
-    #[test]
-    fn a_failed_self_update_fails_the_run() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut manager = sandbox_manager(dir.path(), None);
-        let options = parse(&["update", "--self"]);
-        let recorded = RecordedSelfUpdates::new(1);
-        let outcome = run_package_update(
-            &mut manager,
-            options,
-            /*stdin_is_terminal*/ false,
-            &recorded.runner(),
-        );
-        assert_eq!(outcome.exit_code, Some(1));
     }
 }

@@ -272,11 +272,6 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             }),
         },
         SettingsMenuRow {
-            id: "update-channel", label: "Update channel", description: "Stable releases or nightly pre-releases",
-            current: current.update_channel.clone().unwrap_or_else(|| "Unavailable".into()),
-            values: current.update_channel.as_ref().map(|_| vec!["stable".into(), "nightly".into()]), submenu: None,
-        },
-        SettingsMenuRow {
             id: "autonomous", label: "Autonomous mode", description: "Inspect or configure continuous work, budgets and verification gates",
             current: "Configure".into(), values: None, submenu: None,
         },
@@ -582,7 +577,6 @@ pub struct SettingsCurrentValues {
     pub speed_display: bool,
     pub telemetry_enabled: Option<bool>,
     pub trace_sharing: Option<bool>,
-    pub update_channel: Option<String>,
     pub autocompact: bool,
     pub compaction_threshold_percent: f64,
     pub tool_output_reminder_percent: Option<u8>,

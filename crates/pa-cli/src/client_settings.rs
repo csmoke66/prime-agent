@@ -401,45 +401,6 @@ impl ClientSettings for CliClientSettings {
         bool
     );
 
-    /// `updateChannel`: the settings enum's wire value; unset reads as
-    /// `None`.
-    fn update_channel(&self) -> Option<String> {
-        let channel = self.manager().get_update_channel()?;
-        Some(
-            match channel {
-                pa_core::settings::UpdateChannel::Stable => "stable",
-                pa_core::settings::UpdateChannel::Nightly => "nightly",
-            }
-            .to_string(),
-        )
-    }
-
-    fn set_update_channel(&self, channel: &str) -> Result<()> {
-        let channel = match channel {
-            "stable" => pa_core::settings::UpdateChannel::Stable,
-            "nightly" => pa_core::settings::UpdateChannel::Nightly,
-            _ => anyhow::bail!("unknown update channel: {channel}"),
-        };
-        self.manager().set_update_channel(channel)
-    }
-
-    fn effective_update_channel(&self, version: &str) -> String {
-        let preferred = self
-            .manager()
-            .get_update_channel()
-            .map(|channel| match channel {
-                pa_core::settings::UpdateChannel::Stable => {
-                    pa_core::update::version::UpdateChannel::Stable
-                }
-                pa_core::settings::UpdateChannel::Nightly => {
-                    pa_core::update::version::UpdateChannel::Nightly
-                }
-            });
-        pa_core::update::version::resolve_update_channel(version, preferred)
-            .wire_name()
-            .to_string()
-    }
-
     fn telemetry_status(&self) -> String {
         pa_core::session_engine::telemetry::telemetry_status_text(&self.manager(), &self.agent_dir)
     }
@@ -740,19 +701,6 @@ mod tests {
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
         let value: serde_json::Value = serde_json::from_str(&content).expect("parse");
         assert_eq!(value["webSearchProvider"], "eco");
-
-        // The update channel starts unset (the version infers it) and
-        // pins through the /nightly off path's seam.
-        assert_eq!(settings.update_channel(), None);
-        settings.set_update_channel("stable").expect("channel");
-        assert_eq!(settings.update_channel().as_deref(), Some("stable"));
-        let content =
-            std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
-        let value: serde_json::Value = serde_json::from_str(&content).expect("parse");
-        assert_eq!(value["updateChannel"], "stable");
-        // ...and the /nightly on path's.
-        settings.set_update_channel("nightly").expect("channel");
-        assert_eq!(settings.update_channel().as_deref(), Some("nightly"));
 
         // The factory's opt-in gate (`/factory on|off|status`): unset reads
         // as disabled (the default off), and the write persists the exact

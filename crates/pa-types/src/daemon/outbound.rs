@@ -27,11 +27,6 @@ pub struct DaemonResponse {
     pub error_info: Option<DaemonErrorInfo>,
 }
 
-/// `UPDATE_RESTART_PREPARING_MESSAGE`: the client-facing rejection for commands fenced out during
-/// an update restart; the plain string stays for old clients,
-/// [`DaemonErrorInfo::UpdateRestarting`] rides alongside.
-pub const UPDATE_RESTART_PREPARING_MESSAGE: &str = "Daemon is preparing an update restart";
-
 /// The session-addressed lanes' refusal when the session's kernel is not
 /// running (the lane never builds one: `factory_activity` answers without
 /// booting an idle kernel). A definitive answer, not a transient failure —
@@ -62,18 +57,9 @@ pub enum DaemonErrorInfo {
     SessionRecovering {
         active_session_id: String,
     },
-    /// The daemon is preparing an update restart: mutating commands are refused while the
-    /// coordinator drains and checkpoints; a transient state - clients wait and retry, never a hard
-    /// failure.
-    UpdateRestarting,
     CommandResultUncertain {
         client_id: DaemonClientId,
         command_id: DaemonCommandId,
-    },
-    /// `prepare_update_restart` with a different `updateId` while a prepare
-    /// transaction is active: a typed refusal the coordinator maps to `Join`.
-    UpdatePrepareRefused {
-        active_update_id: String,
     },
     /// `set_model` resolved the model but its provider has no credential: a sign-in refusal, not a
     /// dead end - the client offers the provider's sign-in flow and retries after the login lands.
@@ -156,7 +142,6 @@ pub struct DaemonRuntimeIdentity {
 #[serde(rename_all = "lowercase")]
 pub enum DaemonClosingReason {
     Shutdown,
-    Update,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,7 +151,6 @@ pub enum DaemonSessionClosedReason {
     Shutdown,
     Completed,
     Replaced,
-    Update,
 }
 
 /// Single-use credential for one direct TUI-to-worker connection.
@@ -270,10 +254,6 @@ pub enum DaemonOutbound {
         supervisor_process_start_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         supervisor_socket_path: Option<String>,
-        /// The update resume contract (spec §10.3): whether the restore pass has finished, so a
-        /// reconnecting client knows whether to queue its attach. Rust-only extension.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        update_resume: Option<crate::daemon::update_flow::DaemonUpdateResume>,
         client_id: DaemonClientId,
         server_capabilities: Vec<DaemonServerCapability>,
         #[serde(flatten)]
@@ -430,11 +410,6 @@ mod tests {
         rt::<DaemonOutbound>(
             r#"{"type":"response","command":"import_jsonl","success":false,"error":"e","errorInfo":{"code":"session_import_file_not_found","filePath":"/x"}}"#,
         );
-        // `update_restarting`: the fieldless typed refusal rides beside the unchanged plain
-        // message.
-        rt::<DaemonOutbound>(
-            r#"{"type":"response","command":"create","success":false,"error":"Daemon is preparing an update restart","errorInfo":{"code":"update_restarting"}}"#,
-        );
     }
 
     #[test]
@@ -478,8 +453,5 @@ mod tests {
         let parsed: DaemonErrorInfo =
             serde_json::from_str(r#"{"code":"some_future_code"}"#).expect("parse");
         assert_eq!(parsed, DaemonErrorInfo::Unknown);
-        let typed: DaemonErrorInfo =
-            serde_json::from_str(r#"{"code":"update_restarting"}"#).expect("parse");
-        assert_eq!(typed, DaemonErrorInfo::UpdateRestarting);
     }
 }

@@ -43,21 +43,6 @@ mod recorded_process_tests {
     }
 }
 
-/// The boot the descriptor-adoption pass runs under. An update boot relaunches kept
-/// workers before the roster restore walks the rows (spec §6 step 2's create-or-adopt
-/// order). A plain startup revives only genuinely interrupted ones — no mass-revival
-/// of historical idle sessions.
-#[derive(Clone, PartialEq, Eq)]
-pub(super) enum AdoptionBoot {
-    /// Update boot: the roster's kept workers relaunch eagerly ahead of the restore
-    /// pass; busy-at-crash workers revive too. The kept set is shared (an `Arc`).
-    UpdateRoster {
-        kept: Arc<std::collections::HashSet<String>>,
-    },
-    /// Plain startup: only journal-proven live work revives.
-    PlainStartup,
-}
-
 /// One descriptor's boot-adoption decision, reported as a count in the
 /// pass's `worker_adoption` event (counts only, never session payload).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,8 +50,7 @@ pub(super) enum AdoptionOutcome {
     /// Live socket adopted (incl. a worker that re-registered before the
     /// descriptor scan reached it).
     AdoptedLive,
-    /// Dead descriptor relaunched (busy evidence on a plain boot, kept
-    /// worker on an update boot).
+    /// Dead descriptor relaunched (busy evidence).
     Revived,
     /// Dead descriptor with no durable busy evidence: stayed down.
     SkippedIdle,
@@ -77,12 +61,11 @@ pub(super) enum AdoptionOutcome {
 }
 
 impl Supervisor {
-    /// Emit the boot adoption pass's `worker_adoption` event: the boot kind
-    /// and per-outcome counts, primitives only — never session payload.
+    /// Emit the boot adoption pass's `worker_adoption` event: per-outcome
+    /// counts, primitives only — never session payload.
     #[allow(clippy::too_many_arguments)]
     fn note_worker_adoption(
         &self,
-        boot: &str,
         adopted_live: usize,
         revived: usize,
         skipped_idle: usize,
@@ -92,7 +75,6 @@ impl Supervisor {
         if let Some(client) = &*self.telemetry.lock().unwrap() {
             pa_core::session_engine::telemetry::track_worker_adoption(
                 client,
-                boot,
                 adopted_live,
                 revived,
                 skipped_idle,
@@ -105,7 +87,7 @@ impl Supervisor {
     /// Adopt or relaunch persisted workers, concurrently: one dead worker's relaunch must
     /// not delay adopting live sessions; the fan-out is capped at
     /// [`crate::recovery_pacing::ADOPTION_CONCURRENCY`] to avoid a relaunch storm.
-    pub(super) async fn adopt_persisted_workers(self: &Arc<Self>, boot: AdoptionBoot) {
+    pub(super) async fn adopt_persisted_workers(self: &Arc<Self>) {
         let descriptors = load_descriptors(&self.descriptor_dir, &self.options.socket_path);
         let adopted_live = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let revived = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -116,16 +98,13 @@ impl Supervisor {
             .into_iter()
             .map(|(path, descriptor)| {
                 let supervisor = Arc::clone(self);
-                let boot = boot.clone();
                 let adopted_live = Arc::clone(&adopted_live);
                 let revived = Arc::clone(&revived);
                 let skipped_idle = Arc::clone(&skipped_idle);
                 let stopped = Arc::clone(&stopped);
                 let failed = Arc::clone(&failed);
                 move || async move {
-                    let outcome = supervisor
-                        .adopt_persisted_worker(path, descriptor, boot)
-                        .await;
+                    let outcome = supervisor.adopt_persisted_worker(path, descriptor).await;
                     let counter = match outcome {
                         AdoptionOutcome::AdoptedLive => adopted_live,
                         AdoptionOutcome::Revived => revived,
@@ -145,18 +124,7 @@ impl Supervisor {
         let stopped = stopped.load(std::sync::atomic::Ordering::Relaxed);
         let failed = failed.load(std::sync::atomic::Ordering::Relaxed);
         if adopted_live + revived + skipped_idle + stopped + failed > 0 {
-            let boot_label = match boot {
-                AdoptionBoot::UpdateRoster { .. } => "update",
-                AdoptionBoot::PlainStartup => "plain",
-            };
-            self.note_worker_adoption(
-                boot_label,
-                adopted_live,
-                revived,
-                skipped_idle,
-                stopped,
-                failed,
-            );
+            self.note_worker_adoption(adopted_live, revived, skipped_idle, stopped, failed);
         }
         // TS arms the owner cleanup for every adopted worker: an owner that
         // does not reconnect within the grace loses its worker.
@@ -171,6 +139,9 @@ impl Supervisor {
         // the rows to early subscribers. Tests drain the pending-seed
         // barrier for completion.
         self.spawn_roster_boot_seed();
+        self.log_line(&format!(
+            "boot adoption settled: {adopted_live} adopted, {revived} revived, {skipped_idle} idle, {stopped} stopped, {failed} failed"
+        ));
     }
 
     /// Positive owner-death evidence for the recorded pid (the inverse of
@@ -201,7 +172,6 @@ impl Supervisor {
         self: &Arc<Self>,
         path: PathBuf,
         descriptor: crate::descriptor::WorkerDescriptor,
-        boot: AdoptionBoot,
     ) -> AdoptionOutcome {
         let worker_id = descriptor.worker_id.clone();
         let guard = self.registry.adoption_guard(&worker_id).await;
@@ -300,14 +270,9 @@ impl Supervisor {
             }
             let interrupted =
                 crate::journal::WorkerRecoveryJournal::read_interrupted(&journal_path);
-            let kept = match &boot {
-                AdoptionBoot::UpdateRoster { kept } => kept.contains(&worker_id),
-                AdoptionBoot::PlainStartup => false,
-            };
-            if !interrupted && !kept {
-                // Dead worker with no durable busy state — and, on an update boot, not
-                // kept: leave it down (the descriptor stays on disk); the session reopens
-                // on the next client create.
+            if !interrupted {
+                // Dead worker with no durable busy state: leave it down (the descriptor
+                // stays on disk); the session reopens on the next client create.
                 self.log_line(&format!(
                     "session worker {worker_id} was idle at exit; not revived (reopens on the next client open)"
                 ));
@@ -323,7 +288,6 @@ impl Supervisor {
             let veto = crate::revival_gate::revival_veto(
                 &self.options.agent_dir,
                 &gated,
-                kept,
                 busy_recorded_at.as_deref(),
             );
             drop(gated);
@@ -361,17 +325,6 @@ impl Supervisor {
                 }
                 // The adopted worker joins the roster from its live state.
                 self.refresh_roster_entry(&resident).await;
-                // A restore pass that owns this session's roster row can settle it now (spec
-                // §10.4): the waiters attach to the live worker instead of queueing behind the
-                // recovery — unless the row still needs its §10.5 continuation prompt.
-                if let Some(session_file) = resident.descriptor.lock().await.session_file.clone() {
-                    if let Some(stem) = Path::new(&session_file)
-                        .file_stem()
-                        .map(|stem| stem.to_string_lossy().to_string())
-                    {
-                        self.restore.settle_adopted(&stem);
-                    }
-                }
                 self.log_line(&format!(
                     "adopted session worker {worker_id} (was alive: {alive})"
                 ));
@@ -456,10 +409,9 @@ impl Supervisor {
                 }
             },
         };
-        // The registration's durable id is optional on the wire: a re-registering worker
-        // that does not report it still owns its persisted descriptor. Both reads share
-        // this one lock acquisition — a second one let the create path race into a stall.
-        let (durable_session_id, orphan_generation) = {
+        // The token check and the identity refresh share one lock acquisition: a second
+        // one let the create path race into a stall.
+        let orphan_generation = {
             let mut descriptor = resident.descriptor.lock().await;
             if token.as_str() != descriptor.authentication_token {
                 return fail("Session worker authentication failed");
@@ -522,16 +474,7 @@ impl Supervisor {
             // metadata-survival barrier. The boot scan adopts a live worker
             // socket-first regardless of the recorded lifecycle, and a dead
             // worker's recovery replays the durable create command.
-            let durable_session_id = match registration.session_id.clone() {
-                Some(session_id) => Some(session_id),
-                None => descriptor
-                    .session_file
-                    .clone()
-                    .as_deref()
-                    .and_then(|file| Path::new(file).file_stem())
-                    .map(|stem| stem.to_string_lossy().to_string()),
-            };
-            (durable_session_id, orphan_generation)
+            orphan_generation
         };
         // A pre-existing resident whose registrant named a different process
         // (boot adoption can watch a stale on-disk pid): arm the monitor for
@@ -541,12 +484,6 @@ impl Supervisor {
             self.spawn_monitor(Arc::clone(&resident), None, *pid, orphan_generation);
         }
         let record = self.registry.record_registration(registration).await;
-        // A restore pass that owns this session's roster row can settle it now (spec §10.4).
-        // The settle lands after the registration is recorded, so a woken waiter's
-        // re-resolve cannot miss it.
-        if let Some(session_id) = durable_session_id {
-            self.restore.settle_adopted(&session_id);
-        }
         let verb = if record.epoch > 1 {
             "re-registered"
         } else {

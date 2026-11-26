@@ -8,7 +8,7 @@ use super::{
     DockFold, Duration, GoalView, HashSet, InteractiveOptions, LoaderTokenTracker, Map,
     ModelCatalogUpdate, PromptOrder, PromptSubmitNote, ReattachOutcome, RebuildKind, RecoveryKind,
     ReloadNote, Result, ResyncBash, SessionSelection, SessionUi, ShareNote, TranscriptPageNote,
-    UpdateNote, Value, EXIT_DETACH_TIMEOUT_MS, EXIT_STATS_TIMEOUT_MS, UI_REQUEST_TIMEOUT_MS,
+    Value, EXIT_DETACH_TIMEOUT_MS, EXIT_STATS_TIMEOUT_MS, UI_REQUEST_TIMEOUT_MS,
 };
 
 impl SessionUi {
@@ -22,7 +22,6 @@ impl SessionUi {
         prompt_notes: mpsc::UnboundedSender<PromptSubmitNote>,
         share_notes: mpsc::UnboundedSender<ShareNote>,
         reload_notes: mpsc::UnboundedSender<ReloadNote>,
-        update_notes: mpsc::UnboundedSender<UpdateNote>,
         traces_upload_notes: mpsc::UnboundedSender<crate::traces::TraceUploadAllNote>,
         catalog_updates: mpsc::UnboundedSender<ModelCatalogUpdate>,
         auth_panel_notes: mpsc::UnboundedSender<crate::auth_panel::AuthPanelRequest>,
@@ -133,9 +132,6 @@ impl SessionUi {
             pending_model_sign_in: None,
             auth_panel_notes,
             auth_panel_cancel: None,
-            update_commands: options.update_commands.clone(),
-            update_notes,
-            update_in_flight: false,
             exit_requested: false,
             open_agents_view: false,
             scoped_agents_view: None,
@@ -899,7 +895,6 @@ mod backfill_tests {
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
-            mpsc::unbounded_channel().0,
             ActivityUpdates {
                 heartbeats: mpsc::unbounded_channel().0,
                 bash: mpsc::unbounded_channel().0,
@@ -1127,7 +1122,6 @@ mod backfill_tests {
         let mut session = SessionUi::open(
             client,
             &options,
-            mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,
             mpsc::unbounded_channel().0,

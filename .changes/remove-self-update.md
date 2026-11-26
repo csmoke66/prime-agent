@@ -1,0 +1,1 @@
+- Remove self-update: the `update` command, `/update`, the update channel setting, and the daemon's update-restart handoff are gone.

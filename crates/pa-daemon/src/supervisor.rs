@@ -14,10 +14,9 @@ mod routing;
 mod sessions;
 mod signals_shutdown;
 pub(crate) mod subscribers;
-mod update_restart;
+mod wire_salvage;
 mod worker_lifecycle;
 
-use adoption::AdoptionBoot;
 use launch_budget::WORKER_AUTH_FLOOR_MS;
 // Called only by the clients sibling module (its `use super::*` glob); unused on the lib target.
 #[allow(unused_imports)]
@@ -46,7 +45,7 @@ pub use options::SupervisorOptions;
 
 // Called only by the routing and clients siblings (their `use super::*` globs); lib-unused.
 #[allow(unused_imports)]
-use update_restart::{salvage_command_type, salvage_id, streamed_attach_lines};
+use wire_salvage::{salvage_command_type, salvage_id, streamed_attach_lines};
 
 pub(crate) use clients::client_command_payload;
 
@@ -69,9 +68,8 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use futures::future::join_all;
 use pa_types::daemon::{
-    DaemonCommand, DaemonErrorInfo, DaemonOutbound, DaemonSessionLifecycle, DaemonWorkerDescriptor,
-    DaemonWorkerLifecycle, DurableDaemonCreateCommand, SnapshotPurpose, UpdateId,
-    UpdatePreparedMarker, UpdateTimeoutBudget,
+    DaemonCommand, DaemonOutbound, DaemonSessionLifecycle, DaemonWorkerDescriptor,
+    DaemonWorkerLifecycle, DurableDaemonCreateCommand, SnapshotPurpose,
 };
 use pa_types::platform::transport::{bind_transport, connect_transport, TransportStream};
 use serde_json::{json, Map, Value};
@@ -101,17 +99,6 @@ use crate::registry::{
 use crate::saved_session_commands::{name_unavailable_error, reservation_key, NameScope};
 use crate::session_store::list_sessions;
 use crate::snapshot_stream::{attach_client_capabilities, stream_attach, wants_chunked};
-use crate::update_prepare::{
-    marker_expires_at_iso, update_gate_refuses, write_prepared_artifacts, AbortOutcome,
-    BeginOutcome, MutationDrainLatch, PrepareCoordinator, PrepareOp, UPDATE_PREPARING_MESSAGE,
-};
-// The drain-state machine that names it is the unix signal path.
-#[cfg(unix)]
-use crate::update_prepare::PrepareState;
-use crate::update_roster::{
-    build_update_roster, supervisor_identity, UpdateRosterInputs, WorkerSnapshot,
-};
-use crate::update_stop::{stop_workers_gracefully, WorkerStopVerdict, WORKER_REQUEST_TIMEOUT_MS};
 use crate::{socket, util};
 
 pub struct Supervisor {
@@ -194,17 +181,6 @@ pub struct Supervisor {
     /// Memoized ledger over the default sessions dir (ledgers are per
     /// sessions-dir families; another dir gets a fresh instance).
     rlm_ledger: tokio::sync::Mutex<Option<std::sync::Arc<crate::rlm_ledger::RlmSpawnLedger>>>,
-    /// The update-prepare transaction: at most one per supervisor;
-    /// empty = `Serving`.
-    update_prepare: PrepareCoordinator,
-    /// In-flight mutating-command counter feeding the prepare transaction's `Draining` wait.
-    mutation_drain: MutationDrainLatch,
-    /// Timeout budget of the update flow (`PRIME_AGENT_UPDATE_*_MS`
-    /// overridable for CI).
-    update_budget: UpdateTimeoutBudget,
-    /// The boot-time restore pass (spec §6): sweep + roster restore + scheduled-work
-    /// re-arm; read by the hello resume contract and the `update_restore_status` RPC.
-    pub(crate) restore: crate::update_restore::RestoreProgress,
     /// The session input-pause leases: pause id -> lease, the bookkeeping
     /// behind `acquire`/`release_session_input_pause`.
     pub(crate) input_pauses: crate::input_pause_lease::SupervisorPauseTable,
@@ -278,10 +254,6 @@ impl Supervisor {
             shutdown_notify: tokio::sync::Notify::new(),
             log,
             rlm_ledger: tokio::sync::Mutex::new(None),
-            update_prepare: PrepareCoordinator::new(),
-            mutation_drain: MutationDrainLatch::new(),
-            update_budget: UpdateTimeoutBudget::from_env(),
-            restore: crate::update_restore::RestoreProgress::new(),
             input_pauses: crate::input_pause_lease::SupervisorPauseTable::default(),
             passive_catalog: std::sync::Mutex::new(None),
             passive_scan_gate: tokio::sync::Mutex::new(()),
@@ -411,47 +383,27 @@ impl Supervisor {
         // wedged predecessor supervisor dies with them; workers on OTHER sockets are never touched.
         crate::boot_reap::reap_predecessors(&self).await;
 
-        // Update boot (spec §6): consume the roster from the spawn env BEFORE the sweep deletes
-        // the file it points at, then run the restore + re-arm pass concurrently with serving —
-        // reconnecting clients must see the resume contract (§10.3).
-        let roster = crate::update_restore::consume_roster_env();
-        self.restore.begin(roster.as_ref());
-        crate::update_restore::boot_sweep(&self.options.agent_dir, &self.options.socket_path);
         // Descriptor adoption runs concurrently with the accept loop: a
         // supervisor restarted over live sessions must accept their
         // self-registrations immediately, not behind the whole descriptor
         // scan. The fan-out is capped (recovery_pacing) so a large
-        // sessions dir cannot starve the control plane. The restore pass
-        // awaits this task (spec §6 step 2's create-or-adopt order: kept
-        // workers relaunch from their descriptors first, the roster covers
-        // the rest).
+        // sessions dir cannot starve the control plane.
         // The adopt pass's completion signal: the passive-catalog warmup
-        // waits on it (see below) while the restore pass keeps awaiting
-        // the task handle itself.
+        // and the dormant scheduled-jobs report wait on it.
         let (adoption_tx, adoption_signal) = tokio::sync::watch::channel(false);
-        let adoption = {
-            let supervisor = Arc::clone(&self);
-            let boot = match roster.as_ref() {
-                Some(roster) => AdoptionBoot::UpdateRoster {
-                    kept: Arc::new(
-                        roster
-                            .workers
-                            .iter()
-                            .map(|worker| worker.worker_id.clone())
-                            .collect(),
-                    ),
-                },
-                None => AdoptionBoot::PlainStartup,
-            };
-            tokio::spawn(async move {
-                supervisor.adopt_persisted_workers(boot).await;
-                let _ = adoption_tx.send(true);
-            })
-        };
         {
             let supervisor = Arc::clone(&self);
             tokio::spawn(async move {
-                crate::update_restore::restore_pass(&supervisor, adoption, roster).await;
+                supervisor.adopt_persisted_workers().await;
+                let _ = adoption_tx.send(true);
+            });
+        }
+        {
+            let supervisor = Arc::clone(&self);
+            let mut adopted = adoption_signal.clone();
+            tokio::spawn(async move {
+                Supervisor::wait_for_adoption_signal(&mut adopted).await;
+                crate::scheduling_catalog::report_dormant_scheduled_jobs(&supervisor).await;
             });
         }
 
@@ -497,15 +449,6 @@ impl Supervisor {
                         "boot cleanup: removed {leases} dead-owner lease dir(s), {logs} old socket log(s), {leftovers} TS-era leftover(s)"
                     ));
                 }
-            });
-        }
-
-        // Update-prepare watchdog: aborts deadline- or self-expiry-breached
-        // prepare transactions even when no command arrives to re-check.
-        {
-            let supervisor = Arc::clone(&self);
-            tokio::spawn(async move {
-                supervisor.update_prepare_watchdog().await;
             });
         }
 

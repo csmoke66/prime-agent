@@ -1313,40 +1313,10 @@ pub enum DaemonCommand {
         #[serde(flatten)]
         rest: JsonMap,
     },
-    /// Coordinator -> supervisor: start (or idempotently poll) the prepare transaction for
-    /// `updateId`; same id returns the current state, a different id is refused.
-    PrepareUpdateRestart {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        update_id: Option<String>,
-        #[serde(flatten)]
-        rest: JsonMap,
-    },
-    /// Coordinator -> supervisor: consume the prepared transaction and stop
-    /// gracefully (the only consumption of the prepared artifact).
-    CommitUpdateRestart {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        update_id: Option<String>,
-        #[serde(flatten)]
-        rest: JsonMap,
-    },
     RetryWorker {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         active_session_id: String,
-        #[serde(flatten)]
-        rest: JsonMap,
-    },
-    /// Query the supervisor's boot-time restore pass (spec §6/§9): whether the restore is in flight
-    /// and the per-session counts/failures for the coordinator's `Restoring` phase. Read-only.
-    UpdateRestoreStatus {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        update_id: Option<String>,
         #[serde(flatten)]
         rest: JsonMap,
     },

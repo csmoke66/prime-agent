@@ -487,7 +487,6 @@ fn child_options(socket: PathBuf) -> InteractiveOptions {
         client_auth: None,
         traces: None,
         provider_auth: None,
-        update_commands: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,

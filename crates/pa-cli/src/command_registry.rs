@@ -203,27 +203,6 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         "package update [source]",
         "Update capability packages",
     ),
-    CommandSpec::new(
-        &["update"],
-        "update [--check] [--nightly|--stable]",
-        "Update to the latest version (sessions preserved)",
-    )
-    .options(&[
-        "--check  Print the update channel's latest release vs the running version, without installing",
-        "--force     Reinstall the latest build of the channel",
-        "--rollback  Restore the previous version the last update kept",
-        "--nightly   Switch updates to the nightly channel (the latest main build)",
-        "--stable    Return updates to the stable channel",
-        "--archive <path>  Install a local release archive",
-        "--source <url>     The https:// origin recorded as the release's install source (managed installs; required there with --archive)",
-    ])
-    .description(
-        "`prime-agent update` fetches the update channel's installer (stable: \
-         https://app.primeintellect.ai/prime-agent/install.sh; nightly: install-beta.sh from the \
-         release download base — never a GitHub raw or workflow URL) and runs it, which installs \
-         the latest Prime Agent build; your sessions and configuration (~/.prime/agent) are never \
-         touched. Restart prime-agent after the update to run the new build.",
-    ),
     CommandSpec::new(&["model"], "model list [search]", "Inspect available models"),
     CommandSpec::new(&["model", "list"], "model list [search]", "List available models"),
     CommandSpec::new(

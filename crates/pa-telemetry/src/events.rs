@@ -1,5 +1,5 @@
 //! Typed builders for the catalog's lifecycle events (onboarding, startup,
-//! installation stages) and the run vocabulary enums. Every field is typed (numbers are `u64`,
+//! stages) and the run vocabulary enums. Every field is typed (numbers are `u64`,
 //! enums are Rust enums, nullable durations are `Option<u64>`), so a firing
 //! site cannot emit a stringly-typed or out-of-vocabulary value. Optional
 //! fields are `Option` and simply omit the property when `None`.
@@ -152,80 +152,6 @@ impl AgentStartupStage {
             properties.set("timing_scope", Value::from(scope));
         }
         client.track("agent startup stage", properties);
-    }
-}
-
-/// `agent installation stage`: one installer/updater stage outcome.
-#[derive(Debug, Clone)]
-pub struct AgentInstallationStage {
-    pub installation_attempt_id: String,
-    pub installation_action: &'static str,
-    pub installation_source: &'static str,
-    pub stage: &'static str,
-    pub outcome: &'static str,
-    pub reason: Option<&'static str>,
-    pub from_version: Option<String>,
-    pub target_version: Option<String>,
-    pub observed_version: Option<String>,
-    pub duration_ms: Option<u64>,
-    pub exit_code: Option<u64>,
-    pub session_restore_total: Option<u64>,
-    pub session_restore_failed: Option<u64>,
-}
-
-impl AgentInstallationStage {
-    pub fn track(&self, client: &TelemetryClient) {
-        let mut properties = Properties::new();
-        properties.set(
-            "installation_attempt_id",
-            Value::String(self.installation_attempt_id.clone()),
-        );
-        properties.set("installation_action", Value::from(self.installation_action));
-        properties.set("installation_source", Value::from(self.installation_source));
-        properties.set("stage", Value::from(self.stage));
-        properties.set("outcome", Value::from(self.outcome));
-        if let Some(reason) = self.reason {
-            properties.set("reason", Value::from(reason));
-        }
-        if let Some(version) = &self.from_version {
-            properties.set("from_version", Value::String(version.clone()));
-        }
-        if let Some(version) = &self.target_version {
-            properties.set("target_version", Value::String(version.clone()));
-        }
-        if let Some(version) = &self.observed_version {
-            properties.set("observed_version", Value::String(version.clone()));
-        }
-        if let Some(duration) = self.duration_ms {
-            properties.set("duration_ms", Value::from(duration));
-        }
-        if let Some(code) = self.exit_code {
-            properties.set("exit_code", Value::from(code));
-        }
-        if let Some(total) = self.session_restore_total {
-            properties.set("session_restore_total", Value::from(total));
-        }
-        if let Some(failed) = self.session_restore_failed {
-            properties.set("session_restore_failed", Value::from(failed));
-        }
-        client.track("agent installation stage", properties);
-    }
-}
-
-/// `update_homebrew_refusal`: an installer update rejected because Homebrew
-/// owns the executable. Only the fixed formula/cask layout kind is recorded.
-#[derive(Debug, Clone, Copy)]
-pub struct UpdateHomebrewRefusal {
-    /// `formula` or `cask`; never the executable path.
-    pub kind: &'static str,
-}
-
-impl UpdateHomebrewRefusal {
-    /// Record this refusal on the shared lifecycle telemetry client.
-    pub fn track(&self, client: &TelemetryClient) {
-        let mut properties = Properties::new();
-        properties.set("kind", Value::from(self.kind));
-        client.track("update_homebrew_refusal", properties);
     }
 }
 

@@ -92,25 +92,6 @@ fn hidden_commands_drop_rows_from_the_menu() {
     );
 }
 
-/// Hiding another command does not hide `/update`.
-#[test]
-fn update_lists_in_the_menu_under_every_hidden_set() {
-    let mut provider = provider("/tmp");
-    let visible = provider.get_suggestions(&["/up".to_string()], 0, 3, false);
-    let items = ready(visible).items;
-    assert!(
-        items.iter().any(|item| item.value == "update"),
-        "update lists by default: {items:?}"
-    );
-    provider.set_hidden_commands(std::collections::HashSet::from(["fork".to_string()]));
-    let visible = provider.get_suggestions(&["/up".to_string()], 0, 3, false);
-    let items = ready(visible).items;
-    assert!(
-        items.iter().any(|item| item.value == "update"),
-        "update stays listed when fork is hidden: {items:?}"
-    );
-}
-
 #[test]
 fn settings_only_commands_are_not_suggested() {
     let provider = provider("/tmp");
@@ -127,7 +108,6 @@ fn settings_only_commands_are_not_suggested() {
         "factory",
         "telemetry",
         "speed",
-        "nightly",
         "autonomous",
     ] {
         assert!(

@@ -167,7 +167,6 @@ async fn the_refused_open_renders_both_ways_out_as_the_notice_panel() {
         client_auth: None,
         traces: None,
         provider_auth: None,
-        update_commands: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,

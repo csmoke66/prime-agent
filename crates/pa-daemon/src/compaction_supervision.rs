@@ -348,7 +348,7 @@ impl crate::supervisor::Supervisor {
                 )
             }
         };
-        // No restore wait: a superseded id still rebinds, so the abort reaches the CURRENT worker.
+        // A superseded id still rebinds, so the abort reaches the CURRENT worker.
         let resident = match self.registry.resolve(&selector).await {
             Ok(resident) => resident,
             Err(_) => {
@@ -356,9 +356,7 @@ impl crate::supervisor::Supervisor {
                     self.rebind_connection(&selector, &resident, attached).await;
                     resident
                 } else {
-                    let message = self
-                        .restore_failure_for(&selector)
-                        .unwrap_or_else(|| format!("Unknown active session: {selector}"));
+                    let message = format!("Unknown active session: {selector}");
                     return (
                         vec![crate::protocol::response_line(
                             &crate::protocol::response_failure(

@@ -133,20 +133,9 @@ impl Supervisor {
                 &format!("Session is detaching: {active_session_id}"),
             );
         }
-        let resident = if let Ok(resident) = self.registry.resolve(active_session_id).await {
-            resident
-        } else {
-            // The wake-aware resolution of the generic route: a restore
-            // pass may still be bringing the session up.
-            self.await_restore_target(active_session_id).await;
-            if let Ok(resident) = self.registry.resolve(active_session_id).await {
-                resident
-            } else {
-                let message = self
-                    .restore_failure_for(active_session_id)
-                    .unwrap_or_else(|| format!("Unknown active session: {active_session_id}"));
-                return Self::pause_failure(command_id, type_name, &message);
-            }
+        let Ok(resident) = self.registry.resolve(active_session_id).await else {
+            let message = format!("Unknown active session: {active_session_id}");
+            return Self::pause_failure(command_id, type_name, &message);
         };
         let resolved = resident.worker_id.clone();
         if connection.is_detaching(active_session_id) || connection.is_detaching(&resolved) {

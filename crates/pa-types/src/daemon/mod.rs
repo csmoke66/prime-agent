@@ -100,7 +100,6 @@ pub mod herdr_env;
 pub mod launch_env;
 mod outbound;
 mod plane;
-pub mod update_flow;
 mod worker;
 
 pub use command::{
@@ -112,30 +111,13 @@ pub use outbound::{
     DaemonClosingReason, DaemonErrorInfo, DaemonEventEnvelope, DaemonOutbound,
     DaemonPeerTransportTicket, DaemonResponse, DaemonRuntimeIdentity, DaemonSavedSessionInfo,
     DaemonSessionClosedReason, DaemonSessionSnapshot, SnapshotPurpose, SocketIdentity,
-    KERNEL_NOT_RUNNING_MESSAGE, UPDATE_RESTART_PREPARING_MESSAGE,
+    KERNEL_NOT_RUNNING_MESSAGE,
 };
-pub use plane::{
-    command_plane, is_daemon_mutating_command, is_session_plane_daemon_command,
-    is_update_drain_command, DaemonCommandPlane,
-};
-pub use update_flow::{
-    legacy_update_restart_status, legacy_update_restarts_dir, prepared_marker_expiry,
-    socket_update_dir, update_intent_path, update_marker_path, update_prepared_dir,
-    update_restarts_dir, update_roster_path, update_status_path, update_transition_allowed,
-    PreparedMarkerExpiry, UpdateHeartbeatDeliveryMode, UpdateHeartbeatStatus, UpdateId,
-    UpdateIntent, UpdatePreparedMarker, UpdateProcessIdentity, UpdateRoster, UpdateRosterBinary,
-    UpdateRosterHeartbeat, UpdateRosterInFlight, UpdateRosterQueue, UpdateRosterSession,
-    UpdateRosterSessionKind, UpdateRosterSubagent, UpdateRosterSubagentStatus, UpdateRosterWorker,
-    UpdateState, UpdateStatus, UpdateStatusCounts, UpdateStatusFailure, UpdateSupervisorIdentity,
-    UpdateTimeoutBudget, UPDATE_ENV_PREFIX, UPDATE_ROSTER_FORMAT_VERSION,
-    UPDATE_STATUS_FORMAT_VERSION,
-};
+pub use plane::{command_plane, is_session_plane_daemon_command, DaemonCommandPlane};
 pub use worker::{
-    DaemonPeerCommand, DaemonUpdateRestartManifest, DaemonUpdateRestartQueue,
-    DaemonUpdateRestartSession, DaemonWorkerCommand, DaemonWorkerDescriptor,
-    DaemonWorkerFrameHeader, DaemonWorkerLifecycle, DaemonWorkerPeerGrant,
-    DaemonWorkerRosterOutbound, DurableDaemonCreateCommand, PayloadEncoding,
-    DAEMON_UPDATE_RESTART_FORMAT_VERSION,
+    DaemonPeerCommand, DaemonWorkerCommand, DaemonWorkerDescriptor, DaemonWorkerFrameHeader,
+    DaemonWorkerLifecycle, DaemonWorkerPeerGrant, DaemonWorkerRosterOutbound,
+    DurableDaemonCreateCommand, PayloadEncoding,
 };
 
 /// Round-trip helper: a parsed type must serialize back to the exact original value.
@@ -175,6 +157,5 @@ mod tests {
         assert_eq!(DAEMON_PROTOCOL_VERSION, 7);
         assert_eq!(DAEMON_SCHEMA_REVISION, 30);
         assert_eq!(DAEMON_SCHEMA_ID, "protocol-7-schema-30-8e4b17c2a9f5");
-        assert_eq!(DAEMON_UPDATE_RESTART_FORMAT_VERSION, 1);
     }
 }

@@ -46,19 +46,6 @@ Daemon wire mechanics shared by the serving side (pa-daemon) and clients (pa-tui
   color rendering, export CSS generation, custom-theme discovery — belongs
   to the consuming crates.
 
-- `daemon::update_flow`: the update-flow state machine's shared vocabulary:
-  the coordinator FSM states + legal
-  transition table, `UpdateId`, the on-disk artifact schemas (`intent.json`,
-  `status.json` — TS status-file shape, `prepared/<id>/{roster,marker}.json`),
-  the roster-snapshot projection (sessions/workers/subagents/heartbeats,
-  durable session ids, heartbeat re-arm fields only), the timeout-budget
-  table with `PRIME_AGENT_UPDATE_*_MS` overrides, and the artifact path
-  layout under `<agent-dir>/update-restarts/`. Pure serde + pure data
-  helpers; the FSM drivers and watchdogs are owned by pa-daemon/pa-cli. The
-  prepare/commit wire commands (`prepare_update_restart`/`
-  commit_update_restart`) and the TS mutation classification
-  (`is_daemon_mutating_command`, `is_update_drain_command` — the
-  update-flow admission gate's read tables) live in `daemon::{command,plane}`.
 Platform contracts (`platform`): the cross-crate transport, process-identity, socket-identity, and home-dir helpers, plus the suspend-to-background signal control (`process::{stop_own_process_group, ignore_sigint_for_suspend, restore_default_sigint}`: the TUI's TS-`handleCtrlZ` cycle — SIGTSTP to the own process group, SIGINT ignored for the stopped window and restored on the SIGCONT resume; unsafe lives behind this wall because pa-tui opts into the workspace `unsafe_code` forbid) (`platform::dirs::home_dir`: `HOME`, then on Windows `USERPROFILE` / `HOMEDRIVE`+`HOMEPATH` - Node `os.homedir()` parity, returning `None` so each caller owns its fallback). pa-types is the only crate every transport consumer can depend on (pa-tui depends on pa-types alone), so the shared trait vocabulary and its cfg-gated platform implementations live here: AF_UNIX on Unix, named pipes (`\.\pipe\`, `platform/windows_pipe.rs`) on Windows. Remaining platform areas (process control, perms, ...) are implemented per platform behind the same traits, not re-plumbed in callers.
 
 ## Non-goals

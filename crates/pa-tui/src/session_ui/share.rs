@@ -1,4 +1,4 @@
-//! The `/update`, `/traces`, `/copy`, `/export`, and `/share` runs — the
+//! The `/traces`, `/copy`, `/export`, and `/share` runs — the
 //! spawned one-way tasks and their note outcomes.
 use super::{
     export_share, key_event_to_id, AgentView, DaemonCommand, Duration, GhAuthStatus, GistOutcome,
@@ -9,10 +9,6 @@ use super::{
 /// The `/share` upload task's report: the created gist or the failure
 /// message.
 pub(crate) type ShareNote = Result<GistOutcome, String>;
-
-/// The background `/update` run's report: the new build's version line, or
-/// the failure message.
-pub(crate) type UpdateNote = std::result::Result<String, String>;
 
 /// The `/traces upload-all` sweep's reports: the live progress counter and
 /// the settled summary.
@@ -42,45 +38,6 @@ pub(super) enum TracesLoginIntent {
 }
 
 impl SessionUi {
-    // Update (/update)
-
-    /// The confirmed update: spawn the download+install OUT-OF-BAND. The run replaces only the
-    /// on-disk binary (the running binary is in-memory), so the TUI stays mounted, the daemon keeps
-    /// running, and the outcome lands as a row through [`Self::update_notes`].
-    pub(super) fn spawn_update(&mut self, view: &mut AgentView) {
-        let Some(update) = self.update_commands.clone() else {
-            self.note("/update is not available in this client yet", view);
-            return;
-        };
-        let notes = self.update_notes.clone();
-        self.update_in_flight = true;
-        self.note(
-            "Updating — downloading and installing the latest build…",
-            view,
-        );
-        tokio::spawn(async move {
-            let outcome = update.0.run_update().await;
-            let _ = notes.send(outcome);
-        });
-    }
-
-    /// The landed outcome: the success row names the new build (restart runs
-    /// it), else the error row carries the installer's failure.
-    pub(crate) fn apply_update_note(&mut self, outcome: UpdateNote, view: &mut AgentView) {
-        self.update_in_flight = false;
-        match outcome {
-            Ok(version) => {
-                self.note(
-                    &format!("updated to {version} — restart prime-agent to run it"),
-                    view,
-                );
-            }
-            Err(message) => {
-                self.error_row(&message, view);
-            }
-        }
-    }
-
     // Trace sharing (/traces)
 
     /// `/traces [status|on|off|preview|upload|upload-current|upload-all|login]`:

@@ -4,13 +4,15 @@
 //! durable store, a selector-less cancel searches for the owning worker.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use pa_core::cron::store::{AgentCronJobStore, HeartbeatEdit, HeartbeatManagementAction};
+use pa_core::cron::store::{
+    read_scheduled_jobs_artifact, AgentCronJobStore, HeartbeatEdit, HeartbeatManagementAction,
+};
 use pa_core::cron::{
     is_heartbeat_cron_job, normalize_heartbeat_delivery_mode, AgentCronJob, JobStatus,
 };
@@ -120,7 +122,7 @@ impl Supervisor {
     /// afterward, when workers registered during the scan are visible.
     fn scan_passive_candidates(agent_dir: &Path, include_inactive: bool) -> Vec<PassiveJob> {
         let mut out = Vec::new();
-        for job in crate::update_roster::scan_scheduled_jobs(agent_dir) {
+        for job in scan_scheduled_jobs(agent_dir) {
             if !include_inactive && !matches!(job.status, JobStatus::Active | JobStatus::Paused) {
                 continue;
             }
@@ -918,6 +920,69 @@ impl Supervisor {
             false,
         )
     }
+}
+
+/// Every scheduled job in the agent's session artifacts (`scheduled-jobs.json` is the only
+/// write path).
+pub(crate) fn scan_scheduled_jobs(agent_dir: &Path) -> Vec<pa_core::cron::AgentCronJob> {
+    let artifacts_root = agent_dir.join("session-artifacts");
+    let Ok(entries) = std::fs::read_dir(&artifacts_root) else {
+        return Vec::new();
+    };
+    let mut jobs = Vec::new();
+    for partition in entries.flatten() {
+        for path in scheduled_job_files(&partition.path()) {
+            jobs.extend(read_scheduled_jobs_artifact(&path));
+        }
+    }
+    jobs
+}
+
+/// The `scheduled-jobs.json` files one level under an artifacts partition
+/// root entry (per-session and per-child partitions).
+fn scheduled_job_files(partition: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![partition.join("scheduled-jobs.json")];
+    if let Ok(children) = std::fs::read_dir(partition) {
+        for child in children.flatten() {
+            paths.push(child.path().join("scheduled-jobs.json"));
+        }
+    }
+    paths.into_iter().filter(|path| path.is_file()).collect()
+}
+
+/// Log the due scheduled jobs whose sessions stayed down after the boot adoption pass:
+/// no session auto-boots on daemon start.
+pub(crate) async fn report_dormant_scheduled_jobs(supervisor: &std::sync::Arc<Supervisor>) {
+    let jobs = scan_scheduled_jobs(&supervisor.options.agent_dir);
+    let now = crate::util::now_ms();
+    let live = supervisor.live_session_files().await;
+    let dormant: Vec<&pa_core::cron::AgentCronJob> = jobs
+        .iter()
+        .filter(|job| {
+            job.status == pa_core::cron::JobStatus::Active
+                && pa_core::cron::is_due_job(job, now)
+                && !job.session_file.is_empty()
+                && !live.contains(
+                    &crate::lease::canonical_session_path(std::path::Path::new(&job.session_file))
+                        .to_string_lossy()
+                        .to_string(),
+                )
+        })
+        .collect();
+    if dormant.is_empty() {
+        return;
+    }
+    // One log line per dormant job keeps the log greppable (job id + session file).
+    for job in &dormant {
+        supervisor.log_line(&format!(
+            "scheduled job {} on {} is due but stays dormant: no session auto-boots on daemon start (resume the session to arm its schedule; the heartbeat catalog surfaces it)",
+            job.id, job.session_file
+        ));
+    }
+    supervisor.log_line(&format!(
+        "{} due scheduled job(s) stayed dormant on not-running sessions (no auto-resume)",
+        dormant.len()
+    ));
 }
 
 #[cfg(test)]

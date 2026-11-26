@@ -346,7 +346,6 @@ impl Worker {
             supervisor_socket_path: None,
             // The worker's hello carries no resume contract (the
             // supervisor owns the boot restore pass).
-            update_resume: None,
             client_id: crate::util::new_display_id(),
             server_capabilities: factory_capabilities,
             rest: Map::default(),

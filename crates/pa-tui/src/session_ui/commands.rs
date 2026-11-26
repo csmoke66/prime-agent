@@ -3,7 +3,7 @@
 use super::{
     create_session, info_commands, terminal_columns, AgentView, AuthSelectorKind,
     CommandCatalogUpdate, DaemonCommand, DockFold, Duration, InfoContent, Map,
-    PendingConfirm, RebuildKind, Result, SessionUi, SlashCommandExecution, SlashCommandRegistry,
+    RebuildKind, Result, SessionUi, SlashCommandExecution, SlashCommandRegistry,
     StatusKind, SubmitBehavior, Value, UI_REQUEST_TIMEOUT_MS,
 };
 
@@ -396,38 +396,6 @@ impl SessionUi {
             }
             "traces" => {
                 self.handle_traces_command(resolved, view).await?;
-            }
-            // `/update` (the TS->Rust migration path): the confirm, then
-            // the download+install runs OUT-OF-BAND (a background task —
-            // the TUI stays mounted, the daemon keeps running, and the
-            // update replaces only the on-disk binary, so the new build
-            // takes effect on restart and nothing here blocks or tears
-            // down; there is no busy guard to keep). The confirm carries
-            // the preserve invariant: sessions and configuration
-            // (~/.prime/agent) are never touched.
-            "update" => {
-                if !resolved.args.trim().is_empty() {
-                    view.editor.set_text(text);
-                    self.error_row("Usage: /update", view);
-                    return Ok(());
-                }
-                if self.update_in_flight {
-                    self.note_as(
-                        "An update is already running; its outcome lands here when it finishes.",
-                        StatusKind::Warning,
-                        view,
-                    );
-                    return Ok(());
-                }
-                view.editor.set_text("");
-                // The message is hand-wrapped to fit the panel rows (the
-                // confirm renders each line truncated, never wrapped).
-                view.confirm = Some(crate::confirm::ConfirmPanel::yes_no(
-                    "Update Prime Agent",
-                    "Update installs the latest Prime Agent build;\nyour sessions and configuration (~/.prime/agent) are never touched.\n\nThe update runs in the background — restart prime-agent after it\nfinishes to run the new build.",
-                ));
-                self.pending_confirm = Some(PendingConfirm::Update);
-                self.dirty = true;
             }
             // The auth flows run in the client process; other management subcommands
             // surface through the `mcp` CLI command instead of the TUI.

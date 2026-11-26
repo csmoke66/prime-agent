@@ -6,11 +6,8 @@ use super::{
 // The only use is the broadcast inside the unix begin_signal_drain arm.
 #[cfg(unix)]
 use super::ClientRouting;
-// The only use sits behind the unix update-drain arm below.
-#[cfg(unix)]
-use super::PrepareState;
 
-/// The non-update `daemon_closing` frame: every connected client learns the daemon is
+/// The `daemon_closing` frame: every connected client learns the daemon is
 /// going down for a shutdown.
 pub(super) fn daemon_closing_shutdown_event() -> Value {
     json!({ "type": "daemon_closing", "reason": "shutdown" })
@@ -63,13 +60,12 @@ impl Supervisor {
 
     /// The OS-signal drain step (the loop in `crate::signal_drain` runs this once per
     /// signal): the first signal enters the graceful drain; any later signal, or one
-    /// that finds a shutdown or update exit already committed, force-exits. Returns
-    /// `true` when this call started the drain; `false` when one was already in flight.
-    /// A signal that finds `Stopping` or `accept_exit` published never flips the gate.
+    /// that finds a shutdown already committed, force-exits. Returns `true` when this
+    /// call started the drain; `false` when one was already in flight. A signal that
+    /// finds `accept_exit` published never flips the gate.
     #[cfg(unix)]
     pub(crate) fn begin_signal_drain(self: &Arc<Self>) -> bool {
-        if self.update_prepare.active_state() == Some(PrepareState::Stopping)
-            || self.accept_exit.load(Ordering::SeqCst)
+        if self.accept_exit.load(Ordering::SeqCst)
             || self.shutting_down.swap(true, Ordering::SeqCst)
         {
             return false;

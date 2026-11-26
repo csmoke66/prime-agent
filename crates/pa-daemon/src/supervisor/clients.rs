@@ -4,11 +4,10 @@ use super::{
     app_version, broadcast, command_type_name, current_protocol_info,
     daemon_closing_shutdown_event, input_admission_id, json, parse_supervisor_command_line,
     response_failure, response_line, response_success, salvage_command_type, salvage_id,
-    subscribers, update_gate_refuses, util, Arc, AsyncBufReadExt, AsyncWriteExt, BufReader,
-    ClientRouting, DaemonCommand, DaemonOutbound, DaemonRuntimeIdentity, Duration,
-    EnvelopeParseError, Map, Ordering, Outbound, ResidentWorker, Result, RouteAdmission,
-    Supervisor, TransportStream, TypedCreateRejection, Value, DAEMON_SCHEMA_ID,
-    DAEMON_SCHEMA_REVISION, ROUTE_TIMEOUT_MS, UPDATE_PREPARING_MESSAGE,
+    subscribers, util, Arc, AsyncBufReadExt, AsyncWriteExt, BufReader, ClientRouting,
+    DaemonCommand, DaemonOutbound, DaemonRuntimeIdentity, Duration, EnvelopeParseError, Map,
+    Ordering, Outbound, ResidentWorker, Result, RouteAdmission, Supervisor, TransportStream,
+    TypedCreateRejection, Value, DAEMON_SCHEMA_ID, DAEMON_SCHEMA_REVISION, ROUTE_TIMEOUT_MS,
 };
 
 /// TS `OWNED_WORKER_DISCONNECT_GRACE_MS`: how long a client-owned worker
@@ -135,7 +134,6 @@ impl Supervisor {
             supervisor_owner_token: Some(uuid::Uuid::new_v4().to_string()),
             supervisor_process_start_id: crate::protocol::process_start_id(std::process::id()),
             supervisor_socket_path: Some(self.options.socket_path.to_string_lossy().to_string()),
-            update_resume: Some(self.restore.hello_resume()),
             client_id: connection_id.clone(),
             server_capabilities: factory_capabilities,
             rest: Map::default(),
@@ -546,40 +544,6 @@ impl Supervisor {
                 false,
             );
         }
-        // Update-prepare watchdog on any later command (spec §5): an expired marker
-        // returns the supervisor to Serving before the command is served.
-        if let Some(abort) = self.update_prepare.abort_if_expired(util::now_ms()) {
-            self.finish_update_abort(&abort);
-        }
-        // Admission gate: mutating commands are refused while a prepare transaction is
-        // active, except the drain commands during `Draining`.
-        let is_update_driver = matches!(
-            &envelope.command,
-            DaemonCommand::PrepareUpdateRestart { .. } | DaemonCommand::CommitUpdateRestart { .. }
-        );
-        if !is_update_driver {
-            if let Some(state) = self.update_prepare.active_state() {
-                if update_gate_refuses(state, &type_name) {
-                    return (
-                        vec![Outbound::Line(response_line(&response_failure(
-                            Some(&command_id),
-                            &type_name,
-                            UPDATE_PREPARING_MESSAGE,
-                            // The typed `update_restarting` info rides beside the plain message,
-                            // so clients can recognize the transient state and wait through it.
-                            Some(pa_types::daemon::DaemonErrorInfo::UpdateRestarting),
-                        )))],
-                        false,
-                    );
-                }
-            }
-        }
-        // Mutating commands count against the prepare transaction's drain.
-        let mutating =
-            !is_update_driver && pa_types::daemon::is_daemon_mutating_command(&type_name);
-        if mutating {
-            self.mutation_drain.begin();
-        }
         let outcome = self
             .execute_parsed_command(
                 &envelope.command,
@@ -594,9 +558,6 @@ impl Supervisor {
                 stream,
             )
             .await;
-        if mutating {
-            self.mutation_drain.end();
-        }
         (
             outcome
                 .0
@@ -606,8 +567,7 @@ impl Supervisor {
             outcome.1,
         )
     }
-    /// The parsed-command match of [`Self::dispatch_client`], executed under
-    /// the mutation-drain latch by that wrapper.
+    /// The parsed-command match of [`Self::dispatch_client`].
     #[allow(clippy::too_many_arguments)]
     async fn execute_parsed_command(
         self: &Arc<Self>,
@@ -797,33 +757,6 @@ impl Supervisor {
                     .handle_worker_register(&command_id, &type_name, command)
                     .await;
                 (vec![response_line(&response)], false)
-            }
-            DaemonCommand::CommitUpdateRestart { .. } => {
-                // The coordinator's commit (spec §5 `Prepared -> Stopping`): consume the
-                // prepared transaction, stop the workers in budget, and exit or abandon it.
-                self.handle_commit_update_restart(&command_id, &type_name, command)
-                    .await
-            }
-            DaemonCommand::PrepareUpdateRestart { .. } => {
-                // The update-flow coordinator's prepare RPC: accepts (or idempotently
-                // polls) the supervisor-side prepare transaction (spec §5).
-                let response = self
-                    .handle_prepare_update_restart(&command_id, &type_name, command)
-                    .await;
-                (vec![response_line(&response)], false)
-            }
-            DaemonCommand::UpdateRestoreStatus { .. } => {
-                // The boot restore pass's live snapshot (spec §6/§9): the successor
-                // coordinator's `Restoring` report polls this for real counts and failures.
-                let data = self.restore_status_body();
-                (
-                    vec![response_line(&response_success(
-                        Some(&command_id),
-                        &type_name,
-                        Some(data),
-                    ))],
-                    false,
-                )
             }
             DaemonCommand::ListPersistentShells { .. } => {
                 // The machine-wide persistent shells, each with its assigned session id.

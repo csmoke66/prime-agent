@@ -15,7 +15,6 @@ use super::{
     Duration, EngineModelSelection, Map, Ordering, Path, ResidentWorker, Result, RouteAdmission,
     Supervisor, TempSync, TypedCreateRejection, Value, WorkerTransition, ROUTE_TIMEOUT_MS,
 };
-use crate::lease::is_process_alive;
 use crate::protocol::{response_failure, response_success, DaemonResponse};
 
 /// Which admission path publishes a fresh worker's passive family.
@@ -1046,63 +1045,6 @@ impl Supervisor {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(budget);
     }
 }
-
-/// The real graceful-stop transport (spec §5 `Stopping`): the routed
-/// `shutdown` request - the worker's handler is the flush barrier (it
-/// persists the recovery journal and finalizes telemetry before replying) -
-/// and a pid/start-id liveness poll for the exit wait (a foreign process
-/// cannot be waited on directly). The stop is marked intentional before the
-/// request so the monitor never races an exit into a crash-restart.
-impl crate::update_stop::WorkerStopTransport for std::sync::Arc<Supervisor> {
-    async fn request_shutdown(
-        &self,
-        resident: &Arc<ResidentWorker>,
-        timeout: Duration,
-    ) -> Result<()> {
-        resident.transition(WorkerTransition::RequestStop);
-        let response = self
-            .route_command_typed(
-                resident,
-                "shutdown",
-                json!({}),
-                timeout.as_millis() as u64,
-                RouteAdmission::SupervisorInternal,
-            )
-            .await?;
-        if !response.success {
-            anyhow::bail!(
-                "worker {} refused the graceful stop: {}",
-                resident.worker_id,
-                response.error.unwrap_or_default()
-            );
-        }
-        Ok(())
-    }
-
-    async fn wait_exit(&self, resident: &Arc<ResidentWorker>, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let (pid, start_id) = {
-                let descriptor = resident.descriptor.lock().await;
-                (descriptor.pid, descriptor.process_start_id.clone())
-            };
-            let alive = is_process_alive(pid as u32).unwrap_or(false)
-                && start_id.as_deref().is_none_or(|start| {
-                    crate::protocol::process_start_id(pid as u32).as_deref() == Some(start)
-                });
-            if !alive {
-                return true;
-            }
-            if tokio::time::Instant::now() + WORKER_EXIT_POLL >= deadline {
-                return false;
-            }
-            tokio::time::sleep(WORKER_EXIT_POLL).await;
-        }
-    }
-}
-
-/// How often the graceful-stop exit wait polls worker process liveness.
-const WORKER_EXIT_POLL: Duration = Duration::from_millis(250);
 
 #[cfg(all(test, unix))]
 mod tests {

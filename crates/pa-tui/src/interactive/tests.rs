@@ -148,7 +148,6 @@ pub(crate) fn options(selection: ModelSelection) -> InteractiveOptions {
         client_auth: None,
         traces: None,
         provider_auth: None,
-        update_commands: None,
         telemetry: None,
         keybindings: crate::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,

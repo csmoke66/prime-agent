@@ -339,18 +339,6 @@ pub trait ClientSettings: Send + Sync {
     ///
     /// Returns `Err` when the settings store fails.
     fn set_warnings_anthropic_extra_usage(&self, enabled: bool) -> Result<()>;
-    /// `updateChannel` (`stable`/`nightly`; unset infers the channel from
-    /// the running version).
-    fn update_channel(&self) -> Option<String>;
-    /// Persists `updateChannel` to the global scope.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` when the settings store fails.
-    fn set_update_channel(&self, channel: &str) -> Result<()>;
-    /// The effective update channel for the running version, as its wire
-    /// name (a preferred channel wins, else the prerelease infers).
-    fn effective_update_channel(&self, version: &str) -> String;
     /// The `/telemetry status` report: on or off and why, the endpoint,
     /// and the installation id.
     fn telemetry_status(&self) -> String;

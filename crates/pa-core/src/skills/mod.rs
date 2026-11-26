@@ -207,13 +207,19 @@ pub(crate) use validate_name as validate_skill_name;
 /// with `disable-model-invocation` are excluded.
 #[must_use]
 pub fn format_skills_for_prompt(skills: &[Skill]) -> String {
-    let visible: Vec<&Skill> = skills
+    let mut visible: Vec<&Skill> = skills
         .iter()
         .filter(|skill| !skill.disable_model_invocation)
         .collect();
     if visible.is_empty() {
         return String::new();
     }
+    // Discovery order must not change an otherwise identical prompt prefix.
+    visible.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+    });
     let mut lines = vec![
         "\n\nThe following skills provide specialized instructions for specific tasks.".to_string(),
         "Use python_repl to inspect a skill's file when the task matches its description.".to_string(),
@@ -516,6 +522,18 @@ mod tests {
         let (expanded, used) = expand_skill_command("/skill:gone", &skills);
         assert_eq!(expanded, "/skill:gone");
         assert!(used.is_empty());
+    }
+
+    #[test]
+    fn prompt_inventory_is_independent_of_discovery_order() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let alpha = temp_skill("alpha", first.path());
+        let beta = temp_skill("beta", second.path());
+        assert_eq!(
+            format_skills_for_prompt(&[alpha.clone(), beta.clone()]),
+            format_skills_for_prompt(&[beta, alpha]),
+        );
     }
 
     #[test]

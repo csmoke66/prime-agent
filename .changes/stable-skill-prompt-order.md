@@ -1,0 +1,1 @@
+- Keep skill descriptions in a stable prompt order to avoid unnecessary prefix-cache misses after resource reloads.

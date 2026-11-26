@@ -133,7 +133,7 @@ impl ActiveRun {
         let host = Arc::clone(&self.host);
         let id = self.id;
         let (admission, name) = tokio::task::spawn_blocking(move || {
-            let admission = prepare(&host, id, &name, input)?;
+            let admission = prepare(&host, id, &name, input, workflows::load)?;
             Ok::<_, anyhow::Error>((admission, name))
         })
         .await
@@ -258,6 +258,7 @@ fn prepare(
     id: Uuid,
     name: &str,
     data: Value,
+    load_workflow: impl FnOnce(&Path, &Path, &str) -> Result<Workflow>,
 ) -> Result<Admission> {
     let mut identity = host.identity.lock().expect("identity lock").clone();
     // Workflows always use the selected authenticated model, not the scripted test engine.
@@ -278,7 +279,7 @@ fn prepare(
             .as_deref()
             .context("workflow requires a project directory")?,
     );
-    let workflow = workflows::load(cwd, &host.agent_dir, name)?;
+    let workflow = load_workflow(cwd, &host.agent_dir, name)?;
     let mut input = WorkflowInput::parse(&workflow, data)?;
     if let Some(context) = workflow
         .context
@@ -324,7 +325,6 @@ fn prepare(
         identity.rlm_depth,
     )?;
     let allowlist = if override_subagent_models {
-        ensure!(identity.rlm_depth == 0, "workflow model overrides must be invoked from a root session");
         if matches!(caller_allowlist, DaemonAllowlist::Unreadable(_)) {
             caller_allowlist
         } else {
@@ -709,6 +709,90 @@ mod tests {
         assert_eq!(
             host.inner.identity.lock().unwrap().model.as_deref(),
             Some("caller/unchanged")
+        );
+    }
+
+    #[test]
+    fn admits_a_protected_workflow_from_a_model_restricted_subagent() {
+        use pa_core::session::subagent_policy::SessionSubagentPolicy;
+
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path();
+        let agent_dir = project.join("agent");
+        let sessions = agent_dir.join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let root = sessions.join("root.jsonl");
+        let caller = sessions.join("caller.jsonl");
+        std::fs::write(
+            &caller,
+            json!({
+                "type":"session", "id":"caller", "cwd":project, "timestamp":"2026-01-01",
+                "rlmDepth":1, "parentSession":root
+            })
+            .to_string(),
+        )
+        .unwrap();
+        SessionSubagentPolicy::set_model_selectors(
+            &root,
+            Some(vec!["workflow-test/ordinary".into()]),
+        )
+        .unwrap();
+        std::fs::write(
+            agent_dir.join("settings.json"),
+            r#"{"allowedModels":["workflow-test/root","workflow-test/child"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            agent_dir.join("models.json"),
+            json!({"providers":{"workflow-test":{
+                "api":"openai-completions", "baseUrl":"http://localhost:9", "apiKey":"fixture-key",
+                "models":[{"id":"root"},{"id":"child"}]
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+
+        let host = SupervisorChildSessions::new(
+            Arc::new(SupervisorLink::new(project.join("supervisor.sock"))),
+            agent_dir.clone(),
+            "caller".into(),
+            Arc::new(ModelRefusalTelemetry::new(agent_dir, true)),
+            String::new(),
+        );
+        host.set_identity(ParentIdentity {
+            cwd: Some(project.to_string_lossy().into_owned()),
+            session_id: Some("caller".into()),
+            session_file: Some(caller.to_string_lossy().into_owned()),
+            rlm_depth: 1,
+            rlm_max_depth: 2,
+            ..ParentIdentity::with_default_depth()
+        });
+        let admission = prepare(
+            &host.inner,
+            Uuid::new_v4(),
+            "protected-test",
+            json!({"query":"hello","scope":"local"}),
+            |_, _, _| {
+                let mut workflow = definition();
+                workflow["overrideSubagentModels"] = json!(true);
+                Ok(serde_json::from_value(workflow)?)
+            },
+        )
+        .unwrap();
+        let policy = workflow_policy(Path::new(&admission.session_file))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (
+                admission.model.as_str(),
+                policy.operator_workflow.as_deref(),
+                policy.allowed_models
+            ),
+            (
+                "workflow-test/root",
+                Some("protected-test"),
+                Some(vec!["workflow-test/child".into()]),
+            )
         );
     }
 

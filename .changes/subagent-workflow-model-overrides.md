@@ -1,0 +1,1 @@
+- Allow subagents to run protected operator workflows with model overrides while still enforcing the daemon-wide model allowlist.

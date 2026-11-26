@@ -131,7 +131,10 @@ fn policy_for_with_grant(
     depth: u32,
     own_model: bool,
     load_grant: impl Fn(&str) -> Result<pa_core::workflows::Workflow>,
-) -> Result<(DaemonAllowlist, Option<pa_core::settings::ThinkingLevelSetting>)> {
+) -> Result<(
+    DaemonAllowlist,
+    Option<pa_core::settings::ThinkingLevelSetting>,
+)> {
     use pa_core::session::subagent_policy::SessionSubagentPolicy;
     let mut selected: Option<Vec<String>> = None;
     let mut workflow_effort = None;
@@ -139,13 +142,20 @@ fn policy_for_with_grant(
     let policy = match session_file {
         Some(file) => {
             let root = SessionSubagentPolicy::visit_ancestors(file, depth, |log, at| {
-                let Some(policy) = pa_core::session::subagent_policy::workflow_policy(log)? else { return Ok(()) };
+                let Some(policy) = pa_core::session::subagent_policy::workflow_policy(log)? else {
+                    return Ok(());
+                };
+                // Walk from the current session toward the root. The closest protected
+                // grant replaces the caller's model policy, but not its effort policy.
+                let inherit_models = !use_global_models;
                 if let Some(name) = &policy.operator_workflow {
-                    anyhow::ensure!(at == 1, "operator workflow override is not directly under a root session");
                     let grant = load_grant(name)?;
                     anyhow::ensure!(
                         grant.model == policy.runner_model
-                            && grant.subagents.and_then(|subagents| subagents.allowed_models) == policy.allowed_models,
+                            && grant
+                                .subagents
+                                .and_then(|subagents| subagents.allowed_models)
+                                == policy.allowed_models,
                         "operator workflow {name:?} model grant no longer matches this run"
                     );
                     use_global_models = true;
@@ -154,12 +164,15 @@ fn policy_for_with_grant(
                     Some(vec![policy.runner_model])
                 } else {
                     if let Some(effort) = policy.effort {
-                        anyhow::ensure!(workflow_effort.is_none_or(|previous| previous == effort), "conflicting nested workflow effort constraints");
+                        anyhow::ensure!(
+                            workflow_effort.is_none_or(|previous| previous == effort),
+                            "conflicting nested workflow effort constraints"
+                        );
                         workflow_effort = Some(effort);
                     }
                     policy.allowed_models
                 };
-                if let Some(models) = models {
+                if let Some(models) = models.filter(|_| inherit_models) {
                     match &mut selected {
                         Some(existing) => existing.retain(|m| models.contains(m)),
                         None => selected = Some(models),
@@ -187,8 +200,10 @@ fn policy_for_with_grant(
         }
         _ => allowlist,
     };
-    anyhow::ensure!(workflow_effort.is_none() || policy.effort.is_none() || workflow_effort == policy.effort,
-        "workflow effort conflicts with the session's child effort policy");
+    anyhow::ensure!(
+        workflow_effort.is_none() || policy.effort.is_none() || workflow_effort == policy.effort,
+        "workflow effort conflicts with the session's child effort policy"
+    );
     Ok((allowlist, workflow_effort.or(policy.effort)))
 }
 
@@ -317,44 +332,97 @@ mod tests {
         assert!(read(&root, 0, false).0.allows("p/main"));
     }
     #[test]
-    fn protected_workflow_can_use_globally_allowed_models_without_widening_root_spawns() {
-        use pa_core::session::subagent_policy::{set_workflow_policy, SessionSubagentPolicy, WorkflowRunPolicy};
+    fn protected_workflow_overrides_its_subagent_callers_models_but_not_global_policy() {
+        use pa_core::session::subagent_policy::{
+            set_workflow_policy, SessionSubagentPolicy, WorkflowRunPolicy,
+        };
         let tmp = tempfile::tempdir().unwrap();
-        write_settings(tmp.path(), r#"{"allowedModels":["p/normal","p/runner","p/helper"]}"#);
+        write_settings(
+            tmp.path(),
+            r#"{"allowedModels":["p/normal","p/runner","p/helper"]}"#,
+        );
         let sessions = tmp.path().join("sessions");
         std::fs::create_dir(&sessions).unwrap();
         let root = sessions.join("root.jsonl");
+        let caller = sessions.join("caller.jsonl");
         let workflow = sessions.join("flow.jsonl");
-        std::fs::write(&workflow, serde_json::json!({
-            "type":"session","id":"flow","cwd":"/","timestamp":"2026-01-01",
-            "rlmDepth":1,"parentSession":root
-        }).to_string()).unwrap();
+        let helper = sessions.join("helper.jsonl");
+        for (file, parent, depth) in [
+            (&caller, &root, 1),
+            (&workflow, &caller, 2),
+            (&helper, &workflow, 3),
+        ] {
+            std::fs::write(
+                file,
+                serde_json::json!({
+                    "type":"session","id":"id","cwd":"/","timestamp":"2026-01-01",
+                    "rlmDepth":depth,"parentSession":parent
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
         SessionSubagentPolicy::set_model_selectors(&root, Some(vec!["p/normal".into()])).unwrap();
-        set_workflow_policy(&workflow, &WorkflowRunPolicy {
-            runner_model: "p/runner".into(),
-            allowed_models: Some(vec!["p/helper".into()]),
-            effort: None,
-            operator_workflow: Some("review".into()),
-        }).unwrap();
+        set_workflow_policy(
+            &caller,
+            &WorkflowRunPolicy {
+                runner_model: "p/normal".into(),
+                allowed_models: Some(vec!["p/normal".into()]),
+                effort: Some(pa_core::settings::ThinkingLevelSetting::Low),
+                operator_workflow: None,
+            },
+        )
+        .unwrap();
+        set_workflow_policy(
+            &workflow,
+            &WorkflowRunPolicy {
+                runner_model: "p/runner".into(),
+                allowed_models: Some(vec!["p/helper".into()]),
+                effort: None,
+                operator_workflow: Some("review".into()),
+            },
+        )
+        .unwrap();
         let grant = |name: &str| {
             assert_eq!(name, "review");
             Ok(serde_json::from_value(serde_json::json!({
                 "version":1,"model":"p/runner","prompt":"Review documentation.",
                 "inputFields":{},"outputFields":{},"overrideSubagentModels":true,
                 "subagents":{"allowedModels":["p/helper"]}
-            })).unwrap())
+            }))
+            .unwrap())
         };
-        let policy = |own| policy_for_with_grant(
-            tmp.path(), tmp.path(), Some(&workflow), 1, own, grant,
-        ).unwrap().0;
-        assert_eq!(policy(true), DaemonAllowlist::Selected(vec!["p/runner".into()]));
-        assert_eq!(policy(false), DaemonAllowlist::Selected(vec!["p/helper".into()]));
-        assert!(!child_policy(tmp.path(), tmp.path(), Some(&root), 0).unwrap().0.allows("p/runner"));
+        let policy = |log: &Path, depth, own| {
+            policy_for_with_grant(tmp.path(), tmp.path(), Some(log), depth, own, grant).unwrap()
+        };
+        assert_eq!(
+            policy(&workflow, 2, true),
+            (
+                DaemonAllowlist::Selected(vec!["p/runner".into()]),
+                Some(pa_core::settings::ThinkingLevelSetting::Low),
+            )
+        );
+        assert_eq!(
+            policy(&helper, 3, true),
+            (
+                DaemonAllowlist::Selected(vec!["p/helper".into()]),
+                Some(pa_core::settings::ThinkingLevelSetting::Low),
+            )
+        );
+        assert_eq!(
+            policy(&caller, 1, false).0,
+            DaemonAllowlist::Selected(vec!["p/normal".into()])
+        );
         write_settings(tmp.path(), r#"{"allowedModels":["p/normal"]}"#);
-        assert!(!policy(true).allows("p/runner"));
-        assert!(!policy(false).allows("p/helper"));
+        assert_eq!(
+            policy(&workflow, 2, true).0,
+            DaemonAllowlist::Selected(vec![])
+        );
+        assert_eq!(
+            policy(&helper, 3, true).0,
+            DaemonAllowlist::Selected(vec![])
+        );
     }
-
 
     #[test]
     fn load_reads_the_global_scope_only() {

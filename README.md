@@ -73,6 +73,8 @@ A protected operator workflow can set `"overrideSubagentModels": true` to use it
 
 Use `/cost` to see this session's total and its sub-agents' spend, split into uncached input, output, cache reads, and cache writes. Older records that stored only a total appear under **Unclassified**.
 
+For `openai-codex`, dollar totals estimate token value using the configured Codex rates; they do not measure your subscription bill or remaining allowance. Codex signed in with ChatGPT has no separate cache-write charge or long-context price multiplier. API-key sessions follow separate API pricing. See [OpenAI's Codex rate card](https://help.openai.com/en/articles/20001415-chatgpt-rate-card-enterprise-token-based-pricing).
+
 Use `/cost reset` to start counting from zero for the current session and all its descendants. The reset is saved locally and applies to the chat header, Agents View, and `/cost`. It does not change provider billing, transcripts, or the lifetime totals in `/session` and `/context`.
 
 ## Goals

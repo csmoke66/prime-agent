@@ -697,6 +697,85 @@ mod tests {
     }
 
     #[test]
+    fn codex_usage_bills_uncached_input_without_api_cache_write_or_context_surcharges() {
+        use crate::event_stream::{
+            create_assistant_message_event_stream, initial_assistant_message,
+        };
+        use crate::providers::openai_responses_shared::{
+            ResponsesStreamHooks, ResponsesStreamProcessor,
+        };
+        use crate::types::{Model, ServiceTier, Usage, UsageCost};
+
+        let model: Model = serde_json::from_value(json!({
+            "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol", "provider": "openai-codex",
+            "api": "openai-codex-responses", "baseUrl": "https://unused.invalid",
+            "reasoning": true, "input": ["text"], "contextWindow": 500_000, "maxTokens": 1000,
+            "cost": {"input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5}
+        }))
+        .unwrap();
+        // Include stale API write metadata/rates, >272K total input, and reasoning
+        // tokens. Codex bills only uncached input, cached input, and total output.
+        for (request_tier, response_tier, multiplier) in [
+            (None, Some("default"), 1.0),
+            (Some(ServiceTier::Priority), None, 2.0),
+            (None, Some("flex"), 0.5),
+        ] {
+            let mut output = initial_assistant_message(&model.api, &model.provider, &model.id);
+            let (writer, _stream) = create_assistant_message_event_stream();
+            let mut processor = ResponsesStreamProcessor::new(
+                &model,
+                &mut output,
+                &writer,
+                ResponsesStreamHooks {
+                    request_service_tier: request_tier,
+                    resolve_service_tier: Some(Box::new(resolve_codex_service_tier)),
+                    apply_service_tier_pricing: Some(Box::new(|usage, tier| {
+                        apply_codex_service_tier_pricing(usage, tier.as_deref(), "gpt-6.2-sol");
+                    })),
+                },
+            );
+            processor
+                .handle_event(&json!({
+                    "type": "response.completed",
+                    "response": {
+                        "status": "completed", "service_tier": response_tier,
+                        "usage": {
+                            "input_tokens": 300_000,
+                            "input_tokens_details": {
+                                "cached_tokens": 250_000, "cache_write_tokens": 49_000,
+                                "cache_write_tokens_details": {"ttl_12h_tokens": 49_000}
+                            },
+                            "output_tokens": 100,
+                            "output_tokens_details": {"reasoning_tokens": 80},
+                            "total_tokens": 300_100
+                        }
+                    }
+                }))
+                .unwrap();
+            let input = 50_000.0 * (2.0 / 1_000_000.0) * multiplier;
+            let output_cost = 0.001 * multiplier;
+            let cache_read = 0.025 * multiplier;
+            assert_eq!(
+                output.usage,
+                Usage {
+                    input: 50_000,
+                    output: 100,
+                    cache_read: 250_000,
+                    cache_write: 0,
+                    total_tokens: 300_100,
+                    cost: UsageCost {
+                        input: input.into(),
+                        output: output_cost.into(),
+                        cache_read: cache_read.into(),
+                        cache_write: 0.0.into(),
+                        total: (input + output_cost + cache_read).into(),
+                    },
+                }
+            );
+        }
+    }
+
+    #[test]
     fn resolves_service_tier_fallbacks() {
         assert_eq!(
             resolve_codex_service_tier(Some("default".to_string()), Some("flex".to_string())),

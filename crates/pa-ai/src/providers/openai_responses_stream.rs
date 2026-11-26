@@ -767,15 +767,22 @@ impl<'a> ResponsesStreamProcessor<'a> {
                         .get("cached_tokens")
                         .and_then(Value::as_u64)
                         .unwrap_or(0);
-                    let cache_write_tokens = input_details
-                        .get("cache_write_tokens")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0);
+                    // Codex credits have no separate cache-write charge. Any write
+                    // details still belong to ordinary, non-cached input there.
+                    // https://learn.chatgpt.com/docs/pricing#token-rates
+                    let cache_write_tokens = if self.model.api == "openai-codex-responses" {
+                        0
+                    } else {
+                        input_details
+                            .get("cache_write_tokens")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                    };
                     let input_tokens = usage
                         .get("input_tokens")
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(0);
-                    // OpenAI bills each input token as ordinary input, a cache read, or a cache write.
+                    // These buckets are disjoint; cached reads are included in input_tokens.
                     self.output.usage = Usage {
                         input: input_tokens
                             .saturating_sub(cached_tokens)
@@ -805,7 +812,8 @@ impl<'a> ResponsesStreamProcessor<'a> {
                         let ttl_12h_share = ttl_12h_tokens as f64 / cache_write_tokens as f64;
                         CostOverrides {
                             cache_write: Some(
-                                self.model.cost.input.as_f64() * (1.25 + (2.5 - 1.25) * ttl_12h_share),
+                                self.model.cost.input.as_f64()
+                                    * (1.25 + (2.5 - 1.25) * ttl_12h_share),
                             ),
                         }
                     })

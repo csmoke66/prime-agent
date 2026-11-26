@@ -1,0 +1,1 @@
+- Keep Codex cost estimates separate from API-only cache-write pricing while preserving cached-input discounts and speed-tier estimates.

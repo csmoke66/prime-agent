@@ -62,11 +62,15 @@ fn assistant_usage(message: &AgentMessage) -> Option<pa_types::ai::Usage> {
     };
     match assistant.stop_reason {
         pa_types::ai::StopReason::Aborted | pa_types::ai::StopReason::Error => None,
-        _ => Some(assistant.usage),
+        pa_types::ai::StopReason::Stop
+        | pa_types::ai::StopReason::Length
+        | pa_types::ai::StopReason::ToolUse => {
+            (calculate_context_tokens(&assistant.usage) > 0).then_some(assistant.usage)
+        }
     }
 }
 
-/// Last non-aborted assistant usage from session entries.
+/// Last positive usage from a successful assistant response in session entries.
 #[must_use]
 pub fn get_last_assistant_usage(entries: &[FileEntry]) -> Option<pa_types::ai::Usage> {
     for entry in entries.iter().rev() {
@@ -79,7 +83,7 @@ pub fn get_last_assistant_usage(entries: &[FileEntry]) -> Option<pa_types::ai::U
     None
 }
 
-/// Chars/4 heuristic token estimate (conservative; overestimates).
+/// Approximate chars/4 token estimate, with fixed media allowances.
 #[must_use]
 pub fn estimate_tokens(message: &AgentMessage) -> u64 {
     let chars = |text: &str| text.chars().count() as u64;
@@ -89,12 +93,13 @@ pub fn estimate_tokens(message: &AgentMessage) -> u64 {
             pa_types::ai::UserContent::Blocks(blocks) => div4(
                 blocks
                     .iter()
-                    .filter_map(|block| match block {
-                        pa_types::ai::UserContentBlock::Text(text) => Some(chars(&text.text)),
+                    .map(|block| match block {
+                        pa_types::ai::UserContentBlock::Text(text) => chars(&text.text),
+                        pa_types::ai::UserContentBlock::Image(_) => 4_800,
                         pa_types::ai::UserContentBlock::Video(_) => {
-                            Some(pa_types::ai::VIDEO_ESTIMATED_TOKENS * 4)
+                            pa_types::ai::VIDEO_ESTIMATED_TOKENS * 4
                         }
-                        _ => None,
+                        pa_types::ai::UserContentBlock::Raw(_) => 0,
                     })
                     .sum(),
             ),
@@ -346,8 +351,8 @@ pub(super) fn live_context_tokens(messages: &[AgentMessage]) -> Option<u64> {
         }
         Some(estimate.tokens)
     }
-    // No valid usage: the last assistant's raw usage decides; error
-    // turns never trigger.
+    // Without measured usage, estimate successful turns from their messages.
+    // Error turns and stale pre-compaction responses never trigger.
     else {
         let Some(AgentMessage::Assistant(assistant)) = messages
             .iter()
@@ -356,13 +361,16 @@ pub(super) fn live_context_tokens(messages: &[AgentMessage]) -> Option<u64> {
         else {
             return None;
         };
-        if assistant.stop_reason == pa_types::ai::StopReason::Error {
+        if matches!(
+            assistant.stop_reason,
+            pa_types::ai::StopReason::Error | pa_types::ai::StopReason::Aborted
+        ) {
             return None;
         }
         if compaction_timestamp.is_some_and(|timestamp| assistant.timestamp <= timestamp) {
             return None;
         }
-        Some(calculate_context_tokens(&assistant.usage))
+        Some(estimate.tokens)
     }
 }
 
@@ -879,6 +887,72 @@ mod tests {
             assistant_message(126_010, 12),
         ];
         assert!(threshold_compaction_due(&messages, 128_000, 0, &settings));
+    }
+
+    #[test]
+    fn multimedia_estimates_agree_for_user_custom_and_tool_messages() {
+        for role in ["user", "custom", "toolResult"] {
+            let raw = serde_json::json!({
+                "role":role, "timestamp":0, "customType":"fixture", "display":true,
+                "toolCallId":"call", "isError":false,
+                "content":[
+                    {"type":"text", "text":"12345678"},
+                    {"type":"image", "data":"AAAA", "mimeType":"image/png"},
+                    {"type":"video", "data":"AAAA", "mimeType":"video/mp4"}
+                ]
+            });
+            let message: AgentMessage = serde_json::from_value(raw.clone()).unwrap();
+            let expected = 2 + 1_200 + pa_types::ai::VIDEO_ESTIMATED_TOKENS;
+            assert_eq!(
+                (
+                    estimate_tokens(&message),
+                    pa_types::usage::estimate_tokens(&raw)
+                ),
+                (expected, expected)
+            );
+        }
+    }
+
+    #[test]
+    fn missing_usage_preserves_the_prior_anchor_or_uses_message_estimates() {
+        let messages = vec![
+            user_message("turn one", 1),
+            assistant_message(1_000, 2),
+            user_message("12345678", 3),
+            assistant_message(0, 4),
+        ];
+        assert_eq!(
+            estimate_context_tokens(&messages),
+            ContextTokensEstimate {
+                tokens: 1_003,
+                last_usage_index: Some(1),
+            }
+        );
+        assert!(threshold_compaction_due(
+            &messages,
+            100_000,
+            0,
+            &CompactionSettings {
+                enabled: true,
+                threshold_percent: 1.0,
+                reserve_tokens: 0,
+                keep_recent_tokens: 0,
+            },
+        ));
+        let unmeasured = &messages[2..];
+        assert_eq!(
+            estimate_context_tokens(unmeasured),
+            ContextTokensEstimate {
+                tokens: 3,
+                last_usage_index: None,
+            }
+        );
+        assert_eq!(live_context_tokens(unmeasured), Some(3));
+        let mut aborted = unmeasured.to_vec();
+        if let AgentMessage::Assistant(assistant) = &mut aborted[1] {
+            assistant.stop_reason = pa_types::ai::StopReason::Aborted;
+        }
+        assert_eq!(live_context_tokens(&aborted), None);
     }
 
     #[test]

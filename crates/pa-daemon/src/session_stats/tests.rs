@@ -221,6 +221,32 @@ fn compaction_with_post_usage_estimates() {
 }
 
 #[test]
+fn a_response_without_usage_preserves_the_post_compaction_context_measurement() {
+    let store = store_with(&[
+        entry_with_usage(50),
+        ("compaction", json!({"firstKeptEntryId":"e1"})),
+        entry_with_usage(300),
+        (
+            "message",
+            json!({"message": message("user", &json!({"content":"12345678"}))}),
+        ),
+        (
+            "message",
+            json!({"message": message("assistant", &json!({
+                "content":[{"type":"text", "text":"ok"}], "stopReason":"stop", "usage":{}
+            }))}),
+        ),
+    ]);
+    let stats = session_stats(&store, Some(1000));
+    assert_eq!(
+        stats["contextUsage"],
+        json!({
+            "tokens":303, "contextWindow":1000, "percent":303.0 / 1000.0 * 100.0
+        })
+    );
+}
+
+#[test]
 fn no_context_window_omits_usage() {
     let store = store_with(&[entry_with_usage(128)]);
     let stats = session_stats(&store, None);

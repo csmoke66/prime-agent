@@ -30,7 +30,8 @@ pub fn calculate_context_tokens(usage: &Value) -> u64 {
         })
 }
 
-/// Assistant usage safe to read (TS `getAssistantUsage` skips aborted and error stops).
+/// Positive assistant usage safe to use as a measured context-size anchor.
+/// Missing or all-zero usage is not a measurement; aborted and error stops are skipped.
 pub fn valid_assistant_usage(message: &Value) -> Option<Value> {
     if message.get("role").and_then(Value::as_str) != Some("assistant") {
         return None;
@@ -41,11 +42,11 @@ pub fn valid_assistant_usage(message: &Value) -> Option<Value> {
     message
         .get("usage")
         .cloned()
-        .filter(|usage| !usage.is_null())
+        .filter(|usage| calculate_context_tokens(usage) > 0)
 }
 
 /// Chars/4 heuristic token estimate: text and thinking count, tool calls count their serialized
-/// arguments, images count as 4800 chars.
+/// arguments, images count as 4800 chars, and video uses the shared media estimate.
 pub fn estimate_tokens(message: &Value) -> u64 {
     let role = message
         .get("role")
@@ -63,30 +64,29 @@ pub fn estimate_tokens(message: &Value) -> u64 {
                         chars += block
                             .get("text")
                             .and_then(Value::as_str)
-                            .map(|text| text.chars().count() as u64)
-                            .unwrap_or_default();
+                            .map_or(0, |text| text.chars().count() as u64);
                     }
                     Some("thinking") => {
                         chars += block
                             .get("thinking")
                             .and_then(Value::as_str)
-                            .map(|text| text.chars().count() as u64)
-                            .unwrap_or_default();
+                            .map_or(0, |text| text.chars().count() as u64);
                     }
                     Some("toolCall") => {
                         chars += block
                             .get("name")
                             .and_then(Value::as_str)
-                            .map(|name| name.chars().count() as u64)
-                            .unwrap_or_default();
+                            .map_or(0, |name| name.chars().count() as u64);
                         if let Some(arguments) = block.get("arguments") {
                             chars += serde_json::to_string(arguments)
-                                .map(|text| text.chars().count() as u64)
-                                .unwrap_or_default();
+                                .map_or(0, |text| text.chars().count() as u64);
                         }
                     }
                     Some("image") => {
                         chars += 4800;
+                    }
+                    Some("video") => {
+                        chars += crate::ai::VIDEO_ESTIMATED_TOKENS * 4;
                     }
                     _ => {}
                 }
@@ -137,6 +137,33 @@ mod tests {
         );
         let usage = valid_assistant_usage(&json!({ "role": "assistant", "usage": { "input": 3 } }));
         assert_eq!(usage, Some(json!({ "input": 3 })));
+    }
+
+    #[test]
+    fn multimedia_estimates_include_video_without_counting_encoded_bytes() {
+        let message = json!({
+            "role": "user", "content": [
+                {"type":"text", "text":"12345678"},
+                {"type":"image", "data":"AAAA", "mimeType":"image/png"},
+                {"type":"video", "data":"AAAA", "mimeType":"video/mp4"}
+            ]
+        });
+        assert_eq!(
+            estimate_tokens(&message),
+            2 + 1_200 + crate::ai::VIDEO_ESTIMATED_TOKENS
+        );
+    }
+
+    #[test]
+    fn empty_usage_is_not_a_measurement_of_context_size() {
+        for usage in [json!({}), json!({"input":0,"output":0,"totalTokens":0})] {
+            assert_eq!(
+                valid_assistant_usage(&json!({
+                    "role":"assistant", "stopReason":"stop", "usage":usage
+                })),
+                None
+            );
+        }
     }
 
     #[test]

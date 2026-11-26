@@ -1,0 +1,1 @@
+- Include image and video inputs in context estimates and keep missing usage reports from resetting the context size to zero.

@@ -25,7 +25,7 @@ Every contributor (human or agent) must read this before working on this repo.
 ## Style and structure
 
 - Workspace crates are prefixed `pa-`. The hard ownership rules: one owned area per crate,
-  pa-types is the only shared crate, cycle-free dependency direction, minimal public APIs,
+  bh-types is the only shared crate, cycle-free dependency direction, minimal public APIs,
   no god-modules. The dependency direction is pinned in the Crates table below; each crate's
   README.md states its scope, non-goals, and public API surface.
 - Prefer private modules with an explicitly exported public crate API. Internals are `pub(crate)`.
@@ -33,9 +33,9 @@ Every contributor (human or agent) must read this before working on this repo.
   signal, not a merge limit: when adding to an already-large file, consider splitting by
   responsibility rather than growing it further. Move related tests and docs with extracted code.
 - Name modules for what they own, not `utils` or `common`. Follow existing structure: in
-  `crates/pa-core/src/kernel/manager/`, `mod.rs` connects `execution.rs`, `requests.rs`, and
+  `crates/bh-core/src/kernel/manager/`, `mod.rs` connects `execution.rs`, `requests.rs`, and
   `teardown.rs`; put a new kernel-manager concern beside them. In
-  `crates/pa-core/src/cron/store/`, `mod.rs` connects `heartbeat.rs`, `jobs.rs`, and
+  `crates/bh-core/src/cron/store/`, `mod.rs` connects `heartbeat.rs`, `jobs.rs`, and
   `session_artifacts.rs`; keep storage work there rather than growing the scheduler.
 - Inline format args: always prefer `format!("{x}")` over positional.
 - Collapse if statements per clippy::collapsible_if.
@@ -101,7 +101,7 @@ Rules:
   background worker; the paint path hands the work off and returns
   immediately. Delivery semantics (timeout, retry, ordering) live with
   the worker, not the caller.
-- Telemetry is fire-and-forget from user-facing code. `pa-telemetry`'s
+- Telemetry is fire-and-forget from user-facing code. `bh-telemetry`'s
   background worker owns delivery end to end; no startup, session
   create, tab open, or first-render path may hold a flush or await a
   sink.
@@ -136,18 +136,18 @@ launch path must keep that test red-first.
   direction) and classify the change: internals, new `pub` surface, or a new
   dependency/cross-crate re-export. The latter two are architectural changes — an innocent-looking
   `pub use` is a very simple way to break encapsulation.
-- The model catalog `crates/pa-models/catalog/models.json` and the MCP service catalog
-  `crates/pa-models/catalog/mcp-services.json` are hand-maintained data compiled into the
+- The model catalog `crates/bh-models/catalog/models.json` and the MCP service catalog
+  `crates/bh-models/catalog/mcp-services.json` are hand-maintained data compiled into the
   binary; edit them by hand. The compiled fallback model list
-  `crates/pa-ai/src/models_generated.rs` is hand-maintained Rust (there is no generator).
+  `crates/bh-ai/src/models_generated.rs` is hand-maintained Rust (there is no generator).
   Bulk data files are exempt from the size guidance.
 
 ## Adoption telemetry
 
 Every user-visible feature ships its adoption telemetry event in the same PR as the feature:
-the event name + properties join the versioned schema (`pa-telemetry`), and a
+the event name + properties join the versioned schema (`bh-telemetry`), and a
 seam emits it from day one. Telemetry properties never carry prompt, session, or file content
-(primitives only; see `pa-telemetry`); delivery is fire-and-forget from user-facing code
+(primitives only; see `bh-telemetry`); delivery is fire-and-forget from user-facing code
 (see Performance and the critical path).
 
 ## Branding
@@ -173,30 +173,30 @@ EXPLICIT EXCEPTION: wire-protocol identifiers (e.g. the PI_PACKAGE_DIR env var, 
 
 ## Crates
 
-One owned area per crate; `pa-types` is the only shared vocabulary crate.
+One owned area per crate; `bh-types` is the only shared vocabulary crate.
 Dependencies flow from the composition root toward lower crates, never back upward.
 The table summarizes each crate's current direct workspace dependencies:
 
 | Crate | Purpose | Direct workspace dependencies |
 | --- | --- | --- |
-| `pa-types` | Shared wire and domain types | none |
-| `pa-telemetry` | Events and sinks | none |
-| `pa-agent` | Provider-independent agent loop | none |
-| `pa-ai` | Providers, model registry, streaming | `pa-types` |
-| `pa-models` | Live model catalog and transport | `pa-ai`, `pa-types` |
-| `pa-core` | Session engine, tools, skills, kernel, settings | `pa-types`, `pa-ai`, `pa-models`, `pa-agent`, `pa-telemetry` |
-| `pa-daemon` | Supervisor, workers, wire protocol | `pa-types`, `pa-core`, `pa-agent`, `pa-ai`, `pa-telemetry`, `pa-models` |
-| `pa-tui` | Terminal UI, daemon-wire client | `pa-types` |
-| `pa-cli` | `prime-agent` binary, composition root | `pa-types`, `pa-core`, `pa-ai`, `pa-agent`, `pa-daemon`, `pa-tui`, `pa-telemetry` |
-| `pa-perf` | Performance corpora + pty bench harness (dev/CI tooling, never shipped) | `pa-types`, `pa-core`, `pa-daemon` |
+| `bh-types` | Shared wire and domain types | none |
+| `bh-telemetry` | Events and sinks | none |
+| `bh-agent` | Provider-independent agent loop | none |
+| `bh-ai` | Providers, model registry, streaming | `bh-types` |
+| `bh-models` | Live model catalog and transport | `bh-ai`, `bh-types` |
+| `bh-core` | Session engine, tools, skills, kernel, settings | `bh-types`, `bh-ai`, `bh-models`, `bh-agent`, `bh-telemetry` |
+| `bh-daemon` | Supervisor, workers, wire protocol | `bh-types`, `bh-core`, `bh-agent`, `bh-ai`, `bh-telemetry`, `bh-models` |
+| `bh-tui` | Terminal UI, daemon-wire client | `bh-types` |
+| `bh-cli` | `prime-agent` binary, composition root | `bh-types`, `bh-core`, `bh-ai`, `bh-agent`, `bh-daemon`, `bh-tui`, `bh-telemetry` |
+| `bh-perf` | Performance corpora + pty bench harness (dev/CI tooling, never shipped) | `bh-types`, `bh-core`, `bh-daemon` |
 
 Layering rules:
 
 - Dependencies only point from higher crates to lower crates shown above. No cycles or
   reverse edges. The leaf crates are peers; add only the dependencies needed for their work.
-  Shared wire/domain vocabulary belongs in `pa-types`, not in a higher crate or a duplicate.
-- `pa-tui` renders from wire types and events; it does not link the session engine.
-- `pa-cli` is a composition root: it wires crates together and contains no business logic.
+  Shared wire/domain vocabulary belongs in `bh-types`, not in a higher crate or a duplicate.
+- `bh-tui` renders from wire types and events; it does not link the session engine.
+- `bh-cli` is a composition root: it wires crates together and contains no business logic.
 
 ## Reliability model
 

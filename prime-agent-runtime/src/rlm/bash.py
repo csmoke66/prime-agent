@@ -140,7 +140,7 @@ _hook_installed = False
 _hook_lock = threading.Lock()
 
 # bash(persistent=True): every session's persistent shells live in one home
-# under the agent dir (the cross-language contract pa-daemon reads): per shell
+# under the agent dir (the cross-language contract bh-daemon reads): per shell
 # a <id>.json record assigned to its session (RLM_SESSION_ID, the durable
 # session id the host exports), plus <id>.out and <id>.rc.
 _PERSISTENT_DIR = "persistent-shells"

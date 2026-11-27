@@ -228,7 +228,7 @@ if ($env:PRIME_AGENT_UV_BIN_DIR -and $env:PRIME_AGENT_UV_BIN_DIR.Contains(';')) 
 }
 
 # The platform this script serves: the channel manifest's win32-x64 row
-# (the TS NATIVE_PLATFORMS spelling pa-core::update::install reads) — a
+# (the TS NATIVE_PLATFORMS spelling bh-core::update::install reads) — a
 # fixed target, checked here so an ARM64 Windows machine fails loudly
 # instead of downloading a payload it cannot start.
 $platform = 'win32-x64'
@@ -243,7 +243,7 @@ if ($effectiveArchitecture -ne 'AMD64') {
 
 # The channel naming contract gives the artifact row's file name: the row
 # the channel manifest must carry for this platform (the reader's own rule,
-# pa-core::update::release::parse_channel_manifest).
+# bh-core::update::release::parse_channel_manifest).
 function ExpectedFileName($version, $platform) {
     return "prime-agent-$version-$platform.tar.gz"
 }
@@ -300,7 +300,7 @@ function Read-ChannelPair($channelName) {
 
 # The manifest's row for this platform: the channel naming contract gives
 # the file name the row must carry (the reader's own rule,
-# pa-core::update::release::parse_channel_manifest).
+# bh-core::update::release::parse_channel_manifest).
 function Find-PlatformRow($rowManifest, $rowVersion) {
     $expected = ExpectedFileName $rowVersion $platform
     $found = $null

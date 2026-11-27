@@ -27,7 +27,7 @@ runs:
         # A stock Windows machine may lack vcruntime140.dll. Keep the shipped
         # launcher self-contained without changing the development build.
         RUSTFLAGS: -C target-feature=+crt-static
-      run: cargo build --release --locked --target "$TARGET" -j 4 -p pa-cli --bin prime-agent
+      run: cargo build --release --locked --target "$TARGET" -j 4 -p bh-cli --bin prime-agent
     - name: "Livecheck gate: --version prints the workspace version"
       shell: bash
       env:

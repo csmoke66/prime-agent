@@ -1,0 +1,316 @@
+//! The RPC prompt-family handlers: `prompt` (with the session-command
+//! execution the admitted turn hands back), `steer`/`follow_up`
+//! queueing, and the queued-work pump that delivers the agent's queues turn by turn.
+
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use serde_json::Value;
+
+use bh_agent::types::AgentEvent;
+use bh_agent::types::AgentMessage;
+use bh_core::session_engine::session_commands::{
+    execute_session_command, session_command_echo_row, SessionCommandParams,
+};
+use bh_core::session_engine::session_events::agent_event_json;
+use bh_core::session_engine::{PromptOptions, PromptOutcome};
+use bh_types::session::CustomMessage;
+
+use super::commands::{compaction_frame, kick_queue_pump, resume_pump, RpcState};
+use super::protocol::{self, ResponseData};
+
+/// `prompt`: admission-level success — the response fires once the admitted turn's run registers;
+/// the events follow buffered behind it. Session commands execute like the ACP prompt path.
+///
+/// # Errors
+/// Returns the admission error (a missing message, a refused turn) and the admitted session
+/// command's own error.
+pub async fn prompt(state: &Arc<RpcState>, payload: &Value) -> Result<ResponseData, String> {
+    let message = payload
+        .get("message")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "prompt requires a message".to_string())?;
+    let images = protocol::command_images(payload);
+    let behavior = protocol::command_streaming_behavior(payload);
+    let handle = state.session.handle().await;
+    let engine = handle.engine.clone();
+    let admission = engine
+        .session
+        .prompt_with_images(
+            message,
+            images.clone(),
+            PromptOptions {
+                streaming_behavior: behavior,
+                return_after_accepted: true,
+                ..PromptOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| format!("{error:#}"))?;
+    resume_pump(state);
+    let PromptOutcome::SessionCommand(command) = admission else {
+        // The admitted model turn parks the queued rows behind it (the
+        // pump delivers when the session idles).
+        kick_queue_pump(state, &engine);
+        return Ok(ResponseData::Absent);
+    };
+    // The handle guard stays held through the command's execution: a
+    // replacement can never dispose the kernel mid-command. The model
+    // and key pass THROUGH: a re-acquisition behind a waiting writer
+    // would deadlock.
+    let model = handle.model.clone();
+    let api_key = handle.api_key.clone();
+    let command_result =
+        run_session_command(state, engine.clone(), &command, model, api_key, &images).await;
+    drop(handle);
+    // The pump is scheduled only after the command settles: an earlier
+    // kick would deliver parked rows into the rebuild's window.
+    kick_queue_pump(state, &engine);
+    command_result?;
+    Ok(ResponseData::Absent)
+}
+
+/// One durable session-command row as its `message_start`/`message_end`
+/// pair (the loop's event shape for persisted rows).
+async fn write_command_row(state: &RpcState, message: &CustomMessage) {
+    // The row's loop shape: the `custom` role rides BESIDE the row's
+    // own fields (a bare round-trip cannot recover it, the session row
+    // type carries no role).
+    let custom = bh_agent::types::CustomAgentMessage {
+        role: "custom".to_string(),
+        payload: serde_json::to_value(message).unwrap_or(serde_json::Value::Null),
+    };
+    for event in [
+        AgentEvent::MessageStart {
+            message: AgentMessage::Custom(custom.clone()),
+        },
+        AgentEvent::MessageEnd {
+            message: AgentMessage::Custom(custom),
+        },
+    ] {
+        if let Some(event) = agent_event_json(&event) {
+            state.session.write_connection_output(event).await;
+        }
+    }
+}
+
+/// Execute one session command the prompt admitted: the executor
+/// persists the echo/result rows; the goal publishes on change.
+async fn run_session_command(
+    state: &Arc<RpcState>,
+    engine: Arc<bh_core::session_engine::engine::SessionEngine>,
+    command: &bh_core::session_engine::slash_commands::SessionSlashCommand,
+    model: bh_types::ai::Model,
+    api_key: Option<String>,
+    images: &[bh_agent::types::ImageContent],
+) -> Result<(), String> {
+    let is_compact = command.name == "compact";
+    // The compact frames carry the command's arguments as the
+    // `customInstructions` they compact under.
+    let frame_instructions = if is_compact && !command.args.is_empty() {
+        Some(command.args.as_str())
+    } else {
+        None
+    };
+    // The attempted command's durable echo row streams BEFORE the
+    // execution, as a message pair on the event stream.
+    write_command_row(state, &session_command_echo_row(command)).await;
+    if is_compact {
+        state.compacting.fetch_add(1, Ordering::SeqCst);
+        // The direct compact command's contract: a turn streaming behind
+        // the admission is aborted and drained BEFORE the start frame
+        // publishes (the frame means the transcript is settled).
+        engine.session.agent().abort();
+        engine.session.agent().wait_for_idle().await;
+        state
+            .session
+            .write_connection_output(compaction_frame(
+                "compaction_start",
+                frame_instructions,
+                None,
+            ))
+            .await;
+        // NO flush here, by TS parity: the prompt-response buffer is armed,
+        // so this `compaction_start` publishes AFTER the prompt's response
+        // (the direct `compact` handler flushes early).
+    }
+    let mut execution = {
+        // The executor rebuilds session context on its compact branch:
+        // serialize against the other context rebuilders.
+        let _ops = state.session_ops.lock().await;
+        let mut autonomous = state.autonomous.lock().await;
+        let mut params = SessionCommandParams {
+            model: &model,
+            api_key: api_key.clone(),
+            autonomous: &mut autonomous,
+        };
+        // The executor never errors out of the call: failures ride
+        // `execution.error` and the session events.
+        execute_session_command(&engine, &mut params, command, images).await
+    };
+    if let Some(pending) = execution.pending_refinement.take() {
+        let state = Arc::clone(state);
+        let engine = Arc::clone(&engine);
+        tokio::spawn(async move {
+            let result = pending
+                .await
+                .unwrap_or_else(|error| Err(anyhow::anyhow!("refinement task failed: {error}")));
+            // Hold a read lease only while emitting the completed result; a
+            // replaced session must not receive the old job's rows or events.
+            let current = state.session.handle().await;
+            if !Arc::ptr_eq(&current.engine, &engine) {
+                return;
+            }
+            match result {
+                Ok(committed) => {
+                    for row in committed.rows {
+                        write_command_row(&state, &row).await;
+                    }
+                    state
+                        .session
+                        .write_connection_output(serde_json::json!({
+                            "type": "refine_complete",
+                            "result": committed.result,
+                        }))
+                        .await;
+                }
+                Err(error) => {
+                    state.session.write_connection_output(serde_json::json!({ "type": "refine_failed", "error": format!("{error:#}") })).await;
+                }
+            }
+        });
+    }
+    if is_compact {
+        // The post-compaction kernel notice rides between the start and
+        // the settled end (the ACP seam's order).
+        if let Some(message) = execution
+            .compaction
+            .as_ref()
+            .and_then(|compaction| compaction.ipython_state.as_ref())
+        {
+            write_command_row(state, message).await;
+        }
+        state.compacting.fetch_sub(1, Ordering::SeqCst);
+        let result = execution.compaction.as_ref().map(|compaction| {
+            crate::compaction::compaction_result_value(&compaction.result, &compaction.entry)
+        });
+        state
+            .session
+            .write_connection_output(compaction_frame(
+                "compaction_end",
+                frame_instructions,
+                result.as_ref(),
+            ))
+            .await;
+    }
+    // The executor's first row is the echo (emitted above); the rest of
+    // the durable rows stream in order.
+    for message in execution.messages.iter().skip(1) {
+        write_command_row(state, message).await;
+    }
+    // The handle guard is still held here: publishing over the held
+    // engine's goal state avoids re-acquiring behind a queued writer.
+    let goal = engine.goal_state().await;
+    state.publish_goal_update_for(&goal).await;
+    if let Some(error) = &execution.error {
+        return Err(error.clone());
+    }
+    if let Some(continuation) = execution.continuation_message {
+        // The continuation is an internal wake: steer a busy session (the
+        // delivery queues into the running turn), never reject it.
+        engine
+            .session
+            .prompt_injected_message_with_behavior(
+                &continuation,
+                bh_core::session_engine::StreamingBehavior::Steer,
+            )
+            .await
+            .map_err(|error| format!("{error:#}"))?;
+        // The parked continuation must RUN: waiting for idle ends when the
+        // running turn finishes — not when the parked row does (the
+        // final-poll window can leave it queued). Drain like the delivery
+        // seat does: a Busy slot waits and retries, NothingToContinue
+        // means another drainer already took the row.
+        let agent = engine.session.agent();
+        agent.wait_for_idle().await;
+        while agent.has_queued_messages() {
+            // An RPC abort suspends the pump — the queued input waits for
+            // the resume like every other queued row — and the
+            // continuation drain honors it with the same check the queue
+            // pump makes before every admission (`kick_queue_pump`):
+            // without it, an abort mid-drain re-admits the parked
+            // continuation on a fresh controller.
+            if state
+                .pump_suspended
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                break;
+            }
+            match agent.continue_run().await {
+                Ok(()) => break,
+                Err(error) => match error.downcast_ref::<bh_agent::agent::AgentContinueError>() {
+                    Some(error) if error.code == bh_agent::agent::AgentContinueErrorCode::Busy => {
+                        agent.wait_for_idle().await;
+                    }
+                    _ => break,
+                },
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `steer` / `follow_up`: queue onto the agent lane regardless of the busy state.
+///
+/// # Errors
+///
+/// Returns the missing-message error when the command carries no text.
+pub async fn steer_or_follow_up(
+    state: &Arc<RpcState>,
+    payload: &Value,
+    name: &str,
+) -> Result<ResponseData, String> {
+    let message = payload
+        .get("message")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{name} requires a message"))?;
+    let images = protocol::command_images(payload);
+    let handle = state.session.handle().await;
+    let engine = handle.engine.clone();
+    let agent = engine.session.agent();
+    let batch = user_prompt_message(message, &images);
+    if name == "steer" {
+        agent.steer(batch);
+    } else {
+        agent.follow_up(batch);
+    }
+    // A steer/follow-up command is a TS pump-resume site: queued input
+    // (including the one just queued) delivers when the session idles.
+    resume_pump(state);
+    kick_queue_pump(state, &engine);
+    Ok(ResponseData::Absent)
+}
+
+/// The user prompt message in the loop's normalized shape (text part first, image parts after).
+fn user_prompt_message(text: &str, images: &[bh_agent::types::ImageContent]) -> AgentMessage {
+    let mut parts = vec![bh_agent::types::UserPart::Text(
+        bh_agent::types::TextContent {
+            text: text.to_string(),
+            text_signature: None,
+        },
+    )];
+    for image in images {
+        parts.push(bh_agent::types::UserPart::Image(image.clone()));
+    }
+    AgentMessage::Standard(bh_agent::types::Message::User(
+        bh_agent::types::UserMessage {
+            content: bh_agent::types::UserContent::Parts(parts),
+            timestamp: now_millis() as i64,
+        },
+    ))
+}
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64)
+}

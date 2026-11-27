@@ -167,6 +167,231 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bh-agent"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "bh-ai"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bh-types",
+ "bytes",
+ "futures",
+ "h2",
+ "hex",
+ "hmac",
+ "http",
+ "rand",
+ "rcgen",
+ "regex",
+ "reqwest",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "url",
+ "webpki-roots",
+]
+
+[[package]]
+name = "bh-cli"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bh-agent",
+ "bh-ai",
+ "bh-core",
+ "bh-daemon",
+ "bh-telemetry",
+ "bh-tui",
+ "bh-types",
+ "crossterm",
+ "flate2",
+ "futures",
+ "hex",
+ "libc",
+ "nix",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+ "url",
+ "uuid",
+ "yaml_serde",
+]
+
+[[package]]
+name = "bh-core"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bh-agent",
+ "bh-ai",
+ "bh-models",
+ "bh-telemetry",
+ "bh-types",
+ "fancy-regex",
+ "futures",
+ "getrandom 0.4.3",
+ "globset",
+ "hex",
+ "ignore",
+ "libc",
+ "nix",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "unicode-normalization",
+ "url",
+ "uuid",
+ "yaml_serde",
+]
+
+[[package]]
+name = "bh-daemon"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "bh-agent",
+ "bh-ai",
+ "bh-core",
+ "bh-models",
+ "bh-telemetry",
+ "bh-types",
+ "filetime",
+ "futures",
+ "globset",
+ "nix",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socket2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "bh-models"
+version = "0.10.5"
+dependencies = [
+ "bh-ai",
+ "bh-types",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "bh-perf"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "bh-core",
+ "bh-daemon",
+ "bh-types",
+ "clap",
+ "nix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "vt100",
+]
+
+[[package]]
+name = "bh-telemetry"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "rustix 1.1.6",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "bh-tui"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bh-core",
+ "bh-types",
+ "clap",
+ "crossterm",
+ "emojis",
+ "fancy-regex",
+ "ignore",
+ "notify",
+ "proptest",
+ "ratatui",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "unicode-properties",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+ "url",
+ "uuid",
+ "vt100",
+]
+
+[[package]]
+name = "bh-types"
+version = "0.10.5"
+dependencies = [
+ "anyhow",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1509,231 +1734,6 @@ name = "openssl-probe"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
-
-[[package]]
-name = "pa-agent"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "pa-ai"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "base64",
- "bytes",
- "futures",
- "h2",
- "hex",
- "hmac",
- "http",
- "pa-types",
- "rand",
- "rcgen",
- "regex",
- "reqwest",
- "rustls",
- "rustls-native-certs",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
- "url",
- "webpki-roots",
-]
-
-[[package]]
-name = "pa-cli"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "base64",
- "crossterm",
- "flate2",
- "futures",
- "hex",
- "libc",
- "nix",
- "pa-agent",
- "pa-ai",
- "pa-core",
- "pa-daemon",
- "pa-telemetry",
- "pa-tui",
- "pa-types",
- "rsa",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "tokio",
- "url",
- "uuid",
- "yaml_serde",
-]
-
-[[package]]
-name = "pa-core"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "base64",
- "fancy-regex",
- "futures",
- "getrandom 0.4.3",
- "globset",
- "hex",
- "ignore",
- "libc",
- "nix",
- "pa-agent",
- "pa-ai",
- "pa-models",
- "pa-telemetry",
- "pa-types",
- "proptest",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "unicode-normalization",
- "url",
- "uuid",
- "yaml_serde",
-]
-
-[[package]]
-name = "pa-daemon"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "filetime",
- "futures",
- "globset",
- "nix",
- "pa-agent",
- "pa-ai",
- "pa-core",
- "pa-models",
- "pa-telemetry",
- "pa-types",
- "proptest",
- "serde",
- "serde_json",
- "sha2",
- "socket2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "pa-models"
-version = "0.10.5"
-dependencies = [
- "pa-ai",
- "pa-types",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "pa-perf"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "clap",
- "nix",
- "pa-core",
- "pa-daemon",
- "pa-types",
- "serde",
- "serde_json",
- "tempfile",
- "vt100",
-]
-
-[[package]]
-name = "pa-telemetry"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "rustix 1.1.6",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pa-tui"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "crossterm",
- "emojis",
- "fancy-regex",
- "ignore",
- "notify",
- "pa-core",
- "pa-types",
- "proptest",
- "ratatui",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "unicode-properties",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "url",
- "uuid",
- "vt100",
-]
-
-[[package]]
-name = "pa-types"
-version = "0.10.5"
-dependencies = [
- "anyhow",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "tokio",
-]
 
 [[package]]
 name = "parking_lot"

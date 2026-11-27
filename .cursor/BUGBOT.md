@@ -18,7 +18,7 @@ either changes.
 ## Module organization
 
 - One concern per module, named for what it owns. Reject new `utils.rs`/`common.rs` grab-bag modules.
-- A new concern lands as a new module beside its siblings (for example `crates/pa-core/src/kernel/manager/` or `crates/pa-core/src/cron/store/`), not as more lines in an already-large orchestration file; when a PR grows such a file, suggest splitting by responsibility.
+- A new concern lands as a new module beside its siblings (for example `crates/bh-core/src/kernel/manager/` or `crates/bh-core/src/cron/store/`), not as more lines in an already-large orchestration file; when a PR grows such a file, suggest splitting by responsibility.
 - When code moves into a new module, its related tests and docs move with it.
 - Prefer private modules with an explicitly exported crate API; internals are `pub(crate)`. New traits need doc comments explaining their role and how implementations are expected to behave.
 
@@ -29,16 +29,16 @@ either changes.
 
 ## Dependency direction
 
-- Workspace dependencies flow one way, from the composition root (`pa-cli`) toward lower crates. Flag cycles, reverse edges, or new edges that contradict the Crates table in AGENTS.md.
-- `pa-types` is the only shared vocabulary crate: flag domain types duplicated into or re-exported from higher crates.
+- Workspace dependencies flow one way, from the composition root (`bh-cli`) toward lower crates. Flag cycles, reverse edges, or new edges that contradict the Crates table in AGENTS.md.
+- `bh-types` is the only shared vocabulary crate: flag domain types duplicated into or re-exported from higher crates.
 - A new dependency (workspace edge or third-party crate) is an architectural change: flag it unless the PR states why existing crates cannot host the functionality, commits the regenerated `Cargo.lock` in the same change, and keeps `make deny` clean.
-- Flag cross-crate `pub use`/re-exports that widen the public API surface. `pa-tui` renders from wire types and must not link the session engine (its only workspace dependency is `pa-types`); `pa-cli` wires crates and contains no business logic.
+- Flag cross-crate `pub use`/re-exports that widen the public API surface. `bh-tui` renders from wire types and must not link the session engine (its only workspace dependency is `bh-types`); `bh-cli` wires crates and contains no business logic.
 
 ## Change hygiene
 
 - One logical change per PR: flag PRs that mix a feature with unrelated lint fixes or refactors, and fixes that do not ride with the change that introduced them.
 - If a change forces edits across many crate internals, the crate boundary is what needs fixing: flag that instead of the edits.
-- Risky raw APIs route through the in-house wrappers, not new raw call sites: process control (signals/process groups), file locking, permissions, and shell selection go through `pa-core`'s `platform` wall; durable renames go through `rename_onto`; TS-parity hashing (tool-call id normalization) uses `pa-ai`'s in-house `short_hash`; environment-variable resolution goes through its owning module (telemetry overrides in `pa-telemetry`, provider API keys in `pa-ai`), not duplicated ad-hoc parsing. Flag a raw call site that bypasses these walls.
+- Risky raw APIs route through the in-house wrappers, not new raw call sites: process control (signals/process groups), file locking, permissions, and shell selection go through `bh-core`'s `platform` wall; durable renames go through `rename_onto`; TS-parity hashing (tool-call id normalization) uses `bh-ai`'s in-house `short_hash`; environment-variable resolution goes through its owning module (telemetry overrides in `bh-telemetry`, provider API keys in `bh-ai`), not duplicated ad-hoc parsing. Flag a raw call site that bypasses these walls.
 
 ## Repo hygiene
 
@@ -63,5 +63,5 @@ either changes.
 
 ## Generated files
 
-- The model catalog is hand-maintained data compiled into the binary: `crates/pa-models/catalog/models.json` and `crates/pa-models/catalog/mcp-services.json` (edit by hand), plus the compiled fallback list `crates/pa-ai/src/models_generated.rs` (hand-written Rust, no generator). Flag edits that would reintroduce a network catalog fetch or a generator.
+- The model catalog is hand-maintained data compiled into the binary: `crates/bh-models/catalog/models.json` and `crates/bh-models/catalog/mcp-services.json` (edit by hand), plus the compiled fallback list `crates/bh-ai/src/models_generated.rs` (hand-written Rust, no generator). Flag edits that would reintroduce a network catalog fetch or a generator.
 - Bulk data files are exempt from the size guidance; the exemption's reason is that the file mirrors an upstream data source.

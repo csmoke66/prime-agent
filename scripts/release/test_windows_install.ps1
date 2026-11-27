@@ -81,11 +81,11 @@ function Get-PeImportDlls {
 # walk below proves the built binary really dropped the redist runtime DLL.
 $env:RUSTFLAGS = '-C target-feature=+crt-static'
 try {
-    & cargo build --release --locked -p pa-cli --bin prime-agent
+    & cargo build --release --locked -p bh-cli --bin prime-agent
 } finally {
     $env:RUSTFLAGS = $null
 }
-if ($LASTEXITCODE -ne 0) { throw 'cargo build --release -p pa-cli failed' }
+if ($LASTEXITCODE -ne 0) { throw 'cargo build --release -p bh-cli failed' }
 $assets = Join-Path $scratch 'catalog-assets'
 & $py scripts/release/bundle_catalog.py generate --fixture --out $assets
 if ($LASTEXITCODE -ne 0) { throw 'the catalog fixture generation failed' }

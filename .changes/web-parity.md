@@ -1,1 +1,2 @@
 - The web UI now covers provider login/logout, MCP login, the harness browser, `/share`, `/edit_context`, model scope toggle and the subagent spawn program view.
+- The web UI now follows `keybindings.json`, edits queued messages with Alt+Up/Down, walks the agent list with the keyboard, shows agent-message rows, and completes `@` file names across the tree.

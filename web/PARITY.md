@@ -8,7 +8,7 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Daemon bridge: one WebSocket <-> one daemon socket connection (verbatim JSONL frames)
 - [x] Ensure daemon running (same as TUI start)
 - [x] Embedded static assets, SPA fallback
-- [~] Settings read/write endpoint (`settings.json`), keybinding/theme info endpoint (settings + keybindings overrides; no theme endpoint, palette is the fixed Beehive theme)
+- [x] Settings read/write endpoint (`settings.json`) and keybindings endpoint (`keybindings.json` overrides, legacy names, applied to the web shortcuts and `/hotkeys`; `/reload` rereads them). No theme endpoint: the TUI has no theme setting either
 - [x] Adoption telemetry event `web_started`
 - [x] Connection status + automatic reconnect + session re-attach
 - [x] Command palette (Ctrl/Cmd+K), global shortcuts, responsive layout
@@ -25,17 +25,18 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Import JSONL (`/import`)
 
 ## Chat (A)
-- [~] Attach (snapshot begin/chunk/end), resume cursor, replay, reattach after reconnect
+- [x] Attach (snapshot begin/chunk/end), replay guard, reattach after reconnect, older-history paging. The TUI also attaches with `resume_cursor: None`; the web resyncs with a fresh attach on a sequence gap
 - [x] Transcript: user, assistant (markdown, code highlighting, tables, links), custom messages, skill blocks
 - [x] Streaming assistant text, smooth append, auto-scroll with "jump to latest"
 - [x] Thinking blocks (collapsible, level colour)
 - [x] Tool calls + results: bash, edit (diffs), python_repl (cells/output), generic; expand/collapse all
 - [x] Images in transcript and attachments (paste, drop, file picker)
 - [x] Composer: multi-line, submit, steer, follow-up, queue view (edit/reorder/clear/restore), prompt history, stash
-- [~] Autocomplete: slash commands, `@path` tokens, skills
+- [x] Autocomplete: slash commands (prefix, substring, subsequence), skill commands with `#source` tags, `@path` tokens (quoted `@"my dir/"` / `@'..'`, relative spelling, whole-tree search for bare names, directory listing for `a/b` prefixes)
+- [-] `@` search honouring `.gitignore`/fd rules with a file watcher index: `bh-web` has no `ignore` dependency; the web walk is bounded (depth 8, 20k entries) and skips dot, `target` and `node_modules` directories
 - [x] Abort, abort-and-send-queued, retry/abort-retry
 - [x] Bash mode (`!cmd`, `!!cmd`), `execute_bash`, `abort_bash`
-- [~] Model picker + cycle, thinking level + cycle, service tier, scoped models, transport, steering/follow-up modes
+- [x] Model picker (↑/↓/Enter, ←/→ per-model thinking level, recent-first order, scoped toggle with Alt+S, context window and price) + cycle, thinking level + cycle, service tier, scoped models, transport, steering/follow-up modes
 - [x] Status bar: model, thinking, context usage %, cost, tokens, goal, queue length
 - [x] Compaction row/progress, `/compact [instructions]`, abort compaction, auto-compaction toggle
 - [x] Side question `/btw` pane
@@ -47,7 +48,7 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Agents (sidebar): roster tree (parent/child), groups, status, activity, search, delete, rename
 - [x] Right inspector (Ctrl+I; drawer on narrow screens): context meter, goal, queue, subagents, agent-message controls, kernel bash, reply box
 - [x] Live roster updates (`roster_subscribe`, `roster_update`)
-- [~] Agent messages: inbox, send/reply (`send_message`, `agent_messages_*`), pause/resume/clear
+- [x] Agent messages: received/sent/queued rows (`✉ Agent message · ↓/↑/◇ name`, python `sentAgentMessages` receipts, inbox notices, child status notices), send/reply (`send_message`), pause/resume/clear
 - [x] Cancel / delete rlm child (`cancel_rlm_child`, `delete_rlm_subagent`)
 - [x] Persistent shells + kernel bash list/tail/kill
 - [x] Factory activity / workflows (`/run`, `list_workflows`, `get_workflow_run`, factory view)
@@ -56,9 +57,10 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] MCP connections (`/mcp`, `/plugins`), static tokens, remove
 - [x] Harness browser (`/harness`), `/refine`
 - [x] Auth: `/login`, `/logout` (API key, OAuth via sign-in link + paste, through the `WebHost` seam)
-- [~] `/hotkeys`, `/changelog`, `/logs`, `/reload`, `/name`, `/export` (HTML/JSONL download), `/share`
-- [~] Onboarding view when no provider is configured
-- [~] Keyboard shortcuts mirroring TUI app bindings where the browser permits
+- [x] `/hotkeys` (effective bindings), `/changelog`, `/logs`, `/reload` (also keybindings), `/name`, `/export [path]` (download, or write `.html`/`.jsonl` on the host), `/import [path]`, `/share`
+- [x] Onboarding view when no provider is configured; completion is saved as `onboardingShown` in `settings.json` like the TUI, leaving early is not
+- [x] Keyboard shortcuts mirroring TUI app bindings (keybindings.json overrides; queue browse Alt+↑/↓ with Enter to save, Ctrl+Alt+↑/↓ reorder, Alt+A inspector, Alt+S, agents list arrows/Enter/Space/Ctrl+R/Alt+G/Ctrl+X/Ctrl+F)
+- [-] Browser-reserved keys (Ctrl+N, Ctrl+W, Ctrl+T) may never reach the page; the same actions have buttons
 
 ## Not applicable in a browser
 - [-] Alt-screen, mouse tracking, OSC52/OSC133, terminal image protocols, suspend (Ctrl+Z), external editor, terminal selection, `/quit`
@@ -115,4 +117,4 @@ Model picker, thinking menu, session options, tree, fork, settings, MCP/plugins,
 ## Known limitations (report)
 - Provider auth, MCP login, the harness browser and `/share` go through the `WebHost` trait (`bh-web`), implemented in `bh-cli/src/web_host.rs`. `/share` needs `gh` logged in on the host. OAuth callbacks that listen on localhost need the browser on the same machine as `beehive web`.
 - Direct worker transport (TUI fast path) is not used; everything goes through the supervisor connection.
-- Visual checks ran in headless Chromium at desktop and 390px widths; queue panel, retry/compaction banners, images, and the model picker modal were not screenshot-tested.
+- Visual checks ran in headless Chromium at desktop and 390px widths; the queue panel, retry and compaction banners, an image in the transcript and the model picker were screenshot-tested against an isolated daemon (frames injected through a proxied WebSocket) and render correctly.

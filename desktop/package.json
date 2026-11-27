@@ -1,0 +1,13 @@
+{
+  "name": "beehive-desktop",
+  "version": "0.10.5",
+  "private": true,
+  "description": "Beehive desktop window for the daemon's web UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "45.5.0"
+  }
+}

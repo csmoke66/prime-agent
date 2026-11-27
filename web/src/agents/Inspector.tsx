@@ -106,7 +106,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
         {s.progressNote ? <p className="mt-1.5 rounded bg-panel px-2 py-1 text-muted">{String(s.progressNote)}</p> : null}
       </Section>
 
-      <Section title="Context">
+      <Section title="Context" right={<button className="bh-ghost" title="Edit the raw model-visible context (/edit_context)" onClick={() => openPanel("edit_context", { activeSessionId })}>Edit</button>}>
         <div className="h-1.5 overflow-hidden rounded-full bg-panel" role="meter" aria-valuenow={pct ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label="Context used">
           <div className={`h-full ${pct !== null && pct > 85 ? "bg-error" : pct !== null && pct > 65 ? "bg-warning" : "bg-primary"}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
         </div>

@@ -20,13 +20,11 @@ impl Worker {
         if let Err(response) = self.require_created(COMMAND) {
             return response;
         }
+        let Some(raw_messages) = payload["messages"].as_array() else {
+            return response_failure(None, COMMAND, "messages must be a JSON array of messages", None);
+        };
         let mut messages = Vec::new();
-        for (index, raw) in payload["messages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
+        for (index, raw) in raw_messages.iter().enumerate() {
             match serde_json::from_value::<AgentMessage>(raw.clone()) {
                 Ok(message) => messages.push(message),
                 Err(error) => {

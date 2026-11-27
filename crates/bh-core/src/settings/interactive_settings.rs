@@ -482,6 +482,16 @@ impl SettingsManager {
             .unwrap_or(false)
     }
 
+    /// The daemon-hosted web UI port, or `None` when `webServer.enabled` is false (global scope).
+    #[must_use]
+    pub fn get_web_server_port(&self) -> Option<u16> {
+        let web = self.global_settings().web_server.as_ref();
+        if web.and_then(|web| web.enabled) == Some(false) {
+            return None;
+        }
+        Some(web.and_then(|web| web.port).unwrap_or(7878))
+    }
+
     /// `factory.enabled` setter: persists the opt-in gate to the global
     /// scope (the same shared settings key the daemon's lane advertisement
     /// and the kernel's factory gate read).

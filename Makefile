@@ -14,6 +14,10 @@ check:
 web:
 	cd web && npm ci && npm run build
 
+# Desktop window for the daemon's web UI (Electron), installed for the current user.
+desktop:
+	sh desktop/install.sh
+
 deny:
 	@command -v cargo-deny >/dev/null 2>&1 || { echo "cargo-deny not installed (cargo install cargo-deny --locked)"; exit 1; }
 	cargo deny --all-features --workspace check advisories licenses
@@ -143,4 +147,4 @@ shard-gates:
 	python3 scripts/test_ci_test_shard.py
 	python3 scripts/test_ci_pr_crates.py
 
-.PHONY: check deny actionlint glibc-gate release-dry-run audit-build package catalog-assets-fixture catalog-assets-gates fold-gates shard-gates perf
+.PHONY: check web desktop deny actionlint glibc-gate release-dry-run audit-build package catalog-assets-fixture catalog-assets-gates fold-gates shard-gates perf

@@ -285,6 +285,15 @@ pub struct FactorySettings {
     pub enabled: Option<bool>,
 }
 
+/// `webServer`: the browser UI the daemon serves next to the TUI. Enabled by default on
+/// `127.0.0.1:7878`; `enabled: false` turns it off.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebServerSettings {
+    pub enabled: Option<bool>,
+    pub port: Option<u16>,
+}
+
 /// `agentInbox` (the machine-notification inbox): enabled by default;
 /// `enabled: false` is the kill switch that restores direct notice-row
 /// steering. `reminderIntervalMs` (default 10 minutes, `0` disables)
@@ -355,6 +364,7 @@ pub struct Settings {
     /// Master switch for harness creation and context loading; unset preserves enabled behavior.
     pub harness_refinements: Option<bool>,
     pub factory: Option<FactorySettings>,
+    pub web_server: Option<WebServerSettings>,
     pub agent_inbox: Option<AgentInboxSettings>,
     pub telemetry: Option<TelemetrySettings>,
     pub branch_summary: Option<BranchSummarySettings>,

@@ -17,9 +17,17 @@ export function ContextEditPanel({ activeSessionId, onClose }: { activeSessionId
 
   const save = async () => {
     setError("");
+    let messages: unknown;
     try {
-      await wire.call({ type: "set_session_context", activeSessionId, messages: text }, 60_000);
-      toast.success("Context updated; the next turn uses it");
+      messages = JSON.parse(text);
+    } catch (reason) {
+      return setError(`Invalid JSON: ${errorText(reason)}`);
+    }
+    if (!Array.isArray(messages)) return setError("The context must be a JSON array of messages.");
+    try {
+      const result = await wire.call<{ changed?: boolean }>({ type: "set_session_context", activeSessionId, messages }, 60_000);
+      if (result?.changed === false) toast.info("No changes to the context");
+      else toast.success("Context updated; the next turn uses it");
       onClose();
     } catch (reason) {
       setError(errorText(reason));

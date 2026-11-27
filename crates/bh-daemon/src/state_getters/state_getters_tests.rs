@@ -658,6 +658,13 @@ async fn set_session_context_replaces_the_model_visible_context() {
 
     let response = worker.dispatch("set_session_context", &payload).await;
     assert_eq!(response.data, Some(json!({ "changed": false })));
+
+    // A non-array body (the web client once sent the JSON text) is refused, never read as an
+    // empty context that would wipe the session.
+    let text = json!({ "activeSessionId": "getter-session", "messages": edited.to_string() });
+    let response = worker.dispatch("set_session_context", &text).await;
+    assert!(!response.success, "{response:?}");
+    assert_eq!(context(&worker), edited);
 }
 
 /// No prompt (empty string, the TS key present) and no tools (the `toolDefinition`

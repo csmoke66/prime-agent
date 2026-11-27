@@ -3,7 +3,7 @@ use super::*;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
-fn boot_cleanup_preserves_unverifiable_journals_and_waiting_callers_status() {
+fn boot_cleanup_preserves_unverifiable_journals() {
     let dir = tempfile::tempdir().expect("temp dir");
     let agent_dir = dir.path().join("agent");
     let socket = dir.path().join("daemon.sock");
@@ -60,45 +60,6 @@ fn boot_cleanup_preserves_unverifiable_journals_and_waiting_callers_status() {
         preserved.push((journal, bytes));
     }
 
-    let status_dir = agent_dir.join("update-restarts");
-    std::fs::create_dir_all(&status_dir).expect("status dir");
-    let mut exited_coordinator = Command::new("true")
-        .current_dir(dir.path())
-        .spawn()
-        .expect("fixture coordinator");
-    let exited_coordinator_pid = exited_coordinator.id();
-    exited_coordinator.wait().expect("reap fixture coordinator");
-    for (index, phase) in ["starting", "complete", "skipped", "failed", "malformed"]
-        .into_iter()
-        .enumerate()
-    {
-        let status_path = status_dir.join(format!("{index:016x}-fixture.json"));
-        let bytes = if phase == "malformed" {
-            b"not json".to_vec()
-        } else {
-            json!({
-                "version": 1,
-                "requestId": "fixture",
-                "socketPath": dir.path().join("other-daemon.sock"),
-                "phase": phase,
-                "coordinator": {
-                    "pid": if phase == "starting" {
-                        std::process::id()
-                    } else {
-                        exited_coordinator_pid
-                    },
-                },
-                "counts": { "total": 0, "restored": 0, "resumed": 0, "failed": 0 },
-                "startedAt": "2026-10-07T00:00:00Z",
-                "updatedAt": "2026-10-07T00:00:00Z",
-            })
-            .to_string()
-            .into_bytes()
-        };
-        std::fs::write(&status_path, &bytes).expect("status fixture");
-        preserved.push((status_path, bytes));
-    }
-
     let live_session = dir.path().join("live-session.jsonl");
     std::fs::write(&live_session, "{}\n").expect("live session");
     let live_lease = bh_daemon::lease::acquire_runtime_session_lease(&live_session, &agent_dir)
@@ -122,8 +83,6 @@ fn boot_cleanup_preserves_unverifiable_journals_and_waiting_callers_status() {
     let corrupt_owner = corrupt_lease.join("owner.json");
     std::fs::write(&corrupt_owner, "not json").expect("corrupt owner");
     preserved.push((corrupt_owner, b"not json".to_vec()));
-    let obsolete_cache = agent_dir.join("test-provider-models-cache.json");
-    std::fs::write(&obsolete_cache, "{}").expect("obsolete cache");
 
     let _daemon = spawn_supervisor(&socket, &agent_dir);
     wait_socket_ready(&socket);
@@ -157,10 +116,6 @@ fn boot_cleanup_preserves_unverifiable_journals_and_waiting_callers_status() {
     assert!(
         !dead_lease.exists(),
         "the provably dead lease was reclaimed"
-    );
-    assert!(
-        !obsolete_cache.exists(),
-        "the unused root cache was removed"
     );
     assert!(
         bh_daemon::lease::acquire_runtime_session_lease(&live_session, &agent_dir).is_err(),

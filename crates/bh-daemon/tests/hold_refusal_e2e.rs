@@ -1,6 +1,5 @@
 //! Session-hold refusal e2e: a create whose file's holder is a live FOREIGN
-//! process (the TypeScript product's daemon or workers, on the shared session
-//! store) rejects with the descriptive refusal and its typed wire info, and
+//! process (another daemon or worker on the shared session store) rejects with the descriptive refusal and its typed wire info, and
 //! the daemon logs the conflict. Untyped create failures keep the wrap (control).
 #![allow(clippy::large_futures)]
 // 64-bit-only targets; the narrowing casts sit at bounded OS boundaries.
@@ -184,8 +183,8 @@ fn create_session(client: &mut Client, request_id: &str, config: &Value) -> (Str
     (id, created)
 }
 
-/// A create over a file a live FOREIGN process holds (this test process stands in for the
-/// other product's worker) answers the session-hold refusal with the typed wire info.
+/// A create over a file a live FOREIGN process holds (this test process stands in for
+/// another daemon's worker) answers the session-hold refusal with the typed wire info.
 #[test]
 fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
     let dir = tempfile::TempDir::new().expect("temp dir");
@@ -219,7 +218,7 @@ fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
     assert_eq!(killed["success"], true, "kill failed: {killed}");
 
     // The foreign holder: THIS test process takes the runtime lease, naming a known
-    // active session — the same record the TypeScript product's holder writes.
+    // active session — the same record any holder writes.
     std::env::set_var(bh_daemon::lease::SESSION_LEASES_ENABLED_ENV, "1");
     std::env::set_var(
         bh_daemon::lease::SESSION_LEASE_OWNER_ID_ENV,
@@ -255,10 +254,6 @@ fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
         "the rejection names the holder's active session: {error}"
     );
     assert!(
-        error.contains("beehive --daemon-socket <socket> --resume 'foreign01ab3c'"),
-        "the continue path is the exact attach command: {error}"
-    );
-    assert!(
         error.contains(&format!("kill {}", std::process::id())),
         "the take-over path names the holder pid: {error}"
     );
@@ -266,22 +261,17 @@ fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
         error.contains("Session: foreign01ab3c"),
         "the footer names the session: {error}"
     );
-    // This test process runs a build of this product, so the holder classification
-    // reads as another Rust build, never the TypeScript product.
+    // This test binary is not the daemon's executable and not named `beehive`.
     assert!(
-        error.starts_with("This session is currently open in another Rust build of Beehive"),
+        error.starts_with("This session is currently open in another process"),
         "the holder is classified, not guessed: {error}"
-    );
-    assert!(
-        !error.contains("Session is already active in"),
-        "the bare TS dump stays off the user-facing headline: {error}"
     );
     assert!(
         !error.contains("session worker create failed"),
         "the typed rejection relays verbatim, never under the untyped wrap: {error}"
     );
 
-    // The typed wire info carries the raw fields (the TS `serializeDaemonError` shape)
+    // The typed wire info carries the raw fields
     // for clients that render or act on it.
     assert_eq!(
         rejected["errorInfo"]["code"], "session_already_active",

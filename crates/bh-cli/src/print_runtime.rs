@@ -92,11 +92,7 @@ fn run_acp_mode(options: &RunOptions) -> Result<i32, String> {
 }
 
 async fn acp_mode_main(options: &RunOptions) -> Result<i32, String> {
-    // Flag > env > default: the same `BEEHIVE_DAEMON_SOCKET` contract
-    // as every other mode (the `beehive` launcher written by
-    // install-rust.sh pins that env, so the ACP path must honor it or it
-    // would target the TypeScript default socket and treat the schema
-    // mismatch as a stale daemon).
+    // Flag > env > default: the same `BEEHIVE_DAEMON_SOCKET` contract as every other mode.
     let socket_path = crate::config::resolve_daemon_socket_path(options.daemon_socket.as_deref());
     crate::interactive_mode::ensure_daemon_running(&socket_path, &options.config.cwd)
         .await

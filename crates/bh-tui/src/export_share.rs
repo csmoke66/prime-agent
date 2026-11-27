@@ -27,9 +27,7 @@ pub fn path_command_argument(text: &str, command: &str) -> Option<String> {
 }
 
 /// The share viewer URL for a gist id: the `BEEHIVE_SHARE_VIEWER_URL`
-/// override, else the product default, with the id as the fragment. The
-/// default URL and the env var are the TS product's wire identifiers;
-/// they stay byte-identical until the product renames them.
+/// override, else the default viewer, with the id as the fragment.
 #[must_use]
 pub fn share_viewer_url(gist_id: &str) -> String {
     let base = std::env::var("BEEHIVE_SHARE_VIEWER_URL")

@@ -87,7 +87,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn default_socket_uses_the_same_real_uid_as_the_typescript_daemon() {
+    fn default_socket_uses_the_same_real_uid_as_the_socket_dir() {
         let output = std::process::Command::new("id")
             .arg("-ru")
             .output()

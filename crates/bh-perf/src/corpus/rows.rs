@@ -35,11 +35,11 @@ const CUSTOM_TYPES: [&str; 8] = [
 /// z: the switch-b row's `zqmark` name must be the only z in the corpus so
 /// the switch query can never fuzzy-match another row.
 const MODELS: [(&str, &str); 5] = [
-    ("test-provider", "glm-5.2"),
-    ("test-provider", "openai/gpt-5.6-sol"),
-    ("anthropic", "claude-5-sonnet"),
+    ("opencode", "glm-5.2"),
+    ("openrouter", "openai/gpt-5.6-sol"),
+    ("anthropic", "claude-sonnet-5"),
     ("openai", "gpt-5.4"),
-    ("google", "gemini-4-pro"),
+    ("google", "gemini-3.1-pro-preview"),
 ];
 /// The user-message word bank: plain lowercase words, joined into sentences.
 const WORDS: [&str; 49] = [

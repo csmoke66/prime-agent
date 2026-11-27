@@ -1,0 +1,1 @@
+- The session-in-use message no longer refers to a "TypeScript version" of Beehive; it names another Beehive instance or process, and the daemon no longer sweeps old TypeScript-era cache files at boot.

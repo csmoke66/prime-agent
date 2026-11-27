@@ -239,7 +239,6 @@ pub fn generate(options: &CorpusOptions) -> anyhow::Result<Manifest> {
         agent_dir.join("settings.json"),
         serde_json::json!({
             "onboardingShown": true,
-            "agentTraces": { "enabled": false },
         })
         .to_string(),
     )?;

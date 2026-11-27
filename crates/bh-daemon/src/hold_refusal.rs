@@ -1,8 +1,8 @@
 //! The session-hold refusal: what a create or open answers when a live
 //! process this daemon does not host holds the session file's runtime lease.
 //!
-//! The holder is usually the other product (named best-effort from its
-//! pid); the refusal stays actionable and every refused create is logged.
+//! The holder is named best-effort from its pid; the refusal stays
+//! actionable and every refused create is logged.
 
 use crate::lease::SessionAlreadyActiveError;
 use crate::protocol::{response_failure, DaemonResponse};
@@ -42,17 +42,14 @@ impl HoldIdentity {
     }
 }
 
-/// Which product a live holder's process image belongs to. A claim about
-/// *what to tell the user*, not a security boundary: it errs toward the
-/// generic wording whenever the executable cannot be resolved.
+/// What a live holder's process image is. A claim about *what to tell the
+/// user*, not a security boundary: it errs toward the generic wording
+/// whenever the executable cannot be resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HolderFlavor {
-    /// This Rust build (another window/daemon of this binary, the takeover
-    /// or pre-takeover install dirs, or a cargo dev build).
+    /// Another window/daemon of Beehive: this process's own executable or
+    /// one named `beehive`.
     ThisBuild,
-    /// The TypeScript product: its release binary is named `beehive`,
-    /// and source/dev installs run under node, bun, or deno.
-    TypeScriptProduct,
     /// A process the classifier cannot name.
     AnotherProcess,
 }
@@ -67,81 +64,25 @@ fn holder_process(pid: Option<u32>) -> (HolderFlavor, Option<std::path::PathBuf>
         .ok()
         .map(|path| path.canonicalize().unwrap_or(path));
     let flavor = classify_from(exe.as_deref(), own.as_deref());
+    let _ = std::fs::write("/dev/shm/dbg.txt", format!("{exe:?} {own:?} {flavor:?}"));
     (flavor, exe)
 }
 
 /// The classification core: `exe` is the holder's resolved process image,
-/// `own_exe` this process's own. Order matters (the rust checks run
-/// first), and the path checks match whole path COMPONENTS.
+/// `own_exe` this process's own.
 fn classify_from(exe: Option<&Path>, own_exe: Option<&Path>) -> HolderFlavor {
     let Some(exe) = exe else {
         return HolderFlavor::AnotherProcess;
     };
-    if let Some(own) = own_exe {
-        if exe == own {
-            return HolderFlavor::ThisBuild;
-        }
+    if own_exe == Some(exe) {
+        return HolderFlavor::ThisBuild;
     }
-    let mut components: Vec<String> = exe
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().to_lowercase())
-        .collect();
     // Linux `/proc/<pid>/exe` appends " (deleted)" for an unlinked image
-    // (a daemon still running from a swept rollback tree); a procfs
+    // (a daemon still running from a replaced install); a procfs
     // artifact, not part of the file name.
-    if components
-        .last()
-        .is_some_and(|last| last.ends_with(" (deleted)"))
-    {
-        let stripped = components
-            .last()
-            .unwrap()
-            .trim_end_matches(" (deleted)")
-            .to_string();
-        *components.last_mut().unwrap() = stripped;
-    }
-    // The keyword-takeover install layout: the payload sits DIRECTLY
-    // inside the share dir (`.../share/beehive/beehive`), while a
-    // TS release binary sits one level deeper
-    // (`.../releases/<name>/beehive`), so the parent component claims
-    // this product.
-    if components.len() >= 2 && components.last().map(String::as_str) == Some("beehive") {
-        let parent = components[components.len() - 2].as_str();
-        // The parent alone is the layout signal (a TS release binary's
-        // parent is the release name, never `beehive`).
-        let is_publish_byproduct =
-            parent.starts_with("beehive.old.") || parent.starts_with("beehive.stage.");
-        if parent == "beehive" || is_publish_byproduct {
-            return HolderFlavor::ThisBuild;
-        }
-    }
-    // The exe filename gate keeps a node/bun/deno runtime that merely runs
-    // FROM a `beehive`-named directory from claiming this build: only
-    // the payload binary named `beehive` is claimed.
-    if let Some(index) = components
-        .iter()
-        .position(|component| component == "target")
-    {
-        // A cargo build tree answers its profile directory
-        // (`<repo>/target/<profile>/...`); anything else named `target`
-        // is not evidence about this product.
-        let profile = components
-            .get(index + 1)
-            .map(String::as_str)
-            .unwrap_or_default();
-        if matches!(profile, "debug" | "release" | "bench" | "test") {
-            return HolderFlavor::ThisBuild;
-        }
-    }
-    let name = exe
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    if name.contains("node") || name.contains("bun") || name.contains("deno") {
-        return HolderFlavor::TypeScriptProduct;
-    }
-    if name.contains("beehive") {
-        return HolderFlavor::TypeScriptProduct;
+    let name = exe.file_name().unwrap_or_default().to_string_lossy();
+    if name.trim_end_matches(" (deleted)") == "beehive" {
+        return HolderFlavor::ThisBuild;
     }
     HolderFlavor::AnotherProcess
 }
@@ -262,7 +203,7 @@ fn session_footer(hold: &HoldIdentity, session_path: Option<&Path>) -> String {
 }
 
 /// The refusal text for a classified holder: the classified headline,
-/// then the paths out (continue in the holder's product, or take the
+/// then the paths out (continue in the holder's instance, or take the
 /// session over on this daemon). Split from [`refusal_message`] so the
 /// exact wording stays testable against a synthetic classification.
 pub fn refusal_for_flavor(
@@ -278,51 +219,10 @@ pub fn refusal_for_flavor(
         .filter(|id| !id.is_empty());
     let mut lines = Vec::new();
     match flavor {
-        HolderFlavor::TypeScriptProduct => {
-            lines.push(format!(
-                "This session is currently open in your TypeScript version of Beehive \
-(active in {holder_id}). The Rust and TS versions share the same session store but not \
-the same daemon, so this build cannot open the file while that process holds it."
-            ));
-            lines.push(String::new());
-            lines.push("• Continue where you left off:".to_string());
-            // The Rust port owns the `beehive` keyword, so naming
-            // `beehive --resume` here would launch THIS build. The
-            // continue path names the TypeScript binary that holds the
-            // lease, derived from the holder's live process image.
-            match (holder_exe, id) {
-                // The holder binary rides quoted, and only when the image
-                // IS the TypeScript payload binary (control-free, named
-                // `beehive`): a runtime holder would be a broken
-                // command, so those fall back to the takeover wording below.
-                (Some(exe), Some(id))
-                    if !exe.to_string_lossy().chars().any(char::is_control)
-                        && exe.file_name().is_some_and(|name| name == "beehive") =>
-                {
-                    lines.push(format!(
-                        "  {} --resume {}",
-                        shell_quote(&exe.display().to_string()),
-                        shell_quote(&single_line(id))
-                    ));
-                    lines.push(
-                        "  (that TypeScript binary holds the lease — its daemon owns this session)"
-                            .to_string(),
-                    );
-                }
-                _ => {
-                    lines.push(
-                        "  (continue in the TypeScript product — its daemon owns this session; the beehive keyword launches this Rust build, so use the TypeScript binary from its preserved install)"
-                            .to_string(),
-                    );
-                }
-            }
-            lines.push(String::new());
-            lines.extend(take_over_lines(hold, "beehive", holder_exe));
-        }
         HolderFlavor::ThisBuild => {
             lines.push(format!(
-                "This session is currently open in another Rust build of Beehive \
-(active in {holder_id}) — another daemon or window of this product holds the file's \
+                "This session is currently open in another instance of Beehive \
+(active in {holder_id}) — another daemon or window of Beehive holds the file's \
 runtime lease."
             ));
             lines.push(String::new());
@@ -385,48 +285,6 @@ mod tests {
     use super::*;
     use bh_types::daemon::DaemonErrorInfo;
 
-    /// No third "open a different session" option: the user is already
-    /// in the picker (operator-directed, 2026-09-24).
-    #[test]
-    fn the_typescript_refusal_is_exact() {
-        let hold = HoldIdentity {
-            pid: Some(4242),
-            active_session_id: Some("ts01ab".to_string()),
-        };
-        let message = refusal_for_flavor(
-            HolderFlavor::TypeScriptProduct,
-            &hold,
-            None,
-            Some(Path::new(
-                "/home/k/.local/share/beehive-legacy/releases/9.9.9/beehive",
-            )),
-        );
-        let expected = "This session is currently open in your TypeScript version of Beehive \
-(active in ts01ab). The Rust and TS versions share the same session store but not \
-the same daemon, so this build cannot open the file while that process holds it.
-
-• Continue where you left off:
-  '/home/k/.local/share/beehive-legacy/releases/9.9.9/beehive' --resume 'ts01ab'
-  (that TypeScript binary holds the lease — its daemon owns this session)
-
-• Take over on this daemon:
-  kill 4242 # the holder is beehive
-  Then retry — the file unlocks when the holder exits.
-
-Session: ts01ab";
-        assert_eq!(message, expected);
-
-        let message = refusal_for_flavor(HolderFlavor::TypeScriptProduct, &hold, None, None);
-        assert!(
-            message.contains("the beehive keyword launches this Rust build"),
-            "the unresolvable-exe continue path states the takeover: {message}"
-        );
-        assert!(
-            !message.contains("beehive --resume"),
-            "no bare `beehive --resume` hint remains (it launches this build): {message}"
-        );
-    }
-
     #[test]
     fn hostile_values_stay_paste_safe() {
         let hold = HoldIdentity {
@@ -434,7 +292,7 @@ Session: ts01ab";
             active_session_id: Some("evil'; rm -rf ~".to_string()),
         };
         let message = refusal_for_flavor(
-            HolderFlavor::TypeScriptProduct,
+            HolderFlavor::ThisBuild,
             &hold,
             None,
             Some(std::path::Path::new("/bin/hold\ner")),
@@ -442,6 +300,10 @@ Session: ts01ab";
         assert!(
             message.contains("(active in evil'; rm -rf ~)"),
             "the headline still names the id: {message}"
+        );
+        assert!(
+            message.contains("--resume 'evil'\\''; rm -rf ~'"),
+            "the id rides as one quoted word: {message}"
         );
         assert!(
             !message.contains("/bin/hold"),
@@ -452,44 +314,13 @@ Session: ts01ab";
             "the newline image drops the kill annotation entirely: {message}"
         );
 
-        let message = refusal_for_flavor(
-            HolderFlavor::TypeScriptProduct,
-            &hold,
-            None,
-            Some(std::path::Path::new("/opt/hold bin/beehive")),
-        );
-        assert!(
-            message.contains("'/opt/hold bin/beehive' --resume 'evil'\\''; rm -rf ~'"),
-            "the binary and the id each ride as one quoted word: {message}"
-        );
-
-        let message = refusal_for_flavor(
-            HolderFlavor::TypeScriptProduct,
-            &hold,
-            None,
-            Some(std::path::Path::new("/usr/bin/node")),
-        );
-        assert!(
-            !message.contains("--resume"),
-            "a runtime image never becomes the resume command: {message}"
-        );
-        assert!(
-            message.contains("the beehive keyword launches this Rust build"),
-            "the runtime holder gets the takeover wording: {message}"
-        );
-
         let hold = HoldIdentity {
             pid: None,
             active_session_id: Some("li\nne".to_string()),
         };
-        let message = refusal_for_flavor(
-            HolderFlavor::TypeScriptProduct,
-            &hold,
-            None,
-            Some(std::path::Path::new("/opt/ts/beehive")),
-        );
+        let message = refusal_for_flavor(HolderFlavor::ThisBuild, &hold, None, None);
         assert!(
-            message.contains("'/opt/ts/beehive' --resume 'li ne'"),
+            message.contains("--resume 'li ne'"),
             "control characters in the id collapse before quoting: {message}"
         );
     }
@@ -547,7 +378,7 @@ Session: ts01ab";
             pid: Some(4242),
             active_session_id: Some("ts01ab".to_string()),
         };
-        let message = refusal_for_flavor(HolderFlavor::TypeScriptProduct, &hold, Some(&file), None);
+        let message = refusal_for_flavor(HolderFlavor::ThisBuild, &hold, Some(&file), None);
         assert!(
             message.ends_with("Session: ts01ab (lane work)"),
             "the footer names the session and its name: {message}"
@@ -557,7 +388,7 @@ Session: ts01ab";
             pid: Some(4242),
             active_session_id: None,
         };
-        let message = refusal_for_flavor(HolderFlavor::TypeScriptProduct, &hold, Some(&file), None);
+        let message = refusal_for_flavor(HolderFlavor::ThisBuild, &hold, Some(&file), None);
         assert!(
             message.ends_with(&format!("Session: {} (lane work)", file.display())),
             "without a holder id the footer names the file and its name: {message}"
@@ -575,143 +406,24 @@ Session: ts01ab";
             pid: Some(4242),
             active_session_id: Some("ts01ab".to_string()),
         };
-        let message = refusal_for_flavor(HolderFlavor::TypeScriptProduct, &hold, Some(&file), None);
+        let message = refusal_for_flavor(HolderFlavor::ThisBuild, &hold, Some(&file), None);
         assert!(
             message.ends_with("Session: ts01ab (lane work)"),
             "a newline in the persisted name collapses to one footer line: {message}"
         );
     }
 
-    /// The classification matrix. The rust shapes contain the
-    /// `beehive` substring family, so their checks must win first.
     #[test]
     fn the_holder_classification_matrix() {
-        let own = Path::new("/Users/k/.local/share/beehive/beehive");
+        let own = Path::new("/opt/pa/beehive");
+        let class = |exe: &str| classify_from(Some(Path::new(exe)), Some(own));
         assert_eq!(classify_from(Some(own), Some(own)), HolderFlavor::ThisBuild);
-        assert_eq!(
-            classify_from(
-                Some(Path::new("/Users/k/.local/share/beehive/beehive")),
-                Some(Path::new("/opt/pa/beehive"))
-            ),
-            HolderFlavor::ThisBuild
-        );
-        // A daemon still running from the renamed rollback tree.
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/Users/k/.local/share/beehive.old.123/beehive"
-                )),
-                Some(Path::new("/opt/pa/beehive"))
-            ),
-            HolderFlavor::ThisBuild
-        );
-        // This product's install dir.
-        assert_eq!(
-            classify_from(
-                Some(Path::new("/opt/pa/beehive")),
-                Some(Path::new("/opt/pa/beehive"))
-            ),
-            HolderFlavor::ThisBuild
-        );
-        // A cargo dev build: the /target/ shape names this product.
-        assert_eq!(
-            classify_from(
-                Some(Path::new("/w/repo/target/release/beehive")),
-                Some(own)
-            ),
-            HolderFlavor::ThisBuild
-        );
-        // The deployed TS release binary, and the preserved legacy tree
-        // after the takeover reads the same.
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/Users/k/.local/share/beehive/releases/9.9.9-darwin-arm64-deadbeef/beehive"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::TypeScriptProduct
-        );
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/Users/k/.local/share/beehive-legacy/releases/9.9.9-darwin-arm64-deadbeef/beehive"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::TypeScriptProduct
-        );
-        // A node runtime running FROM a beehive-named directory: the
-        // TypeScript product.
-        assert_eq!(
-            classify_from(Some(Path::new("/work/beehive/node")), Some(own)),
-            HolderFlavor::TypeScriptProduct
-        );
-        // A prefix that happens to CONTAIN a `releases` component does not
-        // mis-reject the flat takeover layout.
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/opt/releases/user/share/beehive/beehive"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::ThisBuild
-        );
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/Users/k/.local/share/beehive.old.123/beehive (deleted)"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::ThisBuild
-        );
-        // The TS public-bin symlink shape inside a dir NAMED beehive:
-        // still the TS product.
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/Users/k/.local/share/beehive/bin/beehive"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::TypeScriptProduct
-        );
-        // An npm-style TS bin.
-        assert_eq!(
-            classify_from(Some(Path::new("/usr/local/bin/beehive")), Some(own)),
-            HolderFlavor::TypeScriptProduct
-        );
-        // A TS binary one level deeper than the takeover layout never
-        // claims this product.
-        assert_eq!(
-            classify_from(
-                Some(Path::new(
-                    "/opt/other/beehive/9.9.9-release/beehive"
-                )),
-                Some(own)
-            ),
-            HolderFlavor::TypeScriptProduct
-        );
-        // A source-run TS install: node (and bun/deno) runtimes.
-        assert_eq!(
-            classify_from(Some(Path::new("/usr/local/bin/node")), Some(own)),
-            HolderFlavor::TypeScriptProduct
-        );
-        assert_eq!(
-            classify_from(Some(Path::new("/opt/bun/bin/bun")), Some(own)),
-            HolderFlavor::TypeScriptProduct
-        );
-        // Unresolvable or foreign: anonymous, never a wrong claim.
+        assert_eq!(class("/Users/k/.local/share/beehive/beehive"), HolderFlavor::ThisBuild);
+        assert_eq!(class("/usr/local/bin/beehive (deleted)"), HolderFlavor::ThisBuild);
+        assert_eq!(class("/usr/local/bin/node"), HolderFlavor::AnotherProcess);
+        assert_eq!(class("/usr/bin/less"), HolderFlavor::AnotherProcess);
+        assert_eq!(class("/opt/other/less"), HolderFlavor::AnotherProcess);
         assert_eq!(classify_from(None, Some(own)), HolderFlavor::AnotherProcess);
-        assert_eq!(
-            classify_from(Some(Path::new("/usr/bin/less")), Some(own)),
-            HolderFlavor::AnotherProcess
-        );
-        // The own-exe equality wins even under the beehive substring.
-        let dev = Path::new("/w/repo/target/debug/beehive");
-        assert_eq!(classify_from(Some(dev), Some(dev)), HolderFlavor::ThisBuild);
     }
 
     #[test]

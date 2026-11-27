@@ -11,9 +11,7 @@ pub const ENV_AGENT_DIR: &str = "BEEHIVE_CODING_AGENT_DIR";
 pub const ENV_SESSION_DIR: &str = "BEEHIVE_SESSION_DIR";
 
 /// `BEEHIVE_DAEMON_SOCKET`: overrides the daemon socket path when no explicit
-/// `--daemon-socket` flag is given. The launcher pins it so the Rust daemon runs
-/// beside — never replacing — the TS daemon (a Rust CLI that found the TS daemon
-/// on the default socket would treat the schema-id mismatch as staleness).
+/// `--daemon-socket` flag is given.
 pub const ENV_DAEMON_SOCKET: &str = "BEEHIVE_DAEMON_SOCKET";
 
 /// The daemon socket path: an explicit `--daemon-socket` flag wins, then

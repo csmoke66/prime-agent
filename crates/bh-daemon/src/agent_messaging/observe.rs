@@ -2,11 +2,12 @@
 //! health from the authenticated supervisor peer view, and bounded message
 //! previews.
 use super::{
-    json, row_str, AgentContextHealth, AgentFamilyRelationship, AgentFamilyStatus,
-    AgentObserveActivity, AgentObserveController, AgentObserveListResult,
+    json, row_is_child, row_str, AgentContextHealth, AgentFamilyRelationship, AgentFamilyStatus,
+    AgentListScope, AgentObserveActivity, AgentObserveController, AgentObserveListResult,
     AgentObserveMessagePreview, AgentObserveRecentMessagesResult, AgentObserveSummary, Arc,
-    FamilyIdentity, SupervisorLink, Value, AGENT_OBSERVE_PREVIEW_MAX_CHARS,
+    FamilyIdentity, FeatureNote, SupervisorLink, Value, AGENT_OBSERVE_PREVIEW_MAX_CHARS,
 };
+use std::collections::HashMap;
 
 /// `agent_observe.*` controller for daemon workers. Family summaries and
 /// transcript previews retain nuclear-family permissions; context health uses
@@ -22,6 +23,8 @@ pub struct LinkAgentObserveController {
     /// This session's resident RLM children (the registry join for Child
     /// rows the roster may not list).
     children: Option<Arc<crate::rlm_children::SupervisorChildSessions>>,
+    /// Counts the adoption telemetry of the listing's descendant scope.
+    feature_note: FeatureNote,
 }
 
 impl LinkAgentObserveController {
@@ -31,6 +34,7 @@ impl LinkAgentObserveController {
         worker_token: String,
         own_summary: Arc<std::sync::Mutex<Option<Value>>>,
         children: Option<Arc<crate::rlm_children::SupervisorChildSessions>>,
+        feature_note: FeatureNote,
     ) -> Self {
         LinkAgentObserveController {
             link,
@@ -38,6 +42,7 @@ impl LinkAgentObserveController {
             worker_token,
             own_summary,
             children,
+            feature_note,
         }
     }
 
@@ -83,16 +88,28 @@ impl LinkAgentObserveController {
 
     /// The nuclear-family summaries every observe handler reads: one
     /// roster walk plus the registry join.
-    async fn family_summaries(&self) -> anyhow::Result<Vec<AgentObserveSummary>> {
+    async fn family_summaries(
+        &self,
+        scope: AgentListScope,
+    ) -> anyhow::Result<Vec<AgentObserveSummary>> {
         let (sessions, identity) = self.roster_and_identity().await?;
         let child_ids = self.registry_child_active_ids().await;
-        Ok(summaries_from_roster(sessions, &identity, &child_ids))
+        let depths = match scope {
+            AgentListScope::NuclearFamily => HashMap::new(),
+            AgentListScope::FamilyAndDescendants => descendant_depths(&sessions, &identity),
+        };
+        Ok(summaries_from_roster(
+            sessions, &identity, &child_ids, &depths,
+        ))
     }
 
     /// The family member `target` names: the one resolution and permission check
     /// every read of another session goes through.
     async fn family_target(&self, target: &str) -> anyhow::Result<AgentObserveSummary> {
-        find_target(self.family_summaries().await?, target)?
+        find_target(
+            self.family_summaries(AgentListScope::NuclearFamily).await?,
+            target,
+        )?
             .ok_or_else(|| anyhow::anyhow!("agent {target} is not reachable"))
     }
 
@@ -132,7 +149,7 @@ impl LinkAgentObserveController {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()?;
         let identity = FamilyIdentity::from_summary(Some(&own), &self.active_session_id);
-        summaries_from_roster(vec![own], &identity, &[])
+        summaries_from_roster(vec![own], &identity, &[], &HashMap::new())
             .into_iter()
             .next()
     }
@@ -185,8 +202,11 @@ fn find_target(
 }
 
 impl AgentObserveController for LinkAgentObserveController {
-    async fn list_agents(&self) -> anyhow::Result<AgentObserveListResult> {
-        let mut summaries = self.family_summaries().await?;
+    async fn list_agents(&self, scope: AgentListScope) -> anyhow::Result<AgentObserveListResult> {
+        let mut summaries = self.family_summaries(scope).await?;
+        if scope == AgentListScope::FamilyAndDescendants {
+            (self.feature_note)("agent_tree", "completed");
+        }
         // TS `requireCurrentState`: the caller's own row always rides the
         // list response. The roster walk can miss it when the caller's own
         // worker `get_state` degraded to the offline stub, so fall back to
@@ -323,7 +343,7 @@ impl AgentObserveController for LinkAgentObserveController {
     }
 
     async fn get_agent(&self, target: &str) -> anyhow::Result<Option<AgentObserveSummary>> {
-        find_target(self.family_summaries().await?, target)
+        find_target(self.family_summaries(AgentListScope::NuclearFamily).await?, target)
     }
 
     async fn recent_messages(
@@ -413,13 +433,54 @@ struct SessionMessageRow {
     message: Value,
 }
 
+/// The roster row's live id, else its plain id.
+fn row_id(row: &Value) -> Option<&str> {
+    row.get("activeSessionId")
+        .or_else(|| row.get("id"))
+        .and_then(Value::as_str)
+}
+
+/// Every descendant of the caller in the roster, keyed by id, with its generation
+/// (a direct child is 1). Follows the durable parent edges downward.
+fn descendant_depths(sessions: &[Value], identity: &FamilyIdentity) -> HashMap<String, usize> {
+    let mut depths = HashMap::new();
+    let mut frontier: Vec<&Value> = sessions
+        .iter()
+        .filter(|row| row_is_child(row, identity))
+        .collect();
+    let mut depth = 1;
+    while !frontier.is_empty() {
+        for row in &frontier {
+            if let Some(id) = row_id(row) {
+                depths.insert(id.to_string(), depth);
+            }
+        }
+        frontier = sessions
+            .iter()
+            .filter(|row| {
+                row_id(row).is_some_and(|id| {
+                    id != identity.active_session_id && !depths.contains_key(id)
+                }) && frontier.iter().any(|parent| {
+                    row_str(row, "parentActiveSessionId")
+                        .is_some_and(|edge| row_id(parent) == Some(edge))
+                        || row_str(row, "parentSessionId")
+                            .is_some_and(|edge| row_str(parent, "sessionId") == Some(edge))
+                })
+            })
+            .collect();
+        depth += 1;
+    }
+    depths
+}
+
 /// Flatten the supervisor's roster rows into observation summaries of the caller's NUCLEAR
-/// FAMILY: the caller's own row, its parent, its siblings, and its direct children. The
+/// FAMILY (plus the `descendant_depths` subtree): the caller's own row, its parent, its siblings, and its direct children. The
 /// relationship derives from the durable edges, never the row's runtime kind.
 pub(super) fn summaries_from_roster(
     sessions: Vec<Value>,
     identity: &FamilyIdentity,
     registry_child_active_ids: &[String],
+    descendant_depths: &HashMap<String, usize>,
 ) -> Vec<AgentObserveSummary> {
     sessions
         .into_iter()
@@ -439,6 +500,9 @@ pub(super) fn summaries_from_roster(
                 Some(AgentFamilyRelationship::Child)
             } else if let Some(relationship) = identity.relationship_to(&session) {
                 Some(relationship)
+            } else if descendant_depths.contains_key(&active_session_id) {
+                // A grandchild or deeper: in the subtree, not the nuclear family.
+                None
             } else {
                 // Outside the nuclear family: not a family row at all.
                 return None;
@@ -508,6 +572,7 @@ pub(super) fn summaries_from_roster(
             } else {
                 AgentObserveActivity::Idle
             };
+            let depth = descendant_depths.get(&active_session_id).copied();
             Some(AgentObserveSummary {
                 active_session_id: Some(active_session_id),
                 session_id: session
@@ -542,6 +607,7 @@ pub(super) fn summaries_from_roster(
                 first_message: row_str(&session, "firstMessage")
                     .map(|text| truncate_chars(text, AGENT_OBSERVE_PREVIEW_MAX_CHARS)),
                 session_file: row_str(&session, "sessionFile").map(str::to_string),
+                depth,
             })
         })
         .collect()

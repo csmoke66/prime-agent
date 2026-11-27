@@ -2,6 +2,11 @@
 //! worker-facing engine contract - model and goal config surfaces, the
 //! turn state machine, and the export/telemetry reads.
 
+use crate::engine::{
+    GoalContinuation, GoalControlOutcome, GoalControlRequest, GoalTurnEndWork,
+};
+use bh_core::goals::GoalStatus;
+
 use super::{
     artifact_reference, json, map_thinking_level, now_millis, AgentSessionEngine, Arc,
     BranchSummaryOutcome, BranchSummaryRequest, BranchSummaryRun, CompactionOutcome,
@@ -77,6 +82,83 @@ impl SessionEngine for AgentSessionEngine {
             .and_then(|goal| serde_json::to_value(goal).ok())
             .or_else(|| serde_json::to_value(bh_core::goals::empty_goal_state()).ok())
             .unwrap_or(Value::Null)
+    }
+
+    /// A pause or stop withdraws the queued continuations so no nudge runs behind it; a
+    /// resume or an edit of an active goal queues one harness message so the session sees it.
+    fn control_goal(
+        &self,
+        request: GoalControlRequest,
+    ) -> anyhow::Result<GoalControlOutcome> {
+        let live = self
+            .live_handles()
+            .ok_or_else(|| anyhow::anyhow!("this session is not running"))?;
+        let handles = &live.goal;
+        let (state, edit_notice, resume_message) = self.runtime.block_on(async {
+            let mut driver = handles.driver.lock().await;
+            let mut session = handles.session.lock().await;
+            let mut edit_notice = None;
+            let mut resume_message = None;
+            match request {
+                GoalControlRequest::Get => {}
+                GoalControlRequest::Pause => {
+                    anyhow::ensure!(
+                        driver.state().status == GoalStatus::Active,
+                        "only an active goal can be paused"
+                    );
+                    self.purge_queued_goal_contexts();
+                    driver.pause(&mut session, "Paused by another agent")?;
+                }
+                GoalControlRequest::Resume => {
+                    anyhow::ensure!(
+                        matches!(
+                            driver.state().status,
+                            GoalStatus::Paused | GoalStatus::BudgetLimited | GoalStatus::Error
+                        ),
+                        "this thread has no paused goal to resume"
+                    );
+                    resume_message = driver.resume(&mut session)?;
+                }
+                GoalControlRequest::Update {
+                    objective,
+                    token_budget,
+                } => {
+                    let message =
+                        driver.update(&mut session, objective.as_deref(), token_budget)?;
+                    if driver.state().status == GoalStatus::Active {
+                        edit_notice = Some(message);
+                    }
+                }
+                GoalControlRequest::Stop => {
+                    self.purge_queued_goal_contexts();
+                    driver.clear(&mut session)?;
+                }
+            }
+            Ok::<_, anyhow::Error>((
+                driver.state_with_creation_elapsed(),
+                edit_notice,
+                resume_message,
+            ))
+        })?;
+        if state.status != GoalStatus::Active {
+            self.cancel_goal_backoff_wake();
+        }
+        let goal_update = live.publish_goal(&state);
+        let queued_work = |message: &bh_types::session::CustomMessage| GoalContinuation {
+            request: crate::goal_continuation::goal_prompt_request(message),
+            goal_update: None,
+            pending_handle: None,
+        };
+        if let Some(message) = &edit_notice {
+            self.deliver_goal_work(GoalTurnEndWork::BudgetLimitSteer(queued_work(message)));
+        }
+        if let Some(message) = &resume_message {
+            self.deliver_goal_work(GoalTurnEndWork::Continuation(queued_work(message)));
+        }
+        Ok(GoalControlOutcome {
+            response: serde_json::to_value(bh_core::goals::goal_host_response(&state, false))?,
+            goal_update,
+        })
     }
 
     fn mint_post_compaction_goal_continuation(&self) -> Option<crate::engine::GoalContinuation> {

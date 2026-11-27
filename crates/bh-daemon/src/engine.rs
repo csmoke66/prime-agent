@@ -19,8 +19,8 @@ pub use wire::{
     empty_resource_snapshot, side_question_event_value, AssistantSnapshot, BashConsumedNotice,
     BashConsumedSink, BranchSummaryOutcome, BranchSummaryRequest, BranchSummaryRun,
     CompactionOutcome, CompactionRequest, CompactionRun, EngineEvent, EngineModelSelection,
-    GoalAdmissionSink, GoalContinuation, GoalTurnEndWork, KernelNotice, KernelNoticeSink,
-    PromptBatchRow, PromptRequest, RlmSessionIdentity, SavedSessionContext, SemanticSpawnOrigin,
+    GoalAdmissionSink, GoalContinuation, GoalControlOutcome, GoalControlRequest, GoalTurnEndWork,
+    KernelNotice, KernelNoticeSink, PromptBatchRow, PromptRequest, RlmSessionIdentity, SavedSessionContext, SemanticSpawnOrigin,
     SessionInputProbe, SideQuestionOutcome, SideQuestionRequest, SIDE_QUESTION_STATUS_CANCELLED,
     SIDE_QUESTION_STATUS_COMPLETE, SIDE_QUESTION_STATUS_ERROR, SIDE_QUESTION_STATUS_RUNNING,
 };
@@ -41,6 +41,16 @@ pub trait SessionEngine: Send + Sync {
     /// Engines without thread goals report the empty state.
     fn goal_state_value(&self) -> Value {
         serde_json::to_value(bh_core::goals::empty_goal_state()).unwrap_or(Value::Null)
+    }
+
+    /// Apply a goal operation requested by another session. Blocks on the engine
+    /// runtime, so callers run it off the async runtime. Engines without thread goals refuse.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the session has no goal runtime or the operation does not apply.
+    fn control_goal(&self, _request: GoalControlRequest) -> Result<GoalControlOutcome> {
+        anyhow::bail!("this session has no thread goals")
     }
 
     /// Purge the queued goal-context turns: withdraw minted continuations

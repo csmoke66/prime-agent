@@ -746,6 +746,18 @@ pub enum DaemonCommand {
         #[serde(default)]
         continue_turn: bool,
     },
+    /// One goal operation on this session (`goal.*` with `session=` set): `op` is
+    /// `get`, `pause`, `resume`, `update`, or `stop`. Rust-native extension.
+    GoalControl {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        op: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        objective: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_budget: Option<u64>,
+    },
     GetWorkflowRun {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,

@@ -411,7 +411,7 @@ impl AgentSessionEngine {
     /// Hand one minted follow-up to the worker's admission sink. An
     /// unwired sink (engine without a worker) drops the turn: the mint
     /// is durable, a later retry re-consults.
-    fn deliver_goal_work(&self, work: GoalTurnEndWork) {
+    pub(crate) fn deliver_goal_work(&self, work: GoalTurnEndWork) {
         // The final gate: a closed session admits no minted goal work
         // (keeps the queue free of zombie rows); the pending guard
         // releases with it (a wedged guard would block every later mint).
@@ -436,7 +436,7 @@ impl AgentSessionEngine {
 /// The minted goal-context row as one admitted turn request: the
 /// continuation text drives the model turn, the durable row rides as
 /// the injected custom message.
-fn goal_prompt_request(message: &bh_types::session::CustomMessage) -> PromptRequest {
+pub(crate) fn goal_prompt_request(message: &bh_types::session::CustomMessage) -> PromptRequest {
     PromptRequest {
         message: message.content.text(),
         images: Vec::new(),

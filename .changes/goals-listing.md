@@ -1,0 +1,1 @@
+- Agents can now get, pause, resume, edit, and stop another session's goal with `goal.*(session=...)`, and list all descendants with `agent_observe.list_agents(include_descendants=True)`.

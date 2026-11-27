@@ -59,7 +59,7 @@ on a configurable `min_tool_percent` and use `reason="release"`.
 
 ## API
 
-- `await agent_observe.list_agents()` returns `current` (the calling agent's
+- `await agent_observe.list_agents(include_descendants=False)` returns `current` (the calling agent's
   own row) and `agents` (the family: parent, siblings, and direct children,
   active or not; the caller is excluded from `agents`). Each row carries
   `sessionId`, optional `sessionName`, `relationship`
@@ -70,7 +70,10 @@ on a configurable `min_tool_percent` and use `reason="release"`.
   roster row carries it, the parent edges (`parentActiveSessionId`,
   `parentSessionId`) and `rlmChildId` for subagents, and `firstMessage`
   (capped at 240 chars) for an inactive child. A member with no live session
-  has no `activeSessionId` and no live detail; address it with
+  has no `activeSessionId` and no live detail; with `include_descendants=True`
+  `agents` also holds every descendant of the caller, each with `depth` (a child
+  is 1; grandchildren and deeper have `relationship` null; follow
+  `parentActiveSessionId`/`parentSessionId` to rebuild the tree); address it with
   `agent_message.send` using its `relationship` plus its `sessionName`, or its
   `sessionId` when the member has no name. For direct children,
   `await rlm.list_subagents()` also exposes parent-owned lifecycle handles.

@@ -1362,3 +1362,43 @@ fn shared_window_goal_seed_matches_persisted_goal_state() {
         );
     }
 }
+
+/// Another session's goal control: a pause holds the continuations, a resume restarts them,
+/// and an edit of an active goal reaches the session as a harness notice.
+#[test]
+fn goal_control_pauses_resumes_and_edits_the_goal() {
+    use crate::engine::{GoalControlRequest, GoalTurnEndWork};
+    let (engine, _engine_dir) = faux_engine_with_settings(
+        &serde_json::json!({ "responses": [{"text": "goal turn reply"}] }),
+        1,
+    );
+    let engine = std::sync::Arc::new(engine);
+    let goal_work = goal_admission_collector(&engine);
+    let mut events: Vec<EngineEvent> = Vec::new();
+    admit(&engine, "/goal ship the control".to_string(), &mut events);
+    goal_work.lock().unwrap().clear();
+
+    let paused = engine.control_goal(GoalControlRequest::Pause).unwrap();
+    assert_eq!(paused.response["goal"]["status"], "paused");
+    assert_eq!(paused.goal_update.expect("the pause is published")["status"], "paused");
+    assert!(engine.mint_post_compaction_goal_continuation().is_none());
+
+    engine.control_goal(GoalControlRequest::Resume).unwrap();
+    assert!(matches!(
+        goal_work.lock().unwrap().pop(),
+        Some(GoalTurnEndWork::Continuation(_))
+    ));
+
+    let edited = engine
+        .control_goal(GoalControlRequest::Update {
+            objective: Some("ship it twice".to_string()),
+            token_budget: Some(5_000_000),
+        })
+        .unwrap();
+    assert_eq!(edited.response["goal"]["objective"], "ship it twice");
+    assert_eq!(edited.response["goal"]["token_budget"], 5_000_000);
+    let Some(GoalTurnEndWork::BudgetLimitSteer(notice)) = goal_work.lock().unwrap().pop() else {
+        panic!("the edit queued no notice: {:?}", edited.response);
+    };
+    assert!(notice.request.message.contains("ship it twice"));
+}

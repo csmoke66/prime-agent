@@ -88,6 +88,18 @@ pub struct AgentObserveSummary {
     pub first_message: Option<String>,
     /// The session's file: a transcript read of a member no worker holds opens it.
     pub session_file: Option<String>,
+    /// Generations below the caller in a descendant listing (a child is 1);
+    /// `None` outside the caller's subtree.
+    pub depth: Option<usize>,
+}
+
+/// How far `agent_observe.list_agents` reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentListScope {
+    /// The nuclear family: parent, siblings, and direct children.
+    NuclearFamily,
+    /// The nuclear family plus every descendant of the caller.
+    FamilyAndDescendants,
 }
 
 impl AgentObserveSummary {
@@ -128,6 +140,9 @@ impl AgentObserveSummary {
         }
         if let Some(first_message) = &self.first_message {
             row["firstMessage"] = json!(first_message);
+        }
+        if let Some(depth) = self.depth {
+            row["depth"] = json!(depth);
         }
         row
     }
@@ -209,7 +224,10 @@ pub struct AgentObserveMessagePreview {
 
 /// The controller the daemon supplies for `agent_observe.*` requests.
 pub trait AgentObserveController: Send + Sync {
-    fn list_agents(&self) -> impl Future<Output = anyhow::Result<AgentObserveListResult>> + Send;
+    fn list_agents(
+        &self,
+        scope: AgentListScope,
+    ) -> impl Future<Output = anyhow::Result<AgentObserveListResult>> + Send;
     /// Content-free maintenance counters for other live daemon sessions.
     fn context_health(
         &self,
@@ -417,10 +435,15 @@ pub fn register_agent_observe_host_handlers<C: AgentObserveController + 'static>
         "agent_observe.list",
         host_handler({
             let controller = controller.clone();
-            move |_payload| {
+            move |payload| {
                 let controller = controller.clone();
                 Box::pin(async move {
-                    let list = controller.list_agents().await?;
+                    let scope = if payload.data["include_descendants"].as_bool() == Some(true) {
+                        AgentListScope::FamilyAndDescendants
+                    } else {
+                        AgentListScope::NuclearFamily
+                    };
+                    let list = controller.list_agents(scope).await?;
                     Ok(json!({
                         "current": list.current.to_value(),
                         "agents": list.agents.iter().map(AgentObserveSummary::to_value).collect::<Vec<_>>(),

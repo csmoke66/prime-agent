@@ -1527,6 +1527,7 @@ fn observe_handlers(
         String::new(),
         Arc::new(std::sync::Mutex::new(Some(own_summary))),
         children,
+        Arc::new(|_, _| {}),
     ));
     let mut handlers = HostRequestHandlers::default();
     register_agent_observe_host_handlers(controller, &mut handlers);

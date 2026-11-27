@@ -27,6 +27,7 @@ fn observe_rows_carry_the_typed_status_and_activity() {
         rlm_child_id: None,
         first_message: None,
         session_file: None,
+        depth: None,
     };
     let value = row.to_value();
     assert_eq!(value["status"], "running");
@@ -541,6 +542,7 @@ fn observe_row(active_session_id: &str, is_current: bool) -> AgentObserveSummary
         rlm_child_id: None,
         first_message: None,
         session_file: None,
+        depth: None,
     }
 }
 
@@ -571,7 +573,10 @@ fn observe_preview(index: usize) -> AgentObserveMessagePreview {
 }
 
 impl AgentObserveController for StaticObserveController {
-    fn list_agents(&self) -> impl Future<Output = anyhow::Result<AgentObserveListResult>> + Send {
+    fn list_agents(
+        &self,
+        _scope: AgentListScope,
+    ) -> impl Future<Output = anyhow::Result<AgentObserveListResult>> + Send {
         std::future::ready(Ok(AgentObserveListResult {
             current: observe_row("me-1", true),
             agents: vec![child_row()],

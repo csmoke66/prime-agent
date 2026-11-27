@@ -46,17 +46,16 @@ def stop(process):
 def env_for(root):
     env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "TZ")
            if key in os.environ}
-    for key in ("PRIME_AGENT_KERNEL_PYTHON", "PA_E2E_KERNEL_PYTHON"):
+    for key in ("BEEHIVE_KERNEL_PYTHON", "PA_E2E_KERNEL_PYTHON"):
         if key in os.environ:
             env[key] = os.environ[key]
     for name in ("home", "tmp", "xdg", "agent/sessions"):
         (root / name).mkdir(parents=True, exist_ok=True)
     env.update(HOME=str(root / "home"), TMPDIR=str(root / "tmp"),
                XDG_CONFIG_HOME=str(root / "xdg"),
-               PRIME_AGENT_CODING_AGENT_DIR=str(root / "agent"),
-               PI_CODING_AGENT_DIR=str(root / "agent"), TERM="xterm-256color",
-               PRIME_AGENT_MODEL_PROVIDER="parity-local", PRIME_AGENT_MODEL="parity-1",
-               PI_OFFLINE="1", DO_NOT_TRACK="1")
+               BEEHIVE_CODING_AGENT_DIR=str(root / "agent"), TERM="xterm-256color",
+               BEEHIVE_MODEL_PROVIDER="parity-local", BEEHIVE_MODEL="parity-1",
+               DO_NOT_TRACK="1")
     (root / "agent/settings.json").write_text(json.dumps({
         "onboardingCompleted": True, "onboardingShown": True,
         "telemetry": {"noticeShown": True}}))
@@ -75,13 +74,13 @@ def skill_pythonpath():
 
 def use_skill_python(root, env):
     """Give a selected test interpreter the bundled skills without changing product startup."""
-    python = env.get("PRIME_AGENT_KERNEL_PYTHON")
+    python = env.get("BEEHIVE_KERNEL_PYTHON")
     if python:
         wrapper = root / "kernel-python-with-skills"
         wrapper.write_text("#!/bin/sh\nexport PYTHONPATH=" + shlex.quote(skill_pythonpath())
                            + "\nexec " + shlex.quote(python) + " \"$@\"\n")
         wrapper.chmod(0o700)
-        env["PRIME_AGENT_KERNEL_PYTHON"] = str(wrapper)
+        env["BEEHIVE_KERNEL_PYTHON"] = str(wrapper)
     return env
 
 
@@ -474,13 +473,13 @@ def verify_worker(row, active, binary, socket_path):
     assert command[0] == str(binary).encode(), 'worker argv0 is not fixture binary'
     env = dict(item.split(b'=', 1) for item in Path('/proc/%d/environ' % pid).read_bytes().split(b'\0') if b'=' in item)
     for key, value in {
-        'PRIME_AGENT_INTERNAL_DAEMON_WORKER': '1',
-        'PRIME_AGENT_INTERNAL_DAEMON_WORKER_ACTIVE_SESSION_ID': active,
-        'PRIME_AGENT_INTERNAL_DAEMON_SUPERVISOR_SOCKET': str(socket_path),
+        'BEEHIVE_INTERNAL_DAEMON_WORKER': '1',
+        'BEEHIVE_INTERNAL_DAEMON_WORKER_ACTIVE_SESSION_ID': active,
+        'BEEHIVE_INTERNAL_DAEMON_SUPERVISOR_SOCKET': str(socket_path),
     }.items():
         assert env.get(key.encode()) == value.encode(), 'wrong fixture worker env identity'
     worker_socket = str(row['socketPath']).encode()
-    assert (worker_socket in command or env.get(b'PRIME_AGENT_INTERNAL_DAEMON_WORKER_SOCKET') == worker_socket), 'wrong worker socket identity'
+    assert (worker_socket in command or env.get(b'BEEHIVE_INTERNAL_DAEMON_WORKER_SOCKET') == worker_socket), 'wrong worker socket identity'
     identity, state = process_identity(pid)
     assert row.get('processStartId') == identity and state != 'Z', 'wrong/reused worker PID'
     return pid, identity
@@ -520,7 +519,7 @@ class OwnedProcesses:
                 return False
             # Kernels retain the owner PID supplied by the actual launcher.
             return ('python' in Path(command[0].decode()).name
-                    and env.get(b'PRIME_AGENT_KERNEL_OWNER_PID') in
+                    and env.get(b'BEEHIVE_KERNEL_OWNER_PID') in
                     {str(owner).encode() for owner in self.targets})
         except (OSError, ValueError, KeyError, AssertionError, UnicodeError):
             return False

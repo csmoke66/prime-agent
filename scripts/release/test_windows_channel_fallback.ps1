@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repo = (Get-Location).Path
-$scratch = Join-Path ([IO.Path]::GetTempPath()) ("prime-agent-channel-fallback-{0}" -f [Guid]::NewGuid().ToString('N'))
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ("beehive-channel-fallback-{0}" -f [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 
 # The Python interpreter for the local http server (the install e2e's pattern).
@@ -19,10 +19,10 @@ $platform = 'win32-x64'
 # is a placeholder exe (the install only checks the payload exists).
 $payload = Join-Path $scratch 'payload'
 New-Item -ItemType Directory -Path $payload | Out-Null
-Set-Content -LiteralPath (Join-Path $payload 'prime-agent.exe') -Value 'stub payload for the channel-fallback regression test'
-$artifactFile = "prime-agent-$betaVersion-$platform.tar.gz"
+Set-Content -LiteralPath (Join-Path $payload 'beehive.exe') -Value 'stub payload for the channel-fallback regression test'
+$artifactFile = "beehive-$betaVersion-$platform.tar.gz"
 $artifact = Join-Path $scratch $artifactFile
-& tar -czf $artifact -C $payload prime-agent.exe
+& tar -czf $artifact -C $payload beehive.exe
 if ($LASTEXITCODE -ne 0) { throw 'the stub artifact build failed (tar)' }
 $artifactSha = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLower()
 
@@ -49,12 +49,12 @@ function Invoke-Installer {
         [string]$DownloadBase = $baseUrl,
         [string]$VersionPin
     )
-    Remove-Item -Path 'Env:PRIME_AGENT_DOWNLOAD_BASE_URL', 'Env:PRIME_AGENT_RELEASE_CHANNEL', 'Env:PRIME_AGENT_RUST_PREFIX', 'Env:PRIME_AGENT_ALLOW_HTTP', 'Env:PRIME_AGENT_VERSION' -ErrorAction SilentlyContinue
-    if ($DownloadBase) { $env:PRIME_AGENT_DOWNLOAD_BASE_URL = $DownloadBase }
-    $env:PRIME_AGENT_ALLOW_HTTP = '1'
-    $env:PRIME_AGENT_RUST_PREFIX = $Prefix
-    if ($ChannelKnob) { $env:PRIME_AGENT_RELEASE_CHANNEL = $ChannelKnob }
-    if ($VersionPin) { $env:PRIME_AGENT_VERSION = $VersionPin }
+    Remove-Item -Path 'Env:BEEHIVE_DOWNLOAD_BASE_URL', 'Env:BEEHIVE_RELEASE_CHANNEL', 'Env:BEEHIVE_RUST_PREFIX', 'Env:BEEHIVE_ALLOW_HTTP', 'Env:BEEHIVE_VERSION' -ErrorAction SilentlyContinue
+    if ($DownloadBase) { $env:BEEHIVE_DOWNLOAD_BASE_URL = $DownloadBase }
+    $env:BEEHIVE_ALLOW_HTTP = '1'
+    $env:BEEHIVE_RUST_PREFIX = $Prefix
+    if ($ChannelKnob) { $env:BEEHIVE_RELEASE_CHANNEL = $ChannelKnob }
+    if ($VersionPin) { $env:BEEHIVE_VERSION = $VersionPin }
     $lines = @(& pwsh -NoProfile -File $Installer 2>&1 | ForEach-Object { "$_" })
     return [pscustomobject]@{ Lines = $lines; Exit = $LASTEXITCODE }
 }
@@ -71,21 +71,21 @@ $server = Start-Process -FilePath $py -ArgumentList '-u','-m','http.server','0',
 # THE UV INSTALL IS ISOLATED (the reviewers' finding): ownership of a file
 # in the shared ~/.local/bin is unprovable, so the harness never lets the
 # installer touch the shared dir - install.ps1 honors
-# PRIME_AGENT_UV_BIN_DIR and the harness points it at its scratch.
+# BEEHIVE_UV_BIN_DIR and the harness points it at its scratch.
 # The kernel pre-warm's writes (the venv, uv's cache, uv's pythons) would
 # land in the real user profile too; the harness steers all of them into
 # its own scratch dir through the product's override knobs and restores
 # the caller's values in the cleanup (the discipline install.ps1 itself
 # runs).
-$callerKernelVenv = $env:PRIME_AGENT_KERNEL_VENV
+$callerKernelVenv = $env:BEEHIVE_KERNEL_VENV
 $callerUvCacheDir = $env:UV_CACHE_DIR
 $callerUvPythonDir = $env:UV_PYTHON_INSTALL_DIR
-$callerUvBinDir = $env:PRIME_AGENT_UV_BIN_DIR
+$callerUvBinDir = $env:BEEHIVE_UV_BIN_DIR
 try {
-    $env:PRIME_AGENT_KERNEL_VENV = Join-Path $scratch 'kernel-venv'
+    $env:BEEHIVE_KERNEL_VENV = Join-Path $scratch 'kernel-venv'
     $env:UV_CACHE_DIR = Join-Path $scratch 'uv-cache'
     $env:UV_PYTHON_INSTALL_DIR = Join-Path $scratch 'uv-python'
-    $env:PRIME_AGENT_UV_BIN_DIR = Join-Path $scratch 'uv-bin'
+    $env:BEEHIVE_UV_BIN_DIR = Join-Path $scratch 'uv-bin'
     # The port the server itself announced, then readiness is it answering
     # a request for this test's own channel (beta.json): bounded deadlines,
     # and a dead child fails fast instead of hanging the installer.
@@ -120,7 +120,7 @@ try {
             $run.Lines | Write-Host
             throw "$selection must refuse the missing stable artifact"
         }
-        if (Test-Path (Join-Path $prefix 'share\prime-agent\prime-agent.exe')) {
+        if (Test-Path (Join-Path $prefix 'share\beehive\beehive.exe')) {
             throw "$selection unexpectedly published a payload"
         }
     }
@@ -132,11 +132,11 @@ try {
         $runBeta.Lines | Write-Host
         throw 'the explicit beta install failed'
     }
-    $marker = Get-Content -LiteralPath (Join-Path $prefixBeta 'share\prime-agent\.prime-agent-install') -Raw
+    $marker = Get-Content -LiteralPath (Join-Path $prefixBeta 'share\beehive\.beehive-install') -Raw
     if ($marker -ne "install-rust.sh channel beta`nversion $betaVersion") { throw "unexpected beta marker: $marker" }
 
     # Publish stable and verify the custom-base default selects its artifact.
-    $stableFile = "prime-agent-$stableVersion-$platform.tar.gz"
+    $stableFile = "beehive-$stableVersion-$platform.tar.gz"
     $stableDir = Join-Path $channel "releases\v$stableVersion"
     New-Item -ItemType Directory -Path $stableDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $releaseDir $artifactFile) -Destination (Join-Path $stableDir $stableFile)
@@ -149,17 +149,17 @@ try {
         $runStable.Lines | Write-Host
         throw 'the default stable install failed'
     }
-    $marker = Get-Content -LiteralPath (Join-Path $prefixStable 'share\prime-agent\.prime-agent-install') -Raw
+    $marker = Get-Content -LiteralPath (Join-Path $prefixStable 'share\beehive\.beehive-install') -Raw
     if ($marker -ne "install-rust.sh channel stable`nversion $stableVersion") { throw "unexpected stable marker: $marker" }
     foreach ($prefix in @($prefixBeta, $prefixStable)) {
-        if (-not (Test-Path (Join-Path $prefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) { throw "missing payload in $prefix" }
+        if (-not (Test-Path (Join-Path $prefix 'share\beehive\beehive.exe') -PathType Leaf)) { throw "missing payload in $prefix" }
     }
 
     # Redirect only the fork's built-in origin to the fixture, not the override:
     # this exercises the unstamped default, including both release URL shapes.
     $installerSource = Get-Content -LiteralPath (Join-Path $repo 'install.ps1') -Raw
     $forkInstaller = Join-Path $scratch 'install-fork.ps1'
-    Set-Content -LiteralPath $forkInstaller -Value ($installerSource.Replace('https://github.com/csmoke66/prime-agent/releases', "$baseUrl/fork/releases"))
+    Set-Content -LiteralPath $forkInstaller -Value ($installerSource.Replace('https://github.com/csmoke66/beehive/releases', "$baseUrl/fork/releases"))
     $forkPrefix = Join-Path $scratch 'prefix-fork'
     $forkArgs = @{ Installer = $forkInstaller; DownloadBase = ''; Prefix = $forkPrefix }
     $missingFork = Invoke-Installer @forkArgs
@@ -179,7 +179,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $channel 'stable'), (Join-Path $channel 'latest.json') -Destination $forkLatest
     Copy-Item -LiteralPath (Join-Path $stableDir $stableFile), (Join-Path $stableDir 'SHA256SUMS') -Destination $forkTag
     $stableFork = Invoke-Installer @forkArgs
-    if ($stableFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkPrefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) {
+    if ($stableFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkPrefix 'share\beehive\beehive.exe') -PathType Leaf)) {
         $stableFork.Lines | Write-Host
         throw 'the fork default must read the latest metadata and download the versioned payload'
     }
@@ -196,7 +196,7 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $stableDir 'SHA256SUMS') -Destination $forkTag -Force
     $pinnedFork = Invoke-Installer @forkArgs -VersionPin "v$stableVersion"
-    if ($pinnedFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkArgs.Prefix 'share\prime-agent\prime-agent.exe') -PathType Leaf)) {
+    if ($pinnedFork.Exit -ne 0 -or -not (Test-Path (Join-Path $forkArgs.Prefix 'share\beehive\beehive.exe') -PathType Leaf)) {
         $pinnedFork.Lines | Write-Host
         throw 'an exact fork version must install from its tag without reading latest metadata'
     }
@@ -211,7 +211,7 @@ try {
         $renderedBeta.Lines | Write-Host
         throw 'the rendered legacy beta installer failed'
     }
-    $marker = Get-Content -LiteralPath (Join-Path $renderedPrefix 'share\prime-agent\.prime-agent-install') -Raw
+    $marker = Get-Content -LiteralPath (Join-Path $renderedPrefix 'share\beehive\.beehive-install') -Raw
     if ($marker -ne "install-rust.sh channel beta`nversion $betaVersion") { throw "unexpected rendered beta marker: $marker" }
 
     Write-Host "WIN_CHANNEL_SELECTION custom-stable=$stableVersion explicit-and-rendered-beta=$betaVersion; fork stable and pinned installs verified"
@@ -251,12 +251,12 @@ try {
         if ($envKey) { $envKey.Close() }
     }
     # The uv install needs no cleanup: it never left the scratch dir (the
-    # PRIME_AGENT_UV_BIN_DIR knob above steered the installer), and the
+    # BEEHIVE_UV_BIN_DIR knob above steered the installer), and the
     # user's ~/.local/bin was never touched at all.
-    $env:PRIME_AGENT_KERNEL_VENV = $callerKernelVenv
+    $env:BEEHIVE_KERNEL_VENV = $callerKernelVenv
     $env:UV_CACHE_DIR = $callerUvCacheDir
     $env:UV_PYTHON_INSTALL_DIR = $callerUvPythonDir
-    $env:PRIME_AGENT_UV_BIN_DIR = $callerUvBinDir
+    $env:BEEHIVE_UV_BIN_DIR = $callerUvBinDir
     Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue
     if ($pathCleanFailed) {
         throw 'could not clean the user PATH entries this test added'

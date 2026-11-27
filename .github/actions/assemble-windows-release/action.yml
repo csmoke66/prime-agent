@@ -7,9 +7,6 @@ inputs:
   version:
     description: Workspace version with or without a v prefix.
     required: true
-  catalog-ref:
-    description: SHA of the catalog snapshot to bundle.
-    required: true
 runs:
   using: composite
   steps:
@@ -27,7 +24,7 @@ runs:
         # A stock Windows machine may lack vcruntime140.dll. Keep the shipped
         # launcher self-contained without changing the development build.
         RUSTFLAGS: -C target-feature=+crt-static
-      run: cargo build --release --locked --target "$TARGET" -j 4 -p bh-cli --bin prime-agent
+      run: cargo build --release --locked --target "$TARGET" -j 4 -p bh-cli --bin beehive
     - name: "Livecheck gate: --version prints the workspace version"
       shell: bash
       env:
@@ -35,7 +32,7 @@ runs:
         VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        out="$("target/$TARGET/release/prime-agent.exe" --version)"
+        out="$("target/$TARGET/release/beehive.exe" --version)"
         [[ "$out" == "${VERSION#v}" ]] || { echo "binary reports '$out', expected '${VERSION#v}'"; exit 1; }
     - name: Install cargo-about (renders the archive's third-party notices)
       uses: ./.github/actions/install-cargo-about
@@ -44,14 +41,12 @@ runs:
       env:
         TARGET: ${{ inputs.target }}
         VERSION: ${{ inputs.version }}
-        CATALOG_REF: ${{ inputs.catalog-ref }}
       run: |
         set -euo pipefail
         dir="target/$TARGET"
-        python scripts/release/bundle_catalog.py generate --network \
-          --catalog-ref "$CATALOG_REF" --out "$dir/catalog-assets"
+        python scripts/release/bundle_catalog.py generate --fixture --out "$dir/catalog-assets"
         python scripts/release/assemble_artifacts.py \
           --repo-root . --version "${VERSION#v}" --target "$TARGET" \
-          --binary "$dir/release/prime-agent.exe" \
+          --binary "$dir/release/beehive.exe" \
           --catalog-assets "$dir/catalog-assets" --out-dir "$dir/dist"
         cat "$dir/dist/manifest.json"

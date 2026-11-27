@@ -1,4 +1,4 @@
-# CI gates for the prime-agent Rust port: the tip-compiles-tests guarantee
+# CI gates for the beehive Rust port: the tip-compiles-tests guarantee
 # plus PR gating, in one workflow (the shape of the TS product's ci.yml).
 # `.github/workflows/` is the one home for workflow files; the
 # windows-cross/windows/deny jobs run live in this file alongside the unix
@@ -6,9 +6,9 @@
 # Two triggers, one
 # gate set mirroring `make check` exactly (fmt --all --check, clippy --workspace
 # --all-targets -- -D warnings, cargo test --workspace) on the pinned
-# toolchain (1.98.1) and runner image the continuous/release builds use:
+# toolchain (1.98.1) and runner image the release builds use:
 #
-#   push to main — every merge is a push. continuous.yml proves the
+#   push to main — every merge is a push. release.yml proves the
 #   release binaries link; THIS workflow proves the tip's test/bench/example
 #   targets compile (`cargo check --workspace --all-targets`) and the test
 #   suites pass (the test suite sharded below; the count is the SHARD_COUNT
@@ -210,24 +210,6 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
-  migration-packaging:
-    name: historical upgrade packaging
-    needs: trust
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    if: needs.trust.result == 'success' && needs.trust.outputs.allowed == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Verify native and npm compatibility packaging
-        run: |
-          python3 scripts/release/test_native_compat.py
-          python3 scripts/release/test_npm_bridge.py
-          python3 scripts/release/test_release_publication.py
-          python3 scripts/release/test_restamp.py
-          python3 scripts/release/test_channel_version.py
-
   clippy-test:
     name: check + clippy (workspace)
     needs: trust
@@ -338,7 +320,7 @@ jobs:
       # 36764911023). The installer's bootstrap handoff readies it first.
       - name: Bootstrap the kernel venv (ready before the kernel e2e units)
         if: steps.selection.outputs.units != '0'
-        run: ./target/debug/prime-agent --prime-agent-bootstrap
+        run: ./target/debug/beehive --beehive-bootstrap
       # The real-binary lifecycle checks drive the debug binary through owned
       # daemons, PTYs and loopback providers only. One leg is enough.
       - name: Run the rust lifecycle checks
@@ -347,10 +329,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/lifecycle-check-receipts"
-          export PA_RUST_BINARY="${GITHUB_WORKSPACE}/target/debug/prime-agent"
-          export PRIME_AGENT_KERNEL_PYTHON="${HOME}/.prime/agent/kernel-venv/bin/python"
-          export PA_E2E_KERNEL_PYTHON="${PRIME_AGENT_KERNEL_PYTHON}"
-          test -x "${PRIME_AGENT_KERNEL_PYTHON}"
+          export PA_RUST_BINARY="${GITHUB_WORKSPACE}/target/debug/beehive"
+          export BEEHIVE_KERNEL_PYTHON="${HOME}/.beehive/kernel-venv/bin/python"
+          export PA_E2E_KERNEL_PYTHON="${BEEHIVE_KERNEL_PYTHON}"
+          test -x "${BEEHIVE_KERNEL_PYTHON}"
           check_status=0
           python3 scripts/test_lifecycle_lib.py || check_status=1
           # Discover independently added checks so feature PRs do not
@@ -410,7 +392,7 @@ jobs:
           python3 scripts/test_ci_test_shard_summary.py
           python3 scripts/ci_test_shard_summary.py --total ${{ env.SHARD_COUNT }} --dir manifests
 
-  # The vendored runtime suite (prime-agent-runtime): the kernel-side Python
+  # The vendored runtime suite (beehive-runtime): the kernel-side Python
   # (`bash()`, the repl protocol, the bounded-await contract) has no Rust test,
   # so this is its only CI gate — CPython 3.11, the minimum the runtime
   # supports and the version the kernel venv pins.
@@ -430,7 +412,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run the runtime suite (CPython 3.11)
         run: |
-          cd prime-agent-runtime
+          cd beehive-runtime
           uv run --python 3.11 python -m unittest discover -s test
           PYTHONPATH=../skills/attach-video/src uv run --python 3.11 python -m unittest discover -s ../skills/attach-video/tests
 
@@ -454,7 +436,7 @@ jobs:
   #   cfg(windows) implementations).
   #
   #   deny — cargo-deny advisories + licenses, the CI mirror of `make deny`,
-  #   the same check continuous.yml's deny job runs on every push.
+  #   the same check ci.yml's deny job runs on every push.
   #   Promoted on the operator's 2026-09-28 policy decision: the advisory
   #   DB drifts daily, so a drifted advisory can gate PRs — that is the
   #   accepted trade.

@@ -45,8 +45,8 @@ def admitted_probe(body):
 
 
 def owned_processes(root):
-    expected = {('PI_CODING_AGENT_DIR=' + str(root / 'agent')).encode(),
-                ('PRIME_AGENT_CODING_AGENT_DIR=' + str(root / 'agent')).encode()}
+    expected = {('BEEHIVE_CODING_AGENT_DIR=' + str(root / 'agent')).encode(),
+                ('BEEHIVE_CODING_AGENT_DIR=' + str(root / 'agent')).encode()}
     found = {}
     for path in Path('/proc').iterdir():
         if not path.name.isdigit():

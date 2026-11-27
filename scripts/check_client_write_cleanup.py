@@ -82,7 +82,7 @@ class WireClient(Client):
 
 def owned_processes(root):
     """Linux hosted receipt: exact unique fixture agent-dir environment ownership."""
-    expected = ('PRIME_AGENT_CODING_AGENT_DIR=' + str(root / 'agent')).encode()
+    expected = ('BEEHIVE_CODING_AGENT_DIR=' + str(root / 'agent')).encode()
     owned = []
     for directory in Path('/proc').iterdir():
         if directory.name.isdigit():

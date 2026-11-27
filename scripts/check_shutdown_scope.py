@@ -51,7 +51,7 @@ def process_identity(pid):
 
 
 def owned_identity(pid, root):
-    expected = ('PRIME_AGENT_CODING_AGENT_DIR=' + str(root / 'agent')).encode()
+    expected = ('BEEHIVE_CODING_AGENT_DIR=' + str(root / 'agent')).encode()
     try:
         if expected not in Path(f'/proc/{pid}/environ').read_bytes().split(b'\0'):
             return None
@@ -134,8 +134,8 @@ def finish_tree(tree, observed):
 def launch(binary, root, socket_path, shared_tmp, provider, trees):
     env = env_for(root)
     env['TMPDIR'] = str(shared_tmp)
-    env['PRIME_AGENT_DAEMON_SOCKET'] = str(socket_path)
-    env['PRIME_AGENT_INTERNAL_WORKER_SUPERVISOR_LOST_EXIT_MS'] = '15000'
+    env['BEEHIVE_DAEMON_SOCKET'] = str(socket_path)
+    env['BEEHIVE_INTERNAL_WORKER_SUPERVISOR_LOST_EXIT_MS'] = '15000'
     (root / 'agent/models.json').write_text(json.dumps({'providers': {'parity-local': {
         'api': 'openai-completions', 'apiKey': 'fixture-only',
         'baseUrl': f'http://127.0.0.1:{provider.server_port}/v1',
@@ -176,7 +176,7 @@ def invoke(binary, args, tree):
 def run_case(binary, root, mode, observed):
     shared_tmp = root / 'shared-tmp'
     shared_tmp.mkdir(parents=True)
-    default_socket = shared_tmp / f'prime-agent-{os.getuid()}' / 'daemon.sock'
+    default_socket = shared_tmp / f'beehive-{os.getuid()}' / 'daemon.sock'
     default_socket.parent.mkdir()
     pins = root / 'pins'
     pins.mkdir()

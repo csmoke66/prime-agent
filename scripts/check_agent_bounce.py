@@ -86,7 +86,7 @@ class Client:
         self.counter += 1
         ident = str(self.counter)
         envelope = {'type': 'command', 'id': ident,
-            'protocol': {'name': 'prime-agent.daemon', 'version': 7},
+            'protocol': {'name': 'beehive.daemon', 'version': 7},
             'command': {'type': kind, **payload}}
         self.sock.sendall((json.dumps(envelope) + '\n').encode())
         deadline = time.monotonic() + LIMIT

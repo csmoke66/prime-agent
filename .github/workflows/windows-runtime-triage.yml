@@ -106,11 +106,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: windows-tui-battery
-      # The binary the battery boots is `CARGO_BIN_EXE_prime-agent` - the
+      # The binary the battery boots is `CARGO_BIN_EXE_beehive` - the
       # same commit's fresh build. The explicit step names the freshly
       # built binary and warms the test run's build.
       - name: Build the binary the battery boots (locked)
-        run: cargo build --locked -p bh-cli --bin prime-agent
+        run: cargo build --locked -p bh-cli --bin beehive
       # Console VT setup/restore; redirected CI stdout can take the no-op branch.
       - name: The Windows console mode regression
         shell: bash
@@ -164,7 +164,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           cargo test --locked -p bh-types 2>&1 | Tee-Object -FilePath pa-types_win.log
           exit $LASTEXITCODE
@@ -173,7 +173,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           cargo test --locked -p bh-core 2>&1 | Tee-Object -FilePath pa-core_win.log
           exit $LASTEXITCODE
@@ -182,7 +182,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           cargo test --locked -p bh-daemon 2>&1 | Tee-Object -FilePath pa-daemon_win.log
           exit $LASTEXITCODE
@@ -191,7 +191,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           cargo test --locked -p bh-tui 2>&1 | Tee-Object -FilePath pa-tui_win.log
           exit $LASTEXITCODE
@@ -231,7 +231,7 @@ jobs:
         env:
           RAW_REF: ${{ inputs.ref || github.ref }}
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           Start-Transcript -Path win-raw-one-liner.log
           $installExit = 0
@@ -243,7 +243,7 @@ jobs:
           }
           $launcherExit = 0
           try {
-            & (Join-Path $HOME '.local\bin\prime-agent.cmd') --version
+            & (Join-Path $HOME '.local\bin\beehive.cmd') --version
             $launcherExit = $LASTEXITCODE
             Write-Output "RAW_ONE_LINER: launcher --version exit $launcherExit"
             if ($launcherExit -ne 0) { $installExit = 1 }
@@ -259,7 +259,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
           cargo test --locked -p bh-cli 2>&1 | Tee-Object -FilePath pa-cli_win.log
           exit $LASTEXITCODE

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Development rules for Prime Agent (Rust) on PrimeIntellect-ai/prime-agent, branch `main`.
+Development rules for Beehive (Rust) on csmoke66/beehive, branch `main`.
 Every contributor (human or agent) must read this before working on this repo.
 
 ## Repository
@@ -16,15 +16,13 @@ Every contributor (human or agent) must read this before working on this repo.
   suggestions, not as attribution for work merged from branches. A PR's commits carry
   one identity: the ambient git config's. Fabricated or hand-written trailers (including
   noreply forms) misattribute commits to unrelated GitHub accounts.
-- The repo is PrimeIntellect-ai/prime-agent; the Rust implementation lives on the `main` branch.
-- PRs go to the org repo with base `main`:
-  `gh pr create --repo PrimeIntellect-ai/prime-agent --base main`.
-- CI runs on the org's billing: `.github/workflows/continuous.yml` on `main` pushes and
-  `release.yml` on version tags.
+- The repo is csmoke66/beehive; the Rust implementation lives on the `main` branch.
+- CI runs `.github/workflows/ci.yml` on pushes and PRs, and `release.yml` on version tags
+  (releases are published to this repo's GitHub Releases only).
 
 ## Style and structure
 
-- Workspace crates are prefixed `pa-`. The hard ownership rules: one owned area per crate,
+- Workspace crates are prefixed `bh-`. The hard ownership rules: one owned area per crate,
   bh-types is the only shared crate, cycle-free dependency direction, minimal public APIs,
   no god-modules. The dependency direction is pinned in the Crates table below; each crate's
   README.md states its scope, non-goals, and public API surface.
@@ -127,8 +125,7 @@ launch path must keep that test red-first.
 
 - `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace` must pass before every merge. Run `make check` — the local mirror of
-  the same gates; CI runs on the org's billing (`.github/workflows/continuous.yml` on `main`
-  pushes; `release.yml` on version tags). The PR-only codebase-health check reports growth
+  the same gates; CI runs `.github/workflows/ci.yml` and `release.yml` on version tags. The PR-only codebase-health check reports growth
   past 2,000 lines as review guidance; it never blocks a merge.
 - PRs that change shipped paths need a `.changes/<branch-slug>.md` fragment (one user-facing
   bullet; see `.changes/README.md`) or the `no-changelog` label; the changelog-fragment check enforces it.
@@ -150,26 +147,21 @@ seam emits it from day one. Telemetry properties never carry prompt, session, or
 (primitives only; see `bh-telemetry`); delivery is fire-and-forget from user-facing code
 (see Performance and the critical path).
 
-## Branding
+## Naming
 
-The product is Prime Agent - we are not a pi fork. Scrub "pi"/"pi-mono"/"pi-ai"/
-"Prime Intellect"-style naming from all user-visible surfaces (docs, READMEs,
-CLI help text, error messages, splash/onboarding strings, keybinding hints, TUI
-labels, and code comments that quote user-facing strings); brand everything
-Prime Agent. Audit with a repo-wide grep and classify every hit (user-visible
-vs wire-internal vs comment) before scrubbing, and list the preserved wire
-identifiers in the PR body so the reviewer can verify none were wrongly scrubbed.
+The product is Beehive; the repo is csmoke66/beehive. Use Beehive naming everywhere
+(binary `beehive`, `BEEHIVE_*` environment variables, `~/.beehive`).
 
-EXPLICIT EXCEPTION: wire-protocol identifiers (e.g. the PI_PACKAGE_DIR env var, settings keys, provider IDs like prime-inference, harness _meta namespaces like ai.primeintellect.prime-agent, lockfile names) stay unchanged, because existing installs, settings files, and clients depend on them — COMPATIBILITY BEATS BRANDING ON THE WIRE.
-
-
+Persisted data written by older builds stays readable: a few old spellings are accepted as
+serde aliases (theme `prime`, package manifest key `pi`, MCP catalog source/readiness
+`prime`/`prime-restricted`). Keep those aliases read-only; always write the Beehive spelling.
 
 ## Surface contract (must not change)
 
 - Tools exposed to the model: `bash`, `edit`, `python_repl` (internal helpers: `rename`, `stdout`).
 - RLM kernel API in the persistent Python REPL: `rlm.spawn/find_models/collect/list_subagents/delete_subagent/create_session/progress_note`, `rlm.harness` CRUD, `agent_message.send`, `agent_observe`, `compact`, `goal`, `refine`, `attach_image`, skills (markdown + Python) per the skill contract in the base system prompt.
-- System prompt structure: layered — cache-stable static layer files (core harness description with the full API surface, mandatory usage rules, opinionated guidelines, per-model additions from the model-prompts TOML rule map) followed by one dynamic tail (packages, project context, skills inventory, MCP servers, environment, session role); the harness digest stays a separate `[harness-digest]` user message. `prime-agent prompt` dumps the assembled prompt with its layer breakdown.
-- CLI shape: `prime-agent` keeps its existing commands and flags; headless modes (RPC/daemon/session-worker) keep their behavior.
+- System prompt structure: layered — cache-stable static layer files (core harness description with the full API surface, mandatory usage rules, opinionated guidelines, per-model additions from the model-prompts TOML rule map) followed by one dynamic tail (packages, project context, skills inventory, MCP servers, environment, session role); the harness digest stays a separate `[harness-digest]` user message. `beehive prompt` dumps the assembled prompt with its layer breakdown.
+- CLI shape: `beehive` keeps its existing commands and flags; headless modes (RPC/daemon/session-worker) keep their behavior.
 
 ## Crates
 
@@ -187,7 +179,7 @@ The table summarizes each crate's current direct workspace dependencies:
 | `bh-core` | Session engine, tools, skills, kernel, settings | `bh-types`, `bh-ai`, `bh-models`, `bh-agent`, `bh-telemetry` |
 | `bh-daemon` | Supervisor, workers, wire protocol | `bh-types`, `bh-core`, `bh-agent`, `bh-ai`, `bh-telemetry`, `bh-models` |
 | `bh-tui` | Terminal UI, daemon-wire client | `bh-types` |
-| `bh-cli` | `prime-agent` binary, composition root | `bh-types`, `bh-core`, `bh-ai`, `bh-agent`, `bh-daemon`, `bh-tui`, `bh-telemetry` |
+| `bh-cli` | `beehive` binary, composition root | `bh-types`, `bh-core`, `bh-ai`, `bh-agent`, `bh-daemon`, `bh-tui`, `bh-telemetry` |
 | `bh-perf` | Performance corpora + pty bench harness (dev/CI tooling, never shipped) | `bh-types`, `bh-core`, `bh-daemon` |
 
 Layering rules:
@@ -200,7 +192,7 @@ Layering rules:
 
 ## Reliability model
 
-- The daemon is a supervisor: it spawns one worker process per active session instead of hosting sessions in-process. Workers are supervised, restarted with backoff, and sessions persist on disk (append-only JSONL, same layout as `~/.prime/agent/sessions`) so reattach works even if the supervisor restarts.
+- The daemon is a supervisor: it spawns one worker process per active session instead of hosting sessions in-process. Workers are supervised, restarted with backoff, and sessions persist on disk (append-only JSONL, same layout as `~/.beehive/sessions`) so reattach works even if the supervisor restarts.
 - No stubs, no `todo!()`, no swallowed errors (`anyhow` bubbling to UI is fine).
 
 ## References

@@ -77,7 +77,7 @@ class CleanupTests(unittest.TestCase):
         for owner, expected in ((12, True), (99, False)):
             with patch.object(lifecycle, 'process_identity', return_value=('proc:8', 'S')), \
                     patch.object(Path, 'read_bytes', side_effect=[
-                        ('PA_GOAL_FIXTURE_ID=/fixture\0PRIME_AGENT_KERNEL_OWNER_PID=%s\0' % owner).encode(), b'/usr/bin/python3\0kernel\0']):
+                        ('PA_GOAL_FIXTURE_ID=/fixture\0BEEHIVE_KERNEL_OWNER_PID=%s\0' % owner).encode(), b'/usr/bin/python3\0kernel\0']):
                 self.assertEqual(scope.ownership(20, 'proc:8'), expected)
 
 

@@ -19,7 +19,7 @@ env:
 
 jobs:
   build:
-    if: github.repository == 'csmoke66/prime-agent' && github.ref == 'refs/heads/main'
+    if: github.repository == 'csmoke66/beehive' && github.ref == 'refs/heads/main'
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
@@ -30,28 +30,24 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Resolve the workspace version and catalog commit
+      - name: Resolve the workspace version
         id: source
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
-          catalog_ref="$(python scripts/release/bundle_catalog.py resolve-ref)"
-          printf 'version=%s\ncatalog_ref=%s\n' "$version" "$catalog_ref" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Build and package Windows
         uses: ./.github/actions/assemble-windows-release
         with:
           target: x86_64-pc-windows-msvc
           version: ${{ steps.source.outputs.version }}
-          catalog-ref: ${{ steps.source.outputs.catalog_ref }}
       - name: Upload installer payload
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: windows-installer-payload
           path: |
-            target/x86_64-pc-windows-msvc/dist/prime-agent-${{ steps.source.outputs.version }}-win32-x64.tar.gz
+            target/x86_64-pc-windows-msvc/dist/beehive-${{ steps.source.outputs.version }}-win32-x64.tar.gz
             target/x86_64-pc-windows-msvc/dist/SHA256SUMS
             target/x86_64-pc-windows-msvc/dist/manifest.json
           if-no-files-found: error
@@ -86,7 +82,7 @@ jobs:
           fi
 
           tag="windows-v$VERSION"
-          archive="prime-agent-$VERSION-win32-x64.tar.gz"
+          archive="beehive-$VERSION-win32-x64.tar.gz"
           checksum="$(sha256sum "$archive")"
           if [[ "$(tr -d '\r' < SHA256SUMS)" != "$checksum" ]]; then
             echo "SHA256SUMS does not match $archive" >&2
@@ -106,7 +102,7 @@ jobs:
             | .executableSha256 | select(test("^[0-9a-f]{64}$"))
           ' manifest.json)"
 
-          title="Prime Agent $VERSION for Windows"
+          title="Beehive $VERSION for Windows"
           notes="Windows x64 installer payload built from https://github.com/$GH_REPO/commit/$GITHUB_SHA. This release is refreshed on pushes to main without a workspace version bump."
           # The list includes drafts, so an interrupted first publication is
           # resumed rather than bootstrapping a second release. A failed API
@@ -133,22 +129,22 @@ jobs:
           EXPECTED_VERSION: ${{ needs.build.outputs.version }}
           EXPECTED_SHA256: ${{ needs.publish.outputs.executable_sha256 }}
         run: |
-          Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' } |
+          Get-ChildItem Env: | Where-Object { $_.Name -like 'BEEHIVE_*' } |
             ForEach-Object { Remove-Item -LiteralPath ("Env:" + $_.Name) }
-          $prefix = Join-Path $env:RUNNER_TEMP 'prime-agent-install'
-          $env:PRIME_AGENT_RUST_PREFIX = $prefix
-          $env:PRIME_AGENT_UV_BIN_DIR = Join-Path $prefix 'bin'
+          $prefix = Join-Path $env:RUNNER_TEMP 'beehive-install'
+          $env:BEEHIVE_RUST_PREFIX = $prefix
+          $env:BEEHIVE_UV_BIN_DIR = Join-Path $prefix 'bin'
           try {
             irm "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1" | iex
-            $version = & (Join-Path $prefix 'bin\prime-agent.cmd') --version
+            $version = & (Join-Path $prefix 'bin\beehive.cmd') --version
             if ($LASTEXITCODE -ne 0 -or $version -cne $env:EXPECTED_VERSION) {
               throw "Installed launcher exited $LASTEXITCODE and reported '$version'; expected '$env:EXPECTED_VERSION'"
             }
-            $exe = Join-Path $prefix 'share\prime-agent\prime-agent.exe'
+            $exe = Join-Path $prefix 'share\beehive\beehive.exe'
             if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ine $env:EXPECTED_SHA256) {
               throw 'The installed executable does not match the build from this run'
             }
-            Write-Host "Verified public Windows install: prime-agent $version ($env:EXPECTED_SHA256)"
+            Write-Host "Verified public Windows install: beehive $version ($env:EXPECTED_SHA256)"
           } finally {
             Remove-Item -LiteralPath $prefix -Recurse -Force -ErrorAction SilentlyContinue
           }

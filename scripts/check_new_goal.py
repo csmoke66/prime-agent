@@ -88,7 +88,7 @@ def setup(root, provider):
     env = env_for(root)
     env['PA_COMPACTION_TRACE'] = 'stderr'
     use_skill_python(root, env)
-    env['PI_SESSION_DIR'] = env['PRIME_AGENT_SESSION_DIR'] = str(root / 'agent/sessions')
+    env['BEEHIVE_SESSION_DIR'] = str(root / 'agent/sessions')
     (root / 'agent/models.json').write_text(json.dumps({'providers': {'parity-local': {
         'api': 'openai-completions', 'apiKey': 'fixture-only',
         'baseUrl': 'http://127.0.0.1:%s/v1' % provider.server_address[1],

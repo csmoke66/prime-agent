@@ -219,11 +219,11 @@ fn the_tui_battery_job_boots_the_binary_and_dumps_the_panes() {
     let runs = step_runs(&job);
     let build = runs
         .iter()
-        .find(|run| run.contains("cargo build --locked -p bh-cli --bin prime-agent"))
+        .find(|run| run.contains("cargo build --locked -p bh-cli --bin beehive"))
         .expect("the job builds the freshly-built binary");
     assert!(
         build.contains("--target x86_64-pc-windows-msvc")
-            || build.contains("-p bh-cli --bin prime-agent"),
+            || build.contains("-p bh-cli --bin beehive"),
         "the build step names the binary: {build}"
     );
 

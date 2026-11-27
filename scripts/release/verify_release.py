@@ -4,7 +4,7 @@
 The local mirror of the CI build-job gates:
 the archive must contain exactly the designed payload at the tarball root,
 checksums must match SHA256SUMS and manifest.json, and the staged binary must
-report the release version from a scratch cwd with `PI_PACKAGE_DIR` unset
+report the release version from a scratch cwd with `BEEHIVE_PACKAGE_DIR` unset
 (the shipped artifact never depends on it).
 
 Usage:
@@ -31,7 +31,6 @@ from pathlib import Path
 
 # The bundled-catalog gate (same release-scripts directory).
 from bundle_catalog import validate_bundled_catalog_dir
-from native_compat import validate_compatibility_archive
 # The release platform alias the archive name carries (TS parity; the update
 # flow's channel manifest requires alias-named archives).
 from assemble_artifacts import (
@@ -42,13 +41,11 @@ from assemble_artifacts import (
 )
 
 # Must mirror STAGED_ENTRIES in assemble_artifacts.py and §5 of the design doc.
-# POSIX archives preserve the native TS updater contract. Every archive
-# carries version metadata; Windows never had a native TS installation.
-# The binary entry is the target's name (`prime-agent.exe` on the MSVC
+# The binary entry is the target's name (`beehive.exe` on the MSVC
 # Windows target), resolved in `main` via `binary_name_for_target`.
 EXPECTED_TOP_LEVEL = {
-    "prime-agent",
-    "prime-agent-runtime",
+    "beehive",
+    "beehive-runtime",
     "skills",
     "LICENSE",
     "THIRD-PARTY-NOTICES.txt",
@@ -64,7 +61,6 @@ CONTINUOUS_EXTRA_TOP_LEVEL = {"package.json"}
 # The notices measure about 370 KB on every target; a file this large means the
 # generation pulled in far more than the shipped binary's crates.
 MAX_THIRD_PARTY_NOTICES_BYTES = 1_500_000
-NATIVE_COMPAT_TOP_LEVEL = {"theme", "export-html", "photon_rs_bg.wasm", "PHOTON-LICENSE.md", "install.sh"}
 
 # Same shape as `continuous_version` in assemble_artifacts.py.
 CONTINUOUS_SUFFIX = "continuous"
@@ -108,22 +104,18 @@ def main() -> int:
              "(the restamped release shape) are mutually exclusive")
 
     binary_name = binary_name_for_target(args.target)
-    expected_top_level = (EXPECTED_TOP_LEVEL - {"prime-agent"}) | {binary_name}
-    if binary_name != "prime-agent.exe":
-        expected_top_level |= NATIVE_COMPAT_TOP_LEVEL
+    expected_top_level = (EXPECTED_TOP_LEVEL - {"beehive"}) | {binary_name}
     expected_top_level |= (
         CONTINUOUS_EXTRA_TOP_LEVEL if (args.sha or args.expect_package_json)
         else set()
     )
 
     archive_name = (
-        f"prime-agent-{args.version}-{TARGET_ALIASES[args.target]}.tar.gz"
+        f"beehive-{args.version}-{TARGET_ALIASES[args.target]}.tar.gz"
     )
     archive = args.dist_dir / archive_name
     if not archive.is_file():
         fail(f"archive {archive} not found; run assemble_artifacts.py first")
-
-    validate_compatibility_archive(archive)
 
     # 1. Deterministic tarball shape: exact top-level payload, no link entries.
     with tarfile.open(archive) as tar:
@@ -134,7 +126,7 @@ def main() -> int:
                 f"!= designed payload {sorted(expected_top_level)}"
             )
         for member in members:
-            if member.name.startswith(("skills/", "prime-agent-runtime/")) and any(
+            if member.name.startswith(("skills/", "beehive-runtime/")) and any(
                 part in RUNTIME_EXCLUDED_NAMES or part.endswith(RUNTIME_EXCLUDED_SUFFIXES)
                 for part in Path(member.name).parts
             ):
@@ -169,8 +161,8 @@ def main() -> int:
         fail(f"manifest.json commit is {manifest.get('commit')!r}, expected {args.sha!r}")
 
     # 3. The staged binary reports the release version from a scratch cwd with
-    #    PI_PACKAGE_DIR unset: shipped artifacts never depend on it.
-    scratch = Path(tempfile.mkdtemp(prefix="prime-agent-verify-"))
+    #    BEEHIVE_PACKAGE_DIR unset: shipped artifacts never depend on it.
+    scratch = Path(tempfile.mkdtemp(prefix="beehive-verify-"))
     try:
         # Manual extraction: the deterministic-shape checks above already
         # rejected link entries, and staying on explicit member writes keeps
@@ -203,13 +195,13 @@ def main() -> int:
             fail(f"staged {binary_name} is not executable")
         if entries[archive_name]["executableSha256"] != sha256_file(binary):
             fail("executableSha256 in manifest.json does not match the staged binary")
-        env = {k: v for k, v in os.environ.items() if k != "PI_PACKAGE_DIR"}
+        env = {k: v for k, v in os.environ.items() if k != "BEEHIVE_PACKAGE_DIR"}
         run = subprocess.run(
             [str(binary), "--version"],
             capture_output=True, text=True, env=env, cwd=scratch, check=False,
         )
         if run.returncode != 0:
-            fail(f"staged prime-agent --version failed: {run.stderr.strip()}")
+            fail(f"staged beehive --version failed: {run.stderr.strip()}")
         version_out = run.stdout.strip()
         expected_version = (
             f"{args.version}-{CONTINUOUS_SUFFIX}.{args.sha}" if args.sha else args.version
@@ -218,7 +210,7 @@ def main() -> int:
             expected_version = args.expect_package_json
         if version_out != expected_version:
             fail(
-                f"staged prime-agent reports {version_out!r}, "
+                f"staged beehive reports {version_out!r}, "
                 f"expected {expected_version!r}"
             )
     finally:

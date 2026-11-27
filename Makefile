@@ -42,7 +42,7 @@ actionlint:
 	@command -v actionlint >/dev/null 2>&1 || { echo "actionlint not installed (see rhysd/actionlint releases)"; exit 1; }
 	actionlint .github/workflows/*.yml
 
-# GLIBC baseline gate (the continuous.yml/release.yml build-gnu jobs): a
+# GLIBC baseline gate (the release.yml build-gnu jobs): a
 # GNU/Linux artifact must not require symbols above GLIBC_2.35, the Ubuntu
 # 22.04 release baseline. No-op on non-GNU hosts; the authoritative gate runs
 # in CI inside the ubuntu:22.04 build container. POSIX sh throughout: make
@@ -67,30 +67,25 @@ glibc-gate:
 # Local mirror of the release build-job gates:
 # release build against the committed lockfile, deterministic tarball assembly,
 # then end-to-end verification of the host-target artifact. The vendored
-# prime-agent-runtime/ at the repo root is the default runtime sidecar
+# beehive-runtime/ at the repo root is the default runtime sidecar
 # (kernel-packaging lane); pass RUNTIME_DIR to re-anchor it.
 VERSION := $(shell sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
 TARGET := $(shell rustc -vV | sed -n 's/^host: //p')
 RUNTIME_DIR ?=
 RUNTIME_FLAG = $(if $(RUNTIME_DIR),--runtime-dir $(RUNTIME_DIR),)
 
-# Bundled catalog assets (catalog spec §3.2 layer 2): generated at build
-# time, never committed. Release and continuous CI ship the live catalog
-# (--network) at one prime-agent-catalog commit per run (`bundle_catalog.py
-# resolve-ref`). The local dry-runs default to the offline fixture snapshot
-# (it passes the full packer gates); CATALOG_ASSETS_MODE=network switches
-# them to the live fetch of the catalog's main.
+# Bundled catalog assets: generated at build time from the offline fixture
+# snapshot (it passes the full packer gates), never committed.
 CATALOG_ASSETS_DIR = target/catalog-assets
-CATALOG_ASSETS_MODE ?= fixture
 CATALOG_ASSETS_FLAG = --catalog-assets $(CATALOG_ASSETS_DIR)
 
 # Mirror the Linux CI split: Cargo's executable remains unstripped and the
 # archive receives a separate shipped ELF plus its detached decoder.
 ifneq ($(filter %-unknown-linux-gnu,$(TARGET)),)
-RELEASE_BINARY = target/release/dist/prime-agent
-RELEASE_DECODER = target/release/dist/prime-agent-$(VERSION)-$(if $(filter aarch64-%,$(TARGET)),linux-arm64,linux-x64).debug.gz
+RELEASE_BINARY = target/release/dist/beehive
+RELEASE_DECODER = target/release/dist/beehive-$(VERSION)-$(if $(filter aarch64-%,$(TARGET)),linux-arm64,linux-x64).debug.gz
 RELEASE_ASSEMBLE_FLAGS = --binary $(RELEASE_BINARY) --decoder $(RELEASE_DECODER)
-RELEASE_SPLIT = python3 scripts/release/split_debug.py --binary target/release/prime-agent --shipped $(RELEASE_BINARY) --out target/release/dist --version "$(VERSION)" --target "$(TARGET)"
+RELEASE_SPLIT = python3 scripts/release/split_debug.py --binary target/release/beehive --shipped $(RELEASE_BINARY) --out target/release/dist --version "$(VERSION)" --target "$(TARGET)"
 RELEASE_VERIFY_DECODER = python3 scripts/release/verify_decoders.py target/release/dist
 RELEASE_PACKAGE_BUILD = cargo build --release --locked --workspace
 RELEASE_PACKAGE_FLAGS = --binary $(RELEASE_BINARY) --decoder $(RELEASE_DECODER) --skip-build
@@ -103,11 +98,6 @@ RELEASE_PACKAGE_BUILD = :
 RELEASE_PACKAGE_FLAGS =
 endif
 
-# Live-catalog asset generation (network fetch; what release CI ships).
-catalog-assets:
-	python3 scripts/release/bundle_catalog.py generate --network --out $(CATALOG_ASSETS_DIR)
-
-# Offline asset generation: the synthetic full-gate fixture snapshot.
 catalog-assets-fixture:
 	python3 scripts/release/bundle_catalog.py generate --fixture --out $(CATALOG_ASSETS_DIR)
 
@@ -115,31 +105,13 @@ release-dry-run:
 	cargo build --release --locked --workspace
 	$(RELEASE_SPLIT)
 	$(MAKE) glibc-gate
-	python3 scripts/release/bundle_catalog.py generate --$(CATALOG_ASSETS_MODE) --out $(CATALOG_ASSETS_DIR)
+	python3 scripts/release/bundle_catalog.py generate --fixture --out $(CATALOG_ASSETS_DIR)
 	python3 scripts/release/assemble_artifacts.py \
 		--repo-root . --version "$(VERSION)" --target "$(TARGET)" $(RUNTIME_FLAG) \
 		$(RELEASE_ASSEMBLE_FLAGS) $(CATALOG_ASSETS_FLAG) --out-dir target/release/dist
 	$(RELEASE_VERIFY_DECODER)
 	python3 scripts/release/verify_release.py \
 		--dist-dir target/release/dist --version "$(VERSION)" --target "$(TARGET)"
-
-# Local mirror of the continuous.yml build job:
-# same release build, but commit-stamped: the tarball carries a package.json
-# version manifest and the binary must report "<version>-continuous.<sha>".
-GIT_SHA := $(shell git rev-parse HEAD)
-
-continuous-dry-run:
-	cargo build --release --locked --workspace
-	$(RELEASE_SPLIT)
-	$(MAKE) glibc-gate
-	python3 scripts/release/bundle_catalog.py generate --$(CATALOG_ASSETS_MODE) --out $(CATALOG_ASSETS_DIR)
-	python3 scripts/release/assemble_artifacts.py \
-		--repo-root . --version "$(VERSION)" --target "$(TARGET)" $(RUNTIME_FLAG) \
-		--sha "$(GIT_SHA)" $(RELEASE_ASSEMBLE_FLAGS) $(CATALOG_ASSETS_FLAG) --out-dir target/release/dist
-	$(RELEASE_VERIFY_DECODER)
-	python3 scripts/release/verify_release.py \
-		--dist-dir target/release/dist --version "$(VERSION)" --target "$(TARGET)" \
-		--sha "$(GIT_SHA)"
 
 # Optional hardening: embed the dependency list in the binary for incident
 # response.
@@ -149,17 +121,16 @@ audit-build:
 
 # Packaging dry-run: stage the exe-adjacent release layout, version-pin,
 # hash, and tar the artifact under target/release-package. Generates the
-# bundled catalog assets first (same modes as the dry-runs above).
+# bundled catalog assets first.
 package:
 	$(RELEASE_PACKAGE_BUILD)
 	$(RELEASE_SPLIT)
-	python3 scripts/release/bundle_catalog.py generate --$(CATALOG_ASSETS_MODE) --out $(CATALOG_ASSETS_DIR)
+	python3 scripts/release/bundle_catalog.py generate --fixture --out $(CATALOG_ASSETS_DIR)
 	python3 scripts/package_release.py $(RELEASE_PACKAGE_FLAGS) $(CATALOG_ASSETS_FLAG)
 
 # Bundled-catalog gates (scripts/release/test_catalog_assets.py): the
 # offline fixture passes the full packer validation, the packer hard-fails
-# on missing/invalid assets, network mode is verified against a local HTTP
-# server, and the assets land in the tarball layout the installer expects.
+# on missing/invalid assets, and the assets land in the tarball layout the installer expects.
 catalog-assets-gates:
 	python3 scripts/release/test_catalog_assets.py
 
@@ -168,8 +139,8 @@ catalog-assets-gates:
 # bench every scenario 10x, print the table. Run it on a quiet machine —
 # the numbers are wall-clock latencies of the interactive surfaces.
 perf:
-	cargo build --release --locked -p bh-cli --bin prime-agent -p bh-perf --bin bh-perf
-	./target/release/bh-perf run --binary target/release/prime-agent \
+	cargo build --release --locked -p bh-cli --bin beehive -p bh-perf --bin bh-perf
+	./target/release/bh-perf run --binary target/release/beehive \
 		--profile small --out target/perf --runs 10
 	./target/release/bh-perf report --baseline crates/bh-perf/baseline.json \
 		--results target/perf/results/*.json
@@ -182,13 +153,6 @@ perf:
 fold-gates:
 	python3 scripts/release/test_fold_changelog.py
 
-# The consume route's restamp battery (release.yml's beta channel): the
-# continuous artifacts restamped to the beta version keep the built bytes
-# and carry the release shape - the provenance case is first (a foreign
-# commit's artifacts are refused).
-restamp-gates:
-	python3 scripts/release/test_restamp.py
-
 # The CI shard tooling's contract battery (ci.yml's PR smoke): the stable
 # crc32 assignment under the narrowed selection, the scope-aware summary
 # audit, the selection resolver the conditional bins build reads, and the
@@ -197,11 +161,4 @@ shard-gates:
 	python3 scripts/test_ci_test_shard.py
 	python3 scripts/test_ci_pr_crates.py
 
-.PHONY: check deny windows-cross actionlint glibc-gate release-dry-run continuous-dry-run audit-build package catalog-assets catalog-assets-fixture catalog-assets-gates fold-gates restamp-gates shard-gates perf
-
-# Offline packaging contract tests for updaters shipped since Prime Agent 0.6.
-legacy-upgrade-gates:
-	python3 scripts/release/test_native_compat.py
-	python3 scripts/release/test_npm_bridge.py
-
-.PHONY: legacy-upgrade-gates
+.PHONY: check deny windows-cross actionlint glibc-gate release-dry-run audit-build package catalog-assets-fixture catalog-assets-gates fold-gates shard-gates perf

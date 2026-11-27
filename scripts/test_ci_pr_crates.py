@@ -166,7 +166,7 @@ class TheMappingTestCase(unittest.TestCase):
             ".github/workflows/ci.yml",
             "scripts/ci_test_shard.py",
             "vendor/crossterm/src/lib.rs",
-            "prime-agent-runtime/src/rlm/repl.py",
+            "beehive-runtime/src/rlm/repl.py",
             "Cargo.toml",
             "install-rust.sh",
         ]:
@@ -216,7 +216,7 @@ class TheMappingTestCase(unittest.TestCase):
         rc, out, outputs = run_mapper(["crates/bh-future/src/lib.rs"])
         self.assertEqual(rc, 0, out)
         self.assertEqual(outputs["crates"], "")
-        self.assertIn("unknown crate pa-future", out)
+        self.assertIn("unknown crate bh-future", out)
 
     def test_an_empty_filename_row_fails_safe(self):
         # The field-name regression the reviewer demanded pinned: a row whose

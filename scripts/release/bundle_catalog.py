@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and validate the bundled catalog assets for prime-agent releases.
+"""Generate and validate the bundled catalog assets for beehive releases.
 
 Port of the TS catalog asset tool (packages/coding-agent/scripts/catalog-assets.mjs
 on the TS client's `feat/catalog-client` line) for the Rust release pipeline.
@@ -11,9 +11,8 @@ The two assets are the client's no-cold-start layer 2 (spec §3.2):
                              ({version, counts, entries})
 
 They are generated at BUILD time and never committed: `--catalog-dir` copies
-from a local catalog checkout, the network mode fetches the live catalog repo
-for CI/packaging, and `--fixture` emits a synthetic snapshot that still
-passes the full validation gates so offline builds work end to end.
+from a local catalog checkout and `--fixture` emits a synthetic snapshot that
+still passes the full validation gates so offline builds work end to end.
 
 Validation (the release packer runs the same functions before packing):
   models   schemaVersion == 1, models is an array, and at least
@@ -22,18 +21,8 @@ Validation (the release packer runs the same functions before packing):
 
 Usage:
     python3 scripts/release/bundle_catalog.py generate \
-        [--catalog-dir DIR | --network | --fixture] [--out DIR] \
-        [--catalog-ref REF] [--models-url URL] [--mcp-services-url URL] \
-        [--allow-small-fixture]
+        (--catalog-dir DIR | --fixture) [--out DIR] [--allow-small-fixture]
     python3 scripts/release/bundle_catalog.py verify [--out DIR] [--allow-small-fixture]
-    python3 scripts/release/bundle_catalog.py resolve-ref
-
-Network mode reads GITHUB_TOKEN / PRIME_CATALOG_REPO_TOKEN (optional Bearer;
-the catalog repo is public), aborts each attempt after 5 s, retries transient
-failures twice, refuses redirects, and caps responses at
-MAX_REMOTE_CATALOG_BYTES. Release CI runs `resolve-ref` once per workflow run
-and passes the commit to every build job's `--catalog-ref`, so all targets
-bundle one catalog revision.
 """
 
 from __future__ import annotations
@@ -46,8 +35,6 @@ import re
 import shutil
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -57,7 +44,7 @@ BUNDLED_CATALOG_FILES = ("models.bundled.json", "mcp-services.bundled.json")
 
 # Release-gate minimums (spec §3.2/§3.9): sanity floors that catch a
 # truncated, emptied or wrong catalog file. They gate the live catalog, and
-# prime-agent-catalog's own validator has no minimums, so they sit below the
+# beehive-catalog's own validator has no minimums, so they sit below the
 # live counts (42 transport tuples and 69 services on 2026-10-23): removing a
 # provider endpoint or a few services there must not block every build. The
 # shipped TS tool carries MIN_BUNDLED_MCP_SERVICES = 20.
@@ -65,32 +52,6 @@ MIN_MODEL_TRANSPORT_TUPLES = 30
 MIN_MCP_SERVICES = 50
 # The offline fixture's generated service count (plus the special entries).
 FIXTURE_MCP_SERVICES = 68
-
-CATALOG_REPO = "PrimeIntellect-ai/prime-agent-catalog"
-MODEL_CATALOG_PATH = "models/catalog.v1.json"
-MCP_SERVICE_CATALOG_PATH = "plugins/catalog.v2.json"
-
-
-def catalog_url(ref: str, path: str) -> str:
-    """The raw URL of one catalog file at a branch or commit of the repo."""
-    return f"https://raw.githubusercontent.com/{CATALOG_REPO}/{ref}/{path}"
-
-
-DEFAULT_MODEL_CATALOG_URL = catalog_url("main", MODEL_CATALOG_PATH)
-DEFAULT_MCP_SERVICE_CATALOG_URL = catalog_url("main", MCP_SERVICE_CATALOG_PATH)
-# The commit lookup `resolve-ref` uses; the sha media type answers with the
-# bare 40-hex commit id.
-CATALOG_COMMIT_URL = f"https://api.github.com/repos/{CATALOG_REPO}/commits/main"
-COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
-
-# Build-time fetch limits (TS parity: 20 MiB cap, 5 s hard timeout, no
-# redirects — a moved catalog must be a client change).
-MAX_REMOTE_CATALOG_BYTES = 20 * 1024 * 1024
-FETCH_TIMEOUT_SECONDS = 5
-# Transient failures (connection errors, timeouts, HTTP 429/5xx) retry with
-# these backoffs between attempts; a 4xx, a redirect or an oversized body
-# fails at once, and so does validation, which runs after the fetch.
-FETCH_RETRY_BACKOFF_SECONDS = (2, 5)
 
 # The 14 derived count keys of the plugins v2 envelope (spec §1.2).
 COUNTS_KEYS = (
@@ -459,7 +420,6 @@ FIXTURE_TRANSPORT_TUPLES = [
     ("opencode-go", "openai-completions", "https://opencode.ai/zen/go/v1"),
     ("opencode-go", "openai-responses", "https://opencode.ai/zen/go/v1"),
     ("openrouter", "openai-completions", "https://openrouter.ai/api/v1"),
-    ("prime-inference", "openai-completions", "https://api.pinference.ai/api/v1"),
     ("vercel-ai-gateway", "anthropic-messages", "https://ai-gateway.vercel.sh"),
     ("xai", "openai-completions", "https://api.x.ai/v1"),
     ("xiaomi", "anthropic-messages", "https://api.xiaomimimo.com/anthropic"),
@@ -570,13 +530,13 @@ def fixture_service(index: int, transport_kind: str, auth_strategy: str,
         "description": f"Synthetic fixture MCP service {index:02d} for offline builds.",
         "category": "Fixture",
         "aliases": [] if index % 5 else [f"fixture service {index:02d}"],
-        "publisher": "Prime Intellect",
+        "publisher": "Beehive",
         "transport": transport,
         "auth": auth,
         "setup": setup,
         "verification": {"status": "metadata-reviewed" if verified else "unverified"},
         "legacyBuiltin": False,
-        "provenance": [{"source": "prime"}],
+        "provenance": [{"source": "user"}],
         **({"oauth": {"kind": "oauth"}} if auth_strategy == "oauth" else {}),
     }
 
@@ -671,7 +631,7 @@ def fixture_mcp_services() -> list:
         ("http", "oauth", "ready", "oauth-ready", True),
         ("http-template", "api_key", "requires-setup", "user-setup", False),
         ("sse", "none", "requires-setup", "unknown", False),
-        ("stdio", "unknown", "requires-setup", "prime-restricted", False),
+        ("stdio", "unknown", "requires-setup", "unknown", False),
     ]
     for index in range(FIXTURE_MCP_SERVICES):
         transport_kind, auth_strategy, setup_status, readiness, verified = \
@@ -732,107 +692,6 @@ def bundled_targets(out_dir: Path) -> dict:
     return {name: out_dir / name for name in BUNDLED_CATALOG_FILES}
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise urllib.error.HTTPError(
-            req.full_url, code,
-            f"refused redirect to {newurl} (catalog moves require a client change)",
-            headers, fp)
-
-
-class _TransientFetchError(Exception):
-    """A fetch failure a retry can fix: connection errors, timeouts, 429/5xx."""
-
-
-def _fetch_once(url: str, label: str, accept: str) -> str:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("PRIME_CATALOG_REPO_TOKEN")
-    request = urllib.request.Request(url, headers={
-        "accept": accept,
-        "cache-control": "no-cache",
-        **({"authorization": f"Bearer {token}"} if token else {}),
-    })
-    opener = urllib.request.build_opener(_NoRedirect)
-    try:
-        response = opener.open(request, timeout=FETCH_TIMEOUT_SECONDS)
-    except urllib.error.HTTPError as error:
-        message = f"Failed to fetch {label} catalog from {url}: HTTP {error.code}."
-        if error.code == 429 or error.code >= 500:
-            raise _TransientFetchError(message) from error
-        hint = ""
-        if error.code in (401, 404):
-            hint = (" The catalog repo is private or absent; set GITHUB_TOKEN "
-                    "or PRIME_CATALOG_REPO_TOKEN.")
-        elif 300 <= error.code < 400:
-            hint = f" ({error.reason})"
-        fail(f"{message}{hint}")
-    except (urllib.error.URLError, OSError, TimeoutError) as error:
-        raise _TransientFetchError(
-            f"Failed to fetch {label} catalog from {url}: {error}") from error
-    with response:
-        content_length = response.headers.get("content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > MAX_REMOTE_CATALOG_BYTES:
-                    fail(
-                        f"{label} catalog is too large: {content_length} bytes "
-                        f"exceeds {MAX_REMOTE_CATALOG_BYTES}"
-                    )
-            except ValueError:
-                pass
-        body = bytearray()
-        # The 5 s timeout is the TOTAL fetch budget, not per blocking op:
-        # a slow-drip server that always delivers a chunk just before the
-        # socket timeout would otherwise keep the read loop alive until the
-        # size cap. read1 returns whatever is available (no waiting for the
-        # full buffer) so the absolute deadline is checked between chunks.
-        deadline = time.monotonic() + FETCH_TIMEOUT_SECONDS
-        while True:
-            if time.monotonic() >= deadline:
-                raise _TransientFetchError(
-                    f"{label} catalog fetch exceeded the "
-                    f"{FETCH_TIMEOUT_SECONDS}s hard timeout"
-                )
-            try:
-                chunk = response.read1(64 * 1024)
-            except (OSError, TimeoutError) as error:
-                raise _TransientFetchError(
-                    f"Failed to read {label} catalog from {url}: {error}") from error
-            if not chunk:
-                break
-            body.extend(chunk)
-            if len(body) > MAX_REMOTE_CATALOG_BYTES:
-                fail(
-                    f"{label} catalog is too large: exceeds "
-                    f"{MAX_REMOTE_CATALOG_BYTES} bytes"
-                )
-        text = body.decode("utf-8")
-    return text if text.endswith("\n") else f"{text}\n"
-
-
-def fetch_catalog(url: str, label: str, accept: str = "application/json") -> str:
-    """Fetch one catalog body, retrying transient failures; any other
-    failure (and the last transient one) is a hard failure."""
-    for backoff in (*FETCH_RETRY_BACKOFF_SECONDS, None):
-        try:
-            return _fetch_once(url, label, accept)
-        except _TransientFetchError as error:
-            if backoff is None:
-                fail(str(error))
-            print(f"warning: {error}; retrying in {backoff}s", file=sys.stderr)
-            time.sleep(backoff)
-    raise AssertionError("unreachable")
-
-
-def resolve_catalog_ref(url: str = CATALOG_COMMIT_URL) -> str:
-    """The commit id the catalog repo's main points at now. A release run
-    resolves it once and every build job fetches that commit, so all
-    targets bundle the same catalog revision."""
-    sha = fetch_catalog(url, "catalog commit", accept="application/vnd.github.sha").strip()
-    if not COMMIT_SHA_PATTERN.fullmatch(sha):
-        fail(f"catalog commit lookup at {url} returned {sha[:80]!r}, not a commit id")
-    return sha
-
-
 def generate_bundled_catalog_assets(options) -> dict:
     out_dir = Path(options.out_dir).resolve() if options.out_dir \
         else (ROOT / "target" / "catalog-assets")
@@ -841,7 +700,6 @@ def generate_bundled_catalog_assets(options) -> dict:
     modes = [mode for mode, chosen in (
         ("--fixture", options.fixture),
         ("--catalog-dir", options.catalog_dir is not None),
-        ("--network", options.network),
     ) if chosen]
     if len(modes) > 1:
         fail(f"pick one source mode ({', '.join(modes)} are mutually exclusive)")
@@ -855,20 +713,7 @@ def generate_bundled_catalog_assets(options) -> dict:
                 fail(f"catalog checkout missing {source}; pass a valid --catalog-dir")
             shutil.copyfile(source, targets[name])
     else:
-        # Network mode is the default for CI/packaging (TS parity: fetch both
-        # live files and write the bodies verbatim). Both bodies are fetched
-        # BEFORE either target is replaced: a failed MCP fetch must not leave
-        # a mixed snapshot (a fresh models file beside the previous services
-        # file would pack together).
-        model_body = fetch_catalog(
-            options.models_url or catalog_url(options.catalog_ref, MODEL_CATALOG_PATH),
-            "model")
-        mcp_body = fetch_catalog(
-            options.mcp_services_url
-            or catalog_url(options.catalog_ref, MCP_SERVICE_CATALOG_PATH),
-            "MCP service")
-        targets["models.bundled.json"].write_text(model_body)
-        targets["mcp-services.bundled.json"].write_text(mcp_body)
+        fail("pick a source: --fixture or --catalog-dir")
     allow_small = options.allow_small_fixture or options.fixture
     result = validate_bundled_catalog_dir(out_dir, allow_small_fixture=allow_small)
     result["outDir"] = str(out_dir)
@@ -878,24 +723,14 @@ def generate_bundled_catalog_assets(options) -> dict:
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", nargs="?", default="generate",
-                        choices=("generate", "verify", "resolve-ref"),
-                        help="generate (default), verify an existing --out dir, or "
-                             "resolve-ref: print the catalog repo's current main commit")
+                        choices=("generate", "verify"),
+                        help="generate (default) or verify an existing --out dir")
     parser.add_argument("--out", dest="out_dir", default=None,
                         help="asset output directory (default: target/catalog-assets)")
     parser.add_argument("--catalog-dir", default=None,
-                        help="copy from a local prime-agent-catalog checkout")
-    parser.add_argument("--network", action="store_true",
-                        help="fetch the live catalog repo (CI/packaging default)")
+                        help="copy from a local beehive-catalog checkout")
     parser.add_argument("--fixture", action="store_true",
                         help="emit the synthetic full-gate snapshot (offline builds)")
-    parser.add_argument("--catalog-ref", default="main",
-                        help="network mode: the catalog branch or commit to fetch "
-                             "(release CI passes the commit resolve-ref printed)")
-    parser.add_argument("--models-url", default=None,
-                        help="override the model catalog URL")
-    parser.add_argument("--mcp-services-url", default=None,
-                        help="override the MCP service catalog URL")
     parser.add_argument("--allow-small-fixture", action="store_true",
                         help="skip the minimum-count gates (smoke fixtures only)")
     return parser.parse_args(argv)
@@ -903,9 +738,6 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    if args.command == "resolve-ref":
-        print(resolve_catalog_ref())
-        return 0
     out_dir = args.out_dir or (ROOT / "target" / "catalog-assets")
     if args.command == "verify":
         result = validate_bundled_catalog_dir(

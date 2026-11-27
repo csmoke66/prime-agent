@@ -38,11 +38,11 @@ either changes.
 
 - One logical change per PR: flag PRs that mix a feature with unrelated lint fixes or refactors, and fixes that do not ride with the change that introduced them.
 - If a change forces edits across many crate internals, the crate boundary is what needs fixing: flag that instead of the edits.
-- Risky raw APIs route through the in-house wrappers, not new raw call sites: process control (signals/process groups), file locking, permissions, and shell selection go through `bh-core`'s `platform` wall; durable renames go through `rename_onto`; TS-parity hashing (tool-call id normalization) uses `bh-ai`'s in-house `short_hash`; environment-variable resolution goes through its owning module (telemetry overrides in `bh-telemetry`, provider API keys in `bh-ai`), not duplicated ad-hoc parsing. Flag a raw call site that bypasses these walls.
+- Risky raw APIs route through the in-house wrappers, not new raw call sites: process control (signals/process groups), file locking, permissions, and shell selection go through `bh-core`'s `platform` wall; durable renames go through `rename_onto`; tool-call id normalization hashing uses `bh-ai`'s in-house `short_hash`; environment-variable resolution goes through its owning module (telemetry overrides in `bh-telemetry`, provider API keys in `bh-ai`), not duplicated ad-hoc parsing. Flag a raw call site that bypasses these walls.
 
 ## Repo hygiene
 
-- Flag scripts and tools that no CI workflow, Makefile target, or other code runs, such as one-off review, parity, evidence, or reproduction scripts (for example a 520-line TS-vs-Rust shutdown comparison script added in a feature PR). Nothing keeps them working; their results belong in the PR body, not in the repo.
+- Flag scripts and tools that no CI workflow, Makefile target, or other code runs, such as one-off review, parity, evidence, or reproduction scripts . Nothing keeps them working; their results belong in the PR body, not in the repo.
 - Flag test files that nothing runs. Before flagging, check the globs, loops, and paths built at run time in `.github/workflows/` and the Makefile (for example, ci.yml runs `scripts/test_check_<scenario>.py` through a path built inside its loop over `scripts/check_*.py`). A file name that appears nowhere can still run. Flag only when no runner, glob, or loop reaches the file; such a test only looks like coverage.
 - Flag committed artifacts that no code or test reads: evidence logs, reports, generated outputs, and local venvs or caches.
 - Flag a PR body that presents a script or run that CI does not run as lasting proof (for example "covered by `scripts/foo.py`"). One-off evidence belongs in the body, but it must read as a one-off run with its command and result, not as coverage.
@@ -64,4 +64,8 @@ either changes.
 ## Generated files
 
 - The model catalog is hand-maintained data compiled into the binary: `crates/bh-models/catalog/models.json` and `crates/bh-models/catalog/mcp-services.json` (edit by hand), plus the compiled fallback list `crates/bh-ai/src/models_generated.rs` (hand-written Rust, no generator). Flag edits that would reintroduce a network catalog fetch or a generator.
-- Bulk data files are exempt from the size guidance; the exemption's reason is that the file mirrors an upstream data source.
+- Bulk data files are exempt from the size guidance.
+
+## Naming
+
+- The product is Beehive (binary `beehive`, `BEEHIVE_*` env, `~/.beehive`). Flag any other product name in new code, docs, or user-visible strings. Old spellings may only appear as read-only serde aliases for persisted data (theme `prime`, manifest key `pi`, MCP catalog `prime`/`prime-restricted`); new data is always written with the Beehive spelling.

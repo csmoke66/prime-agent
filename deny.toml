@@ -1,4 +1,4 @@
-# cargo-deny configuration for the prime-agent Rust workspace.
+# cargo-deny configuration for the beehive Rust workspace.
 # Runs in CI (ci.yml) and locally via `make deny`.
 
 [graph]

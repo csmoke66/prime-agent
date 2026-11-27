@@ -159,8 +159,8 @@ class Client:
 
 def run_case(binary, root, observation):
     env = env_for(root)
-    env['PRIME_AGENT_MODEL_PROVIDER'] = 'fixture'
-    env['PRIME_AGENT_MODEL'] = 'facts-text'
+    env['BEEHIVE_MODEL_PROVIDER'] = 'fixture'
+    env['BEEHIVE_MODEL'] = 'facts-text'
     server = Server()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

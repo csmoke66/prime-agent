@@ -3,8 +3,7 @@
 
 Offline: the fixture mode must produce assets that pass the FULL validation
 gates, the packer must hard-fail on missing/invalid assets (negative tests),
-network mode is verified against a local HTTP server (byte parity, auth
-header, redirect refusal, size cap), and the assets must land in the package
+and the assets must land in the package
 layout the installer expects (assemble + verify against a synthetic repo
 tree, including the commit-stamped continuous flow).
 
@@ -14,7 +13,6 @@ Run: python3 scripts/release/test_catalog_assets.py  (or: make catalog-assets-ga
 from __future__ import annotations
 
 import contextlib
-import http.server
 import io
 import json
 import os
@@ -24,7 +22,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -46,14 +43,13 @@ FAKE_CARGO_ABOUT_DIR = SCRIPTS_DIR / "testdata" / "bin"
 
 HOST_TARGET = "x86_64-unknown-linux-gnu"
 # Archives carry the TS platform alias (the name the update flow's channel
-# manifest requires): prime-agent-<version>-<platform>.tar.gz.
+# manifest requires): beehive-<version>-<platform>.tar.gz.
 HOST_ARCHIVE_PLATFORM = TARGET_ALIASES[HOST_TARGET]
 
 
 def run_cli(script, args, env_extra=None, cwd=None):
     env = dict(os.environ)
     env.pop("GITHUB_TOKEN", None)
-    env.pop("PRIME_CATALOG_REPO_TOKEN", None)
     env["PATH"] = f"{FAKE_CARGO_ABOUT_DIR}{os.pathsep}{env['PATH']}"
     if env_extra:
         env.update(env_extra)
@@ -61,93 +57,6 @@ def run_cli(script, args, env_extra=None, cwd=None):
         [sys.executable, str(script), *args],
         capture_output=True, text=True, env=env, cwd=cwd or REPO, check=False,
     )
-
-
-class RecordingServer:
-    """A local HTTP stand-in for the catalog repo (never touches the network)."""
-
-    def __init__(self, routes):
-        self.seen_headers = []
-        handler = self._make_handler(routes)
-        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.port = self.server.server_address[1]
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-
-    def _make_handler(self, routes):
-        seen = self.seen_headers
-        outer = self
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                seen.append(dict(self.headers))
-                route = routes.get(self.path)
-                if route is None:
-                    self.send_response(404)
-                    self.send_header("content-length", "0")
-                    self.end_headers()
-                    return
-                body, headers, status = route
-                self.send_response(status)
-                for name, value in headers.items():
-                    self.send_header(name, value)
-                self.send_header("content-length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *args):
-                pass
-
-        return Handler
-
-    @property
-    def base(self):
-        return f"http://127.0.0.1:{self.port}"
-
-    def stop(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=5)
-
-
-class DripServer:
-    """A response that always has another chunk on the way (the slow-drip
-    shape): individual reads never hit the socket timeout, so only a TOTAL
-    deadline can stop the fetch."""
-
-    def __init__(self, interval=0.3, chunk=b"x" * 1024):
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                # Under the 20 MiB cap so the size pre-check passes and the
-                # read loop actually runs: only the deadline can end it (the
-                # drip never reaches the advertised length in time).
-                self.send_header("content-length", str(4 * 1024 * 1024))
-                self.end_headers()
-                try:
-                    while True:
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
-                        time.sleep(interval)
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
-
-            def log_message(self, *args):
-                pass
-
-        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.port = self.server.server_address[1]
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-
-    @property
-    def base(self):
-        return f"http://127.0.0.1:{self.port}"
-
-    def stop(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=5)
 
 
 class SyntheticRepo:
@@ -167,20 +76,20 @@ class SyntheticRepo:
         (runtime / "src" / "rlm").mkdir(parents=True)
         (runtime / "src" / "rlm" / "repl.py").write_text("# fixture REPL\n")
         # The exe-adjacent kernel runtime tree package_release.py stages.
-        kernel = root / "prime-agent-runtime"
+        kernel = root / "beehive-runtime"
         (kernel / "src" / "rlm").mkdir(parents=True)
         (kernel / "pyproject.toml").write_text("[project]\nname='rlm'\n")
         (kernel / "src" / "rlm" / "repl.py").write_text("# repl\n")
         printed = version if sha is None else f"{version}-continuous.{sha}"
         (runtime / "src" / "repl.py").write_text("# repl\n")
-        source = root / "prime-agent.c"
+        source = root / "beehive.c"
         source.write_text(f'#include <stdio.h>\nint main(void) {{ puts("{printed}"); return 0; }}\n')
-        self.raw_binary = root / "bin" / "cargo-prime-agent"
+        self.raw_binary = root / "bin" / "cargo-beehive"
         self.raw_binary.parent.mkdir()
         subprocess.run(["gcc", "-g", "-Wl,--build-id", "-o",
                         str(self.raw_binary), str(source)], check=True)
-        self.binary = root / "bin" / "prime-agent"
-        self.decoder = root / "bin" / f"prime-agent-{version}-{HOST_ARCHIVE_PLATFORM}.debug.gz"
+        self.binary = root / "bin" / "beehive"
+        self.decoder = root / "bin" / f"beehive-{version}-{HOST_ARCHIVE_PLATFORM}.debug.gz"
         split = run_cli(SCRIPTS_DIR / "split_debug.py", [
             "--binary", str(self.raw_binary), "--shipped", str(self.binary),
             "--out", str(self.binary.parent), "--version", version, "--target", HOST_TARGET])
@@ -414,7 +323,7 @@ class CatalogDirMode(unittest.TestCase):
         bodies = bundle_catalog.fixture_catalog_bodies()
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            checkout = tmp / "prime-agent-catalog"
+            checkout = tmp / "beehive-catalog"
             (checkout / "models").mkdir(parents=True)
             (checkout / "plugins").mkdir()
             (checkout / "models" / "catalog.v1.json").write_text(
@@ -440,205 +349,6 @@ class CatalogDirMode(unittest.TestCase):
             self.assertIn("missing", broken.stderr)
 
 
-class NetworkMode(unittest.TestCase):
-
-    def setUp(self):
-        bodies = bundle_catalog.fixture_catalog_bodies()
-        no_newline = bodies["models.bundled.json"].rstrip("\n")
-        self.server = RecordingServer({
-            "/models/catalog.v1.json": (no_newline.encode(), {}, 200),
-            "/plugins/catalog.v2.json": (bodies["mcp-services.bundled.json"].encode(), {}, 200),
-            "/moved": (b"gone", {"location": "/models/catalog.v1.json"}, 302),
-            "/huge": (b"x" * 1024,
-                      {"content-length": str(bundle_catalog.MAX_REMOTE_CATALOG_BYTES + 1)},
-                      200),
-        })
-
-    def tearDown(self):
-        self.server.stop()
-
-    def _generate(self, out, env_extra=None, extra=()):
-        return run_cli(BUNDLER, [
-            "generate", "--network",
-            "--models-url", f"{self.server.base}/models/catalog.v1.json",
-            "--mcp-services-url", f"{self.server.base}/plugins/catalog.v2.json",
-            "--out", str(out), *extra,
-        ], env_extra=env_extra)
-
-    def test_network_fetch_is_byte_identical_and_normalizes_newlines(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "assets"
-            result = self._generate(out)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(
-                (out / "models.bundled.json").read_text(),
-                bundle_catalog.fixture_catalog_bodies()["models.bundled.json"])
-            self.assertEqual(
-                (out / "mcp-services.bundled.json").read_text(),
-                bundle_catalog.fixture_catalog_bodies()["mcp-services.bundled.json"])
-
-    def test_network_sends_bearer_only_when_configured(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "assets"
-            # Without a token: no Authorization header.
-            self.server.seen_headers.clear()
-            result = self._generate(out)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue(self.server.seen_headers)
-            self.assertTrue(all(
-                "Authorization" not in headers for headers in self.server.seen_headers))
-            # With GITHUB_TOKEN: Bearer rides both fetches.
-            self.server.seen_headers.clear()
-            result = self._generate(Path(tmp) / "assets2",
-                                    env_extra={"GITHUB_TOKEN": "sekrit"})
-            self.assertEqual(result.returncode, 0, result.stderr)
-            auth_headers = [h.get("Authorization") for h in self.server.seen_headers]
-            self.assertEqual(auth_headers, ["Bearer sekrit", "Bearer sekrit"])
-
-    def test_network_failures_are_hard_failures(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "assets"
-            # 404 -> hard fail with the private-repo hint.
-            result = run_cli(BUNDLER, ["generate", "--network",
-                                       "--models-url", f"{self.server.base}/missing",
-                                       "--mcp-services-url",
-                                       f"{self.server.base}/plugins/catalog.v2.json",
-                                       "--out", str(out)])
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("HTTP 404", result.stderr)
-            # Redirects are refused (a moved catalog is a client change).
-            result = run_cli(BUNDLER, ["generate", "--network",
-                                       "--models-url", f"{self.server.base}/moved",
-                                       "--mcp-services-url",
-                                       f"{self.server.base}/plugins/catalog.v2.json",
-                                       "--out", str(out)])
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("refused redirect", result.stderr)
-            # Oversized content-length is refused up front.
-            result = run_cli(BUNDLER, ["generate", "--network",
-                                       "--models-url", f"{self.server.base}/huge",
-                                       "--mcp-services-url",
-                                       f"{self.server.base}/plugins/catalog.v2.json",
-                                       "--out", str(out)])
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("too large", result.stderr)
-            # No partial output may be left behind by a failed fetch.
-            self.assertFalse((out / "models.bundled.json").exists())
-
-    def test_conflicting_modes_are_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result = run_cli(BUNDLER, ["generate", "--fixture", "--network",
-                                      "--out", str(Path(tmp) / "assets")])
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("mutually exclusive", result.stderr)
-
-    def test_failed_mcp_fetch_leaves_the_previous_snapshot_intact(self):
-        """Both bodies are fetched before either target is replaced: a
-        failed MCP fetch must not leave a mixed snapshot (fresh models file
-        beside the previous services file)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "assets"
-            first = self._generate(out)
-            self.assertEqual(first.returncode, 0, first.stderr)
-            models_before = (out / "models.bundled.json").read_text()
-            services_before = (out / "mcp-services.bundled.json").read_text()
-            broken = RecordingServer({
-                "/models/catalog.v1.json": (models_before.encode(), {}, 200),
-                "/plugins/catalog.v2.json": (b"gone", {}, 404),
-            })
-            try:
-                result = run_cli(BUNDLER, [
-                    "generate", "--network",
-                    "--models-url", f"{broken.base}/models/catalog.v1.json",
-                    "--mcp-services-url", f"{broken.base}/plugins/catalog.v2.json",
-                    "--out", str(out)])
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("HTTP 404", result.stderr)
-            finally:
-                broken.stop()
-            self.assertEqual((out / "models.bundled.json").read_text(),
-                             models_before)
-            self.assertEqual((out / "mcp-services.bundled.json").read_text(),
-                             services_before)
-
-    def test_transient_fetch_failures_retry_and_hard_failures_do_not(self):
-        """A 503 is retried inside fetch_catalog; a 404 fails on the first
-        request. Validation never retries: it runs after the fetch."""
-        body = bundle_catalog.fixture_catalog_bodies()["models.bundled.json"]
-        attempts = []
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                attempts.append(self.path)
-                flaky = self.path == "/flaky" and attempts.count("/flaky") == 1
-                status = 503 if flaky else (200 if self.path == "/flaky" else 404)
-                payload = body.encode() if status == 200 else b""
-                self.send_response(status)
-                self.send_header("content-length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-
-            def log_message(self, *args):
-                pass
-
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        try:
-            with contextlib.redirect_stderr(io.StringIO()) as captured, \
-                    mock.patch.object(bundle_catalog, "FETCH_RETRY_BACKOFF_SECONDS", (0, 0)):
-                self.assertEqual(bundle_catalog.fetch_catalog(f"{base}/flaky", "model"), body)
-            self.assertIn("HTTP 503", captured.getvalue())
-            self.assertEqual(attempts, ["/flaky", "/flaky"])
-            attempts.clear()
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                bundle_catalog.fetch_catalog(f"{base}/missing", "model")
-            self.assertEqual(attempts, ["/missing"])
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
-
-    def test_resolve_ref_returns_the_catalog_commit(self):
-        sha = "01f4d46dd5157ec73f8faf440214088237c81d59"
-        server = RecordingServer({
-            "/commit": (sha.encode(), {}, 200),
-            "/garbage": (b"<html>rate limited</html>", {}, 200),
-        })
-        try:
-            self.assertEqual(bundle_catalog.resolve_catalog_ref(f"{server.base}/commit"), sha)
-            self.assertEqual(server.seen_headers[-1]["Accept"], "application/vnd.github.sha")
-            with contextlib.redirect_stderr(io.StringIO()) as captured, \
-                    self.assertRaises(SystemExit):
-                bundle_catalog.resolve_catalog_ref(f"{server.base}/garbage")
-            self.assertIn("not a commit id", captured.getvalue())
-        finally:
-            server.stop()
-
-    def test_network_fetch_enforces_a_total_deadline(self):
-        """The 5 s timeout is the TOTAL fetch budget, not per blocking op: a
-        slow-drip server that always delivers another chunk keeps every
-        individual read alive, so only the absolute deadline ends it."""
-        drip = DripServer()
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "assets"
-                started = time.monotonic()
-                result = run_cli(BUNDLER, [
-                    "generate", "--network",
-                    "--models-url", f"{drip.base}/models/catalog.v1.json",
-                    "--mcp-services-url", f"{drip.base}/plugins/catalog.v2.json",
-                    "--out", str(out)])
-                elapsed = time.monotonic() - started
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("hard timeout", result.stderr)
-                self.assertLess(elapsed, 60,
-                                "the deadline must bound the total fetch time")
-        finally:
-            drip.stop()
-
-
 class PackerGates(unittest.TestCase):
     """The release packer must hard-fail without validated assets, and valid
     assets must land in the tarball layout the installer expects."""
@@ -662,7 +372,7 @@ class PackerGates(unittest.TestCase):
         self.assertIn("missing bundled catalog assets", result.stderr)
         # Nothing was packed: no archive, no manifest.
         self.assertFalse(
-            (out / f"prime-agent-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz").exists())
+            (out / f"beehive-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz").exists())
         self.assertFalse((out / "manifest.json").exists())
 
     def test_packers_never_ship_generated_skill_caches(self):
@@ -672,7 +382,7 @@ class PackerGates(unittest.TestCase):
         (self.repo.root / "skills" / "stale.pyc").write_bytes(b"generated bytecode")
         assembled = self.repo.assemble(self.tmp / "assemble-caches", catalog_assets=self.assets)
         self.assertEqual(assembled.returncode, 0, assembled.stderr)
-        archive = self.tmp / "assemble-caches" / f"prime-agent-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz"
+        archive = self.tmp / "assemble-caches" / f"beehive-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz"
         with tarfile.open(archive) as tar:
             self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in tar.getnames()))
         poisoned = self.tmp / "poisoned"
@@ -698,7 +408,7 @@ class PackerGates(unittest.TestCase):
                 "--out-dir", str(self.tmp / "package-caches")]
         packaged = run_cli(PACKER, args)
         self.assertEqual(packaged.returncode, 0, packaged.stderr)
-        staged = self.tmp / "package-caches" / "prime-agent-9.9.9-linux-x64" / "skills"
+        staged = self.tmp / "package-caches" / "beehive-9.9.9-linux-x64" / "skills"
         self.assertFalse(any("__pycache__" in str(path) or path.suffix == ".pyc"
                              for path in staged.rglob("*")))
 
@@ -742,7 +452,7 @@ class PackerGates(unittest.TestCase):
         result = self.repo.assemble(out, catalog_assets=self.assets)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("bundled catalog assets", result.stdout)
-        archive = out / f"prime-agent-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz"
+        archive = out / f"beehive-9.9.9-{HOST_ARCHIVE_PLATFORM}.tar.gz"
         self.assertTrue(archive.is_file())
         with tarfile.open(archive) as tar:
             names = tar.getnames()
@@ -784,12 +494,12 @@ class PackerGates(unittest.TestCase):
         self.assertIn("missing bundled catalog assets", without.stderr)
         with_assets = run_cli(PACKER, [*args, "--catalog-assets", str(self.assets)])
         self.assertEqual(with_assets.returncode, 0, with_assets.stderr)
-        staged = self.tmp / "release-package" / "prime-agent-9.9.9-linux-x64"
+        staged = self.tmp / "release-package" / "beehive-9.9.9-linux-x64"
         self.assertTrue((staged / "models.bundled.json").is_file())
         self.assertTrue((staged / "mcp-services.bundled.json").is_file())
 
     def test_kernel_packer_rejects_decoder_leak(self):
-        leaked = self.repo.root / "prime-agent-runtime" / "leak.debug.gz"
+        leaked = self.repo.root / "beehive-runtime" / "leak.debug.gz"
         leaked.write_bytes(b"decoder-like payload")
         out = self.tmp / "release-package-leak"
         result = run_cli(PACKER, ["--root", str(self.repo.root), "--version", "9.9.9",
@@ -816,11 +526,11 @@ class PackerGates(unittest.TestCase):
         wrong_dir.mkdir()
         wrong_source = wrong_dir / "wrong.c"
         wrong_source.write_text('int main(void) { return 17; }\n')
-        wrong_raw = wrong_dir / "cargo-prime-agent"
+        wrong_raw = wrong_dir / "cargo-beehive"
         subprocess.run(["gcc", "-g", "-Wl,--build-id", "-o", str(wrong_raw),
                         str(wrong_source)], check=True)
         split = run_cli(SCRIPTS_DIR / "split_debug.py", [
-            "--binary", str(wrong_raw), "--shipped", str(wrong_dir / "prime-agent"),
+            "--binary", str(wrong_raw), "--shipped", str(wrong_dir / "beehive"),
             "--out", str(wrong_dir), "--version", "9.9.9", "--target", HOST_TARGET])
         self.assertEqual(split.returncode, 0, split.stderr)
         wrong_decoder = wrong_dir / self.repo.decoder.name

@@ -237,6 +237,43 @@ async fn heartbeat_fire_parks_the_labeled_preview_on_its_lane() {
     }
 }
 
+/// A heartbeat fire never lifts the Esc-abort suspension: a model-scheduled
+/// wake must not undo the user's stop.
+#[tokio::test]
+async fn a_heartbeat_fire_keeps_the_abort_suspension() {
+    let dir = std::env::temp_dir().join(format!("pa-sched-fire-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let session = write_active_session(&dir);
+    let core = Arc::new(std::sync::Mutex::new(
+        crate::worker::SessionCore::test_core(None, "/w".to_string()),
+    ));
+    core.lock().unwrap().queued_input_suspended = true;
+    let hooks = Arc::new(QueueHooks {
+        core: Arc::clone(&core),
+        work_notify: Arc::new(Notify::new()),
+        user_bash: Arc::new(crate::user_bash::UserBash::new()),
+        store: Arc::new(AgentCronJobStore::for_session_artifacts()),
+        recovery: Arc::new(std::sync::Mutex::new(None)),
+        inbox_seam: Mutex::new(None),
+    });
+    let job = heartbeat_job("hb-1", "check in", DeliveryMode::Steer, &session);
+    let run = tokio::spawn({
+        let hooks = Arc::clone(&hooks);
+        async move { bh_core::cron::scheduler::AgentCronSchedulerHooks::run_job(&*hooks, &job).await }
+    });
+    // The fire parks its row before its settle wait; popping it releases the wait.
+    let park_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if core.lock().unwrap().steering.pop_front().is_some() {
+            break;
+        }
+        assert!(std::time::Instant::now() < park_deadline, "the fire never parked");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    run.await.unwrap().expect("run_job");
+    assert!(core.lock().unwrap().queued_input_suspended);
+}
+
 /// The failure propagation behind the backoff (dogfood incident: a failing
 /// heartbeat re-fired ~120x): a real error settles as a run, abort/withdrawal
 /// as a clean run and a skip.

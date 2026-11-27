@@ -1,5 +1,5 @@
 //! The live session's state block.
-use super::QueuedItem;
+use super::{QueuePriority, QueuedItem};
 
 use std::collections::VecDeque;
 
@@ -92,6 +92,13 @@ pub(crate) struct SessionCore {
     /// by the resume sites: `steer`/`follow_up`, `streamingBehavior`, `resume_queue`,
     /// a queued-message mutation, a cron/heartbeat fire, a compact with an active goal.
     pub(crate) queued_input_suspended: bool,
+    /// Consecutive wake turns started only by background-origin items that ended with
+    /// unread inbox mail the agent never read. At [`IGNORED_WAKE_LIMIT`] the session
+    /// holds background wakes (see [`Self::background_wakes_paused`]). Cleared by a
+    /// human-origin turn or a drained `rlm.inbox.read`; not persisted.
+    pub(crate) ignored_background_wakes: u32,
+    /// A drained inbox read landed since the running turn was picked up.
+    pub(crate) inbox_read_since_pickup: bool,
     /// Restored next-turn rows (TS `_pendingNextTurnMessages`,
     /// `restore_next_turn`): delivered as prefix rows with the next turn.
     pub(crate) pending_next_turn: Vec<Value>,
@@ -108,7 +115,37 @@ pub(crate) struct SessionCore {
     pub(super) compaction_epoch: Option<String>,
 }
 
+/// Ignored wake turns in a row after which background wakes pause.
+pub(crate) const IGNORED_WAKE_LIMIT: u32 = 3;
+
 impl SessionCore {
+    /// Whether background-origin items are held instead of starting a turn.
+    pub(crate) fn background_wakes_paused(&self) -> bool {
+        self.ignored_background_wakes >= IGNORED_WAKE_LIMIT
+    }
+
+    /// The runner's gate: a paused session starts no turn unless a queued item wakes
+    /// it. Human rows and pinned rows (high-priority agent messages) wake it.
+    pub(crate) fn holds_background_wakes(&self) -> bool {
+        self.background_wakes_paused()
+            && self
+                .steering
+                .iter()
+                .chain(self.follow_up.iter())
+                .all(|item| item.priority == QueuePriority::Background)
+    }
+
+    /// Account one settled wake turn started only by background items: it was
+    /// ignored when unread mail remains, the agent read none of it, and the user
+    /// did not abort. Returns whether this turn reached the pause limit.
+    pub(crate) fn settle_background_wake(&mut self, unread: usize) -> bool {
+        if unread == 0 || self.inbox_read_since_pickup || self.abort_requested {
+            return false;
+        }
+        self.ignored_background_wakes += 1;
+        self.ignored_background_wakes == IGNORED_WAKE_LIMIT
+    }
+
     /// Whether a turn, compaction, or queued action is in flight (TS
     /// `hasOngoingSessionWork`); the supervisor-lost exit waits for it to settle.
     pub(crate) fn has_ongoing_work(&self) -> bool {
@@ -250,6 +287,8 @@ impl SessionCore {
             scoped_models: Vec::new(),
             retry_abort_requested: false,
             queued_input_suspended: false,
+            ignored_background_wakes: 0,
+            inbox_read_since_pickup: false,
             pending_next_turn: Vec::new(),
             active_action: None,
             compaction_active_ms,

@@ -335,6 +335,8 @@ impl Worker {
             scoped_models: Vec::new(),
             retry_abort_requested: false,
             queued_input_suspended: false,
+            ignored_background_wakes: 0,
+            inbox_read_since_pickup: false,
             pending_next_turn: Vec::new(),
             active_action: None,
             running_tool_calls: std::collections::HashSet::new(),

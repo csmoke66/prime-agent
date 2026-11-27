@@ -1,0 +1,1 @@
+- Pause background wakes after three ignored wake turns in a row (inbox notices, reminders, heartbeats, continuations); a user message or an inbox read resumes them, a high-priority agent message still wakes, and the agents view shows "background wakes paused (N unread)". Heartbeat fires no longer lift an Esc stop.

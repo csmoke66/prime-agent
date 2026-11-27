@@ -1,11 +1,11 @@
-//! Real-admission headless e2e for the inbox rows: one arrival notice and
-//! one reminder ride the REAL daemon path — the kernel's detached bash
-//! completes, the inbox store takes the message, `admit_inbox_notice`
-//! queues its custom row and `admit_inbox_reminder` its user message, and
-//! the wake turns deliver them — then the headless TUI attaches to that
-//! live session and renders the arrival as its OWN attributed row class
-//! (the envelope summary line plus the always-visible guttered body) and
-//! the reminder as the user message asking for the read. The bh-tui
+//! Real-admission headless e2e for the inbox notice rows: one arrival
+//! notice and one reminder notice ride the REAL daemon path — the
+//! kernel's detached bash completes, the inbox store takes the message,
+//! `admit_inbox_notice`/`admit_inbox_reminder` queue their custom rows,
+//! and the wake turns deliver them — then the headless TUI attaches to
+//! that live session and renders them as their OWN attributed row class
+//! (the envelope summary line plus the always-visible guttered body),
+//! never as typed user messages (the operator directive). The bh-tui
 //! mock pins cover the decode arms; THIS pin drives admission itself
 //! end-to-end.
 // Pedantic-gate dispositions: the flow is intentionally linear
@@ -511,37 +511,30 @@ async fn admitted_notices_render_as_their_own_rows_never_user_messages() {
             .then_some(messages)
     });
 
-    // THE REAL-PATH ROW PINS: the arrival notice carries the inbox system's
-    // attribution; the reminder is a user message asking for the read, so it
-    // is the latest user instruction.
+    // THE REAL-PATH ROW PINS: the delivered notice rows carry the inbox
+    // system's attribution — never the user role.
     let rows = client.messages(&active_id);
     let delivered = delivered_rows(&rows);
     let (arrival_text, arrival_row) = notice_row(&delivered, "[inbox ");
     let (reminder_text, reminder_row) = notice_row(&delivered, "[inbox reminder]");
-    assert_eq!(
-        arrival_row["role"], "custom",
-        "the arrival notice row's role: {arrival_row}"
-    );
-    assert_eq!(
-        arrival_row["customType"], "inbox_notice",
-        "the arrival notice row's customType: {arrival_row}"
-    );
-    assert_eq!(
-        arrival_row["details"]["sender"], "Agent inbox",
-        "the arrival notice row's sender identity: {arrival_row}"
-    );
-    assert_eq!(
-        arrival_row["details"]["class"], "arrival",
-        "the arrival notice row's class word: {arrival_row}"
-    );
-    assert_eq!(
-        reminder_row["role"], "user",
-        "the reminder row's role: {reminder_row}"
-    );
-    assert!(
-        reminder_text.ends_with("Check your inbox now."),
-        "the reminder asks for the read: {reminder_text}"
-    );
+    for (row, class) in [(arrival_row, "arrival"), (reminder_row, "reminder")] {
+        assert_eq!(
+            row["role"], "custom",
+            "the {class} notice row's role: {row}"
+        );
+        assert_eq!(
+            row["customType"], "inbox_notice",
+            "the {class} notice row's customType: {row}"
+        );
+        assert_eq!(
+            row["details"]["sender"], "Agent inbox",
+            "the {class} notice row's sender identity: {row}"
+        );
+        assert_eq!(
+            row["details"]["class"], class,
+            "the {class} notice row's class word: {row}"
+        );
+    }
 
     // THE HEADLESS RENDER: the TUI attaches to the live session and
     // paints the transcript the real daemon delivered.
@@ -568,33 +561,38 @@ async fn admitted_notices_render_as_their_own_rows_never_user_messages() {
         "the attach held the live session"
     );
     let last = outcome.frames.last().expect("a settled frame");
-    // The arrival envelope summary line: the inbox system's own row class.
+    // The envelope summary lines: the inbox system's own row class, both
+    // notice classes delivered by the real admission.
     assert!(
         last.contains("\u{2709} Agent inbox \u{b7} arrival"),
         "the arrival summary line renders: {last}"
     );
-    // The body stays visible under the gutter: the count and the read
+    assert!(
+        last.contains("\u{2709} Agent inbox \u{b7} reminder"),
+        "the reminder summary line renders: {last}"
+    );
+    // The bodies stay visible under the gutter: the counts and the read
     // call-to-action never hide behind a collapsed-only shape.
     assert!(
         last.contains(&guttered_head(arrival_text)),
         "the arrival body renders guttered: {last}"
     );
     assert!(
-        last.contains("Check your inbox now."),
-        "the reminder renders as the user message: {last}"
+        last.contains(&guttered_head(reminder_text)),
+        "the reminder body renders guttered: {last}"
     );
     assert!(
         last.contains("rlm.inbox.read()"),
         "the read hint stays visible: {last}"
     );
-    // The user message keeps its user block; the arrival notice renders only
-    // in its own guttered class, never as typed user input.
+    // The user message keeps its user block; the notices render only in
+    // their own guttered class, never as typed user input.
     assert!(
         last.contains("start the detached handle and finish"),
         "the user message still renders: {last}"
     );
     for row in last.split('\n') {
-        if row.contains("[inbox") && !row.contains("[inbox reminder]") {
+        if row.contains("[inbox") {
             assert!(
                 row.contains("\u{2570}\u{2500}"),
                 "the notice text renders only in its own guttered class: {row}"

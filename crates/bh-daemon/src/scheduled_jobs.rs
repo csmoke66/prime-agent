@@ -141,18 +141,14 @@ impl QueueHooks {
         else {
             return false;
         };
-        // TS cron fires resume the suspension before admission
-        // (`resumeIfIdle: true`): a fire on a post-abort/post-compact
-        // session is a resume site (the runner refuses suspended lanes).
         {
-            let mut core = self
+            let core = self
                 .core
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if !core.created || core.shutdown_requested || job.status != JobStatus::Active {
                 return false;
             }
-            core.queued_input_suspended = false;
         }
         // A heartbeat rides its delivery-mode lane; the wake row keeps it.
         let lane = if matches!(job.delivery_mode, Some(DeliveryMode::FollowUp)) {
@@ -215,9 +211,6 @@ impl AgentCronSchedulerHooks for QueueHooks {
             if !core.created || core.shutdown_requested || job.status != JobStatus::Active {
                 return Ok(Some("skipped"));
             }
-            // TS cron fires resume the suspension before admission (`resumeIfIdle: true`): a
-            // fire on a post-abort/post-compact session is a resume site.
-            core.queued_input_suspended = false;
             // The TS `heartbeat:<id>` queue key: a later fire replaces the queued one instead of
             // stacking.
             if let Some(key) = &queue_key {

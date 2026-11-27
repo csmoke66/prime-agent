@@ -5,7 +5,7 @@ use super::{
     emit_refinement_event_for_session, emit_refinement_row, gather_delivery_batch, json, oneshot,
     persist_custom_row, session_snapshot, take_held_low_notice, AssistantSnapshot, DaemonOutbound,
     EngineEvent, EventPump, Lane, Map, Notify, OutboundFrame, PromptRequest, QueueCheckpoint,
-    QueuedItem, Result, SessionActionSnapshot, SessionCore, SessionEngine, TurnSettle, Value,
+    QueuePriority, QueuedItem, Result, SessionActionSnapshot, SessionCore, SessionEngine, TurnSettle, Value,
     WorkerRecoveryJournal, ABORTED_TURN_SETTLE_ERROR, INBOX_LOW_PIGGYBACK_QUEUE_KEY,
 };
 
@@ -71,6 +71,21 @@ impl TurnRunner {
         }
     }
 
+    /// Settle a wake turn started only by background items: unread mail the agent
+    /// never read makes it an ignored wake, and the limit-th one in a row pauses
+    /// background wakes.
+    async fn count_ignored_wake(&self) {
+        let unread = self
+            .agent_engine
+            .as_ref()
+            .and_then(|engine| engine.inbox())
+            .map_or(0, |inbox| inbox.count().0);
+        if self.core.lock().unwrap().settle_background_wake(unread) {
+            self.engine.note_background_wakes_paused().await;
+            self.push_roster_delta();
+        }
+    }
+
     pub(super) async fn run(self) {
         loop {
             let engine = self.engine.clone();
@@ -85,7 +100,14 @@ impl TurnRunner {
                 }
                 // A cleared suspension alone must not admit: a manual
                 // compaction is a busy state the resume sites do NOT clear.
-                if self.input_pauses.paused() || core.queued_input_suspended || core.compacting {
+                // Paused background wakes stay queued until a waking item arrives: a human
+                // or pinned row, or an arrival batch holding a high-priority message.
+                let background_held = core.holds_background_wakes();
+                if self.input_pauses.paused()
+                    || core.queued_input_suspended
+                    || core.compacting
+                    || background_held
+                {
                     core.busy = false;
                     None
                 } else if core.steering.front().is_some() {
@@ -126,8 +148,15 @@ impl TurnRunner {
                 // reject a browse edit).
                 let visible_index = items.iter().position(|item| item.queue_visible);
                 let anchor = visible_index.map(|index| &items[index]);
+                let background_only = items
+                    .iter()
+                    .all(|item| item.priority == QueuePriority::Background);
                 {
                     let mut core = self.core.lock().unwrap();
+                    core.inbox_read_since_pickup = false;
+                    if !background_only {
+                        core.ignored_background_wakes = 0;
+                    }
                     if let Some(anchor) = anchor {
                         core.active_action = Some(crate::types::SessionActionActive {
                             kind: "turn".to_string(),
@@ -143,6 +172,9 @@ impl TurnRunner {
                 }
                 self.push_roster_delta();
                 self.run_turn(engine, lane, items).await;
+                if background_only {
+                    self.count_ignored_wake().await;
+                }
             } else {
                 self.idle_notify.notify_waiters();
                 // Every park re-stamps the activity end: the idle-eviction

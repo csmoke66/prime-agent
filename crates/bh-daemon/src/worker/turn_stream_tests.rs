@@ -15,6 +15,7 @@ mod interleave;
 mod lane_behavior;
 mod park;
 mod queue;
+mod wake_pause;
 
 /// A minimal turn runner over a fresh session core: exactly what `run_turn` touches.
 fn burst_runner(engine: Arc<dyn SessionEngine>) -> TurnRunner {
@@ -52,6 +53,8 @@ fn burst_runner(engine: Arc<dyn SessionEngine>) -> TurnRunner {
         scoped_models: Vec::new(),
         retry_abort_requested: false,
         queued_input_suspended: false,
+        ignored_background_wakes: 0,
+        inbox_read_since_pickup: false,
         pending_next_turn: Vec::new(),
         active_action: None,
         running_tool_calls: std::collections::HashSet::new(),

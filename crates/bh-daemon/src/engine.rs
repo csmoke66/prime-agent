@@ -238,6 +238,14 @@ pub trait SessionEngine: Send + Sync {
         Box::pin(std::future::ready(()))
     }
 
+    /// Count one background-wake pause on the session's telemetry
+    /// (`background_wake_pause_count` on `agent session ended`).
+    fn note_background_wakes_paused(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(std::future::ready(()))
+    }
+
     /// The `(provider, model id)` pair the session will run on; fresh
     /// daemon sessions record it in their creation prefix (`model_change`).
     fn creation_model(&self) -> Option<(String, String)> {

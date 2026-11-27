@@ -321,6 +321,7 @@ pub struct SessionCounters {
 #[derive(Default)]
 struct CounterValues {
     skill_use_count: u64,
+    background_wake_pause_count: u64,
     mcp_connector_use_count: u64,
     kernel_bootstrap_count: u64,
     kernel_bootstrap_cold_count: u64,
@@ -382,6 +383,10 @@ impl SessionCounters {
         self.with(|values| {
             for (key, value) in [
                 ("skill_use_count", values.skill_use_count),
+                (
+                    "background_wake_pause_count",
+                    values.background_wake_pause_count,
+                ),
                 ("mcp_connector_use_count", values.mcp_connector_use_count),
                 ("kernel_bootstrap_count", values.kernel_bootstrap_count),
                 (
@@ -695,6 +700,13 @@ impl SessionTelemetry {
     /// uploads.
     pub fn note_skill_used(&self) {
         self.counters.with(|values| values.skill_use_count += 1);
+    }
+
+    /// Background wakes paused after repeated ignored wake turns, counted as
+    /// `background_wake_pause_count` on `agent session ended`.
+    pub fn note_background_wakes_paused(&self) {
+        self.counters
+            .with(|values| values.background_wake_pause_count += 1);
     }
 
     /// One durable child-usage attribution row landed in the parent

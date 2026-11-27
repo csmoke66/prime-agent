@@ -103,6 +103,10 @@ pub struct SessionSummary {
     /// ended.
     #[serde(default)]
     pub has_running_subagents: bool,
+    /// Background wakes are paused after repeated ignored wake turns; carries the
+    /// unread inbox count held back. The activity label shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_wakes_paused_unread: Option<u32>,
     pub attached_clients: u32,
     pub message_count: u32,
     pub session_actions: SessionActionSnapshot,

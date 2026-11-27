@@ -318,6 +318,18 @@ impl SessionEngine for AgentSessionEngine {
         })
     }
 
+    fn note_background_wakes_paused(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            let session = self.session.lock().await;
+            if let Some(telemetry) = session.as_deref().and_then(|engine| engine.telemetry.as_ref())
+            {
+                telemetry.note_background_wakes_paused();
+            }
+        })
+    }
+
     fn acp_mcp_manager(
         &self,
     ) -> Option<std::sync::Arc<std::sync::Mutex<bh_core::mcp::McpManager>>> {

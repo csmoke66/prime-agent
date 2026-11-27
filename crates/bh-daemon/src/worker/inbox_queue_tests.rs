@@ -83,6 +83,21 @@ fn routing_state() -> InboxRoutingState {
     )
 }
 
+/// Admit a reminder as the idle-cycle tick does (a reminder never admits during a
+/// turn), then restore the busy flag so the row sits queued behind the turn.
+fn admit_reminder_while_idle(worker: &Worker, notify: &Arc<Notify>, inbox: &Arc<SessionInbox>) {
+    let busy = std::mem::replace(&mut worker.core.lock().unwrap().busy, false);
+    admit_inbox_reminder(
+        &worker.recovery,
+        &worker.core,
+        notify,
+        inbox,
+        || false,
+        None,
+    );
+    worker.core.lock().unwrap().busy = busy;
+}
+
 fn steering_rows(worker: &Worker) -> Vec<(String, Option<String>, bool)> {
     worker
         .core
@@ -209,14 +224,7 @@ async fn low_waits_silently_until_an_unrelated_wake() {
             .is_err(),
         "low does not notify the parked runner"
     );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     assert!(steering_rows(&worker).is_empty(), "low-only reminders stay silent");
 
     let _ = admit_inbox_notice(
@@ -512,36 +520,13 @@ async fn a_delivered_row_starts_a_fresh_batch() {
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 
-/// Admit a reminder as the idle-cycle tick does (a reminder never admits during a
-/// turn), then restore the busy flag so the row sits queued behind the turn.
-fn admit_reminder_while_idle(worker: &Worker, notify: &Arc<Notify>, inbox: &Arc<SessionInbox>) {
-    let busy = std::mem::replace(&mut worker.core.lock().unwrap().busy, false);
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        notify,
-        inbox,
-        || false,
-        None,
-    );
-    worker.core.lock().unwrap().busy = busy;
-}
-
-/// The reminder: an empty inbox admits nothing, an idle unread inbox steers
-/// one user-message reminder that a later reminder replaces, and a busy
-/// session admits none.
+/// The reminder: an empty inbox admits nothing, an unread inbox steers
+/// one reminder row, and a later reminder replaces the queued one.
 #[tokio::test]
 async fn the_reminder_repeats_while_the_inbox_stays_unread() {
     let (worker, inbox, _arrivals, notify) = routing_state();
     worker.dispatch("clear_queue", &json!({})).await;
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     assert!(
         steering_rows(&worker).is_empty(),
         "an empty inbox never reminds"
@@ -553,22 +538,8 @@ async fn the_reminder_repeats_while_the_inbox_stays_unread() {
         ),
         1_000,
     );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     let rows = steering_rows(&worker);
     assert_eq!(rows.len(), 1, "one reminder row, replaced: {rows:?}");
     let (message, _, _) = &rows[0];
@@ -587,37 +558,23 @@ async fn the_reminder_repeats_while_the_inbox_stays_unread() {
         Some("inbox:reminder"),
         "the reminder carries its coalescing key: {queue_key:?}"
     );
-    assert_eq!(
-        custom_message, None,
-        "the reminder delivers as a user message, not a custom row"
-    );
-    assert!(
-        message.ends_with("\nCheck your inbox now."),
-        "the reminder asks the agent to read its inbox: {message}"
-    );
+    let row = custom_message
+        .as_ref()
+        .expect("the reminder row carries its custom twin");
     assert!(
         !message.contains(": waiting"),
         "default priority is a count-only reminder"
     );
+    assert_eq!(row["content"], message.as_str());
+    assert_eq!(row["details"]["class"], "reminder");
     // A running turn reads its own notices: the tick admits nothing.
     {
         let mut core = worker.core.lock().unwrap();
         core.steering.clear();
         core.busy = true;
     }
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
-    let rows = steering_rows(&worker);
-    assert!(
-        rows.is_empty(),
-        "a busy session never gets a reminder: {rows:?}"
-    );
+    admit_inbox_reminder(&worker.recovery, &worker.core, &notify, &inbox, || false, None);
+    assert!(steering_rows(&worker).is_empty(), "a busy session gets no reminder");
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }
 
@@ -718,6 +675,7 @@ async fn a_drained_read_withdraws_its_queued_wake_rows() {
 /// own row stays queued.
 #[tokio::test]
 async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
+    const SENTINEL_TIMESTAMP: u64 = 1;
     let (worker, inbox, arrivals, notify) = routing_state();
     worker.dispatch("clear_queue", &json!({})).await;
     worker.core.lock().unwrap().busy = true;
@@ -764,6 +722,25 @@ async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
         |_, _| None,
         None,
     );
+    // The queued reminder's twin keeps its identity across the re-render
+    // (sender, class, timestamp — the re-render moves only its content).
+    // Pin the timestamp half without racing the millisecond clock:
+    // stamp a sentinel into the queued twin's timestamp BEFORE the
+    // sweep, then expect the sentinel back — a rebuild with
+    // `now_millis()` goes red deterministically (the class half pins
+    // identically).
+    {
+        let mut guard = worker.core.lock().unwrap();
+        let core = &mut *guard;
+        let twin = core
+            .steering
+            .iter_mut()
+            .chain(core.follow_up.iter_mut())
+            .find(|item| item.queue_key.as_deref() == Some(INBOX_REMINDER_QUEUE_KEY))
+            .and_then(|item| item.custom_message.as_mut())
+            .expect("the queued reminder carries its custom twin");
+        twin["timestamp"] = json!(SENTINEL_TIMESTAMP);
+    }
     // The sweep: the live count re-renders the queued reminder.
     withdraw_drained_inbox_notice(
         &worker.recovery,
@@ -789,7 +766,13 @@ async fn a_refill_inside_the_drain_window_rerenders_the_queued_reminder() {
         // The remaining machine notice keeps the default count-only mode.
         assert!(!reminder.message.contains("job three"));
         assert!(!reminder.message.contains("job one") && !reminder.message.contains("job two"));
-        assert!(reminder.message.ends_with("\nCheck your inbox now."));
+        let row = reminder
+            .custom_message
+            .as_ref()
+            .expect("the re-rendered reminder keeps its custom twin");
+        assert_eq!(row["content"], reminder.message);
+        assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
+        assert_eq!(row["details"]["class"], "reminder");
         assert_eq!(
             core.steering
                 .iter()
@@ -890,14 +873,7 @@ async fn a_reminder_racing_a_drained_read_never_queues_a_dead_count() {
             INBOX_REMINDER_CORE_LOCK_GATE.with(|gate| {
                 *gate.borrow_mut() = Some((observed_tx, release_rx));
             });
-            admit_inbox_reminder(
-                &worker.recovery,
-                &worker.core,
-                &notify,
-                &inbox,
-                || false,
-                None,
-            );
+            admit_reminder_while_idle(&worker, &notify, &inbox);
         })
     };
     observed_rx
@@ -1001,14 +977,7 @@ async fn a_collected_handle_drains_its_message_and_drops_the_queued_wake_rows() 
         |_, _| None,
         None,
     );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     let rows = steering_rows(&worker);
     assert_eq!(
         rows.len(),
@@ -1090,7 +1059,10 @@ async fn a_withdrawal_inside_a_covered_batch_rerenders_the_queued_rows() {
         let mut guard = worker.core.lock().unwrap();
         let core = &mut *guard;
         for item in core.steering.iter_mut().chain(core.follow_up.iter_mut()) {
-            if item.queue_key.as_deref() == Some(INBOX_ARRIVAL_QUEUE_KEY) {
+            if matches!(
+                item.queue_key.as_deref(),
+                Some(INBOX_ARRIVAL_QUEUE_KEY | INBOX_REMINDER_QUEUE_KEY)
+            ) {
                 let twin = item
                     .custom_message
                     .as_mut()
@@ -1143,26 +1115,27 @@ async fn a_withdrawal_inside_a_covered_batch_rerenders_the_queued_rows() {
     {
         let core = worker.core.lock().unwrap();
         for item in core.steering.iter().chain(core.follow_up.iter()) {
+            let row = item
+                .custom_message
+                .as_ref()
+                .expect("the re-rendered row keeps its custom twin");
             let key = item
                 .queue_key
                 .as_deref()
                 .expect("the re-rendered rows keep their coalescing keys");
-            if key == INBOX_REMINDER_QUEUE_KEY {
-                assert_eq!(item.custom_message, None, "the reminder is a user message");
-                assert!(!item.message.contains("sender-factory-progress: second"));
-                continue;
-            }
-            assert_eq!(key, INBOX_ARRIVAL_QUEUE_KEY);
-            let row = item
-                .custom_message
-                .as_ref()
-                .expect("the re-rendered arrival keeps its custom twin");
-            assert_eq!(
-                row["details"]["class"],
+            let class = if key == INBOX_ARRIVAL_QUEUE_KEY {
                 bh_types::inbox_notice::INBOX_NOTICE_CLASS_ARRIVAL
-            );
+            } else if key == INBOX_REMINDER_QUEUE_KEY {
+                bh_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER
+            } else {
+                panic!("the re-rendered rows keep their inbox keys: {key}")
+            };
+            assert_eq!(row["details"]["class"], class);
             assert_eq!(row["timestamp"], SENTINEL_TIMESTAMP);
             assert_eq!(row["content"], item.message);
+            if key == INBOX_REMINDER_QUEUE_KEY {
+                assert!(!item.message.contains("sender-factory-progress: second"));
+            }
         }
     }
     // The re-render reached the recovery journal: a crash now revives
@@ -1559,14 +1532,7 @@ async fn a_journal_failure_marks_the_notice_memory_only() {
         "the arrival notice carries the clause: {rows:?}"
     );
     // The reminder wakes with the clause too.
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     let rows = steering_rows(&worker);
     assert_eq!(
         rows.len(),
@@ -1576,7 +1542,7 @@ async fn a_journal_failure_marks_the_notice_memory_only() {
     assert!(
         rows[1]
             .0
-            .contains(bh_core::session_engine::inbox::INBOX_PERSISTENCE_ERROR_CLAUSE),
+            .ends_with(bh_core::session_engine::inbox::INBOX_PERSISTENCE_ERROR_CLAUSE),
         "the reminder carries the clause: {rows:?}"
     );
     // A healed journal keeps the clause: the failed records were never
@@ -1600,14 +1566,7 @@ async fn a_journal_failure_marks_the_notice_memory_only() {
         inbox.persistence_error().is_some(),
         "a healed journal keeps the degradation while its failed records wait"
     );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     let rows = steering_rows(&worker);
     assert_eq!(
         rows.len(),
@@ -1706,7 +1665,7 @@ async fn a_withdrawals_rerender_keeps_the_persistence_error_clause() {
     );
     for (message, _, _) in &rows {
         assert!(
-            message.contains(bh_core::session_engine::inbox::INBOX_PERSISTENCE_ERROR_CLAUSE),
+            message.ends_with(bh_core::session_engine::inbox::INBOX_PERSISTENCE_ERROR_CLAUSE),
             "the re-rendered rows keep the memory-only clause: {rows:?}"
         );
     }
@@ -1788,14 +1747,7 @@ async fn a_reminder_row_moved_to_follow_up_still_coalesces() {
         ),
         1_000,
     );
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     // A journal-revived row: the reminder sits on the follow-up lane,
     // its coalescing key preserved.
     let moved_key = {
@@ -1806,14 +1758,7 @@ async fn a_reminder_row_moved_to_follow_up_still_coalesces() {
         key
     };
     assert_eq!(moved_key.as_deref(), Some(INBOX_REMINDER_QUEUE_KEY));
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
     assert_eq!(
         reminder_rows(&worker),
         1,
@@ -2988,14 +2933,7 @@ async fn the_read_hook_refreshes_the_wake_rows_and_their_action_events() {
         .await;
     assert!(delivered.success, "delivery failed: {delivered:?}");
     assert_eq!(inbox.count().0, 1);
-    admit_inbox_reminder(
-        &worker.recovery,
-        &worker.core,
-        &worker.work_notify,
-        &inbox,
-        || false,
-        None,
-    );
+    admit_reminder_while_idle(&worker, &worker.work_notify, &inbox);
     let delivery_frames = {
         let mut frames = Vec::new();
         while let Ok(frame) = subscription.try_recv() {
@@ -3219,5 +3157,106 @@ async fn a_recovered_empty_arrivals_batch_keeps_the_remaining_wake_after_bash_co
         vec![(expected_text, Some(expected_preview), true)],
         "the persisted wake is re-rendered for the surviving unread message"
     );
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+/// Three ignored wake turns pause background wakes: the reminder admits
+/// nothing, an arrival stays queued without waking, and only a high-priority
+/// arrival wakes the paused session.
+#[tokio::test]
+async fn three_ignored_wakes_pause_background_wakes() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    {
+        let mut core = worker.core.lock().unwrap();
+        assert!(!core.settle_background_wake(1));
+        assert!(!core.settle_background_wake(1));
+        assert!(core.settle_background_wake(1), "the third ignored wake pauses");
+        assert!(core.background_wakes_paused());
+    }
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        inbox_notice(
+            bh_core::session_engine::inbox::INBOX_CLASS_BASH_DONE,
+            "[bash-done pid:1 exit:0]",
+        ),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    admit_reminder_while_idle(&worker, &notify, &inbox);
+    {
+        let core = worker.core.lock().unwrap();
+        assert_eq!(
+            core.steering.len(),
+            1,
+            "the arrival row stays queued and the reminder admits nothing"
+        );
+        assert!(core.holds_background_wakes());
+    }
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        priority_notice("high", "urgent"),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    let core = worker.core.lock().unwrap();
+    assert!(
+        !core.holds_background_wakes(),
+        "a high-priority arrival wakes a paused session"
+    );
+    drop(core);
+    let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
+}
+
+/// A drained inbox read ends the ignored-wake streak, so the next arrival
+/// still wakes; the wake turn that read is not counted as ignored.
+#[tokio::test]
+async fn a_drained_read_resets_the_ignored_wake_streak() {
+    let (worker, inbox, arrivals, notify) = routing_state();
+    worker.dispatch("clear_queue", &json!({})).await;
+    worker.core.lock().unwrap().ignored_background_wakes = 2;
+    let _ = admit_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &notify,
+        &inbox,
+        &arrivals,
+        inbox_notice(
+            bh_core::session_engine::inbox::INBOX_CLASS_BASH_DONE,
+            "[bash-done pid:2 exit:0]",
+        ),
+        Lane::Steering,
+        || false,
+        |_, _| None,
+        None,
+    );
+    inbox.drain();
+    withdraw_drained_inbox_notice(
+        &worker.recovery,
+        &worker.core,
+        &arrivals,
+        &inbox,
+        worker.engine.as_ref(),
+    );
+    let mut core = worker.core.lock().unwrap();
+    assert!(
+        !core.settle_background_wake(1),
+        "the wake turn that read its inbox is not ignored"
+    );
+    assert_eq!(core.ignored_background_wakes, 0);
+    assert!(!core.holds_background_wakes());
+    drop(core);
     let _ = std::fs::remove_dir_all(worker.config.socket_path.parent().unwrap());
 }

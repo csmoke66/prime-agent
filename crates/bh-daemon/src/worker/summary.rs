@@ -59,6 +59,12 @@ impl Worker {
         // The one summary composer: the roster feed, `get_state`, and list rows
         // all serve it, so the live flags never drift between surfaces.
         let mut summary = session_summary(core, inputs);
+        summary.background_wakes_paused_unread = core.background_wakes_paused().then(|| {
+            self.agent_engine
+                .as_ref()
+                .and_then(|engine| engine.inbox())
+                .map_or(0, |inbox| u32::try_from(inbox.count().0).unwrap_or(u32::MAX))
+        });
         // The roster-delta counter at snapshot time: the pull gate orders the
         // summary against its watermark, so a delta still in flight when the pull
         // answered is dropped instead of overwriting the pull's fresher state.
@@ -576,6 +582,7 @@ pub(crate) fn session_summary(core: &SessionCore, inputs: SummaryInputs) -> Sess
         is_bash_running: Some(inputs.bash_running),
         is_running_tools: streaming && !core.running_tool_calls.is_empty(),
         has_running_subagents: inputs.subagents_running,
+        background_wakes_paused_unread: None,
         attached_clients: core.attached_client_ids.len() as u32,
         message_count: store.map_or(0, crate::session_store::SessionFile::message_count) as u32,
         session_actions: session_snapshot(core),

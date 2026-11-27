@@ -180,6 +180,12 @@ pub fn session_activity_detail(summary: &Value, options: &SessionActivityOptions
     if str_field("lifecycle") == Some("archived") {
         return "archived".to_string();
     }
+    if let Some(unread) = summary
+        .get("backgroundWakesPausedUnread")
+        .and_then(Value::as_u64)
+    {
+        return format!("background wakes paused ({unread} unread)");
+    }
     if summary
         .get("hasActiveHeartbeat")
         .and_then(Value::as_bool)

@@ -1102,7 +1102,7 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
             .retain(|item| item.queue_key.as_deref() != Some(INBOX_REMINDER_QUEUE_KEY));
         changed |= core_guard.steering.len() + core_guard.follow_up.len() != before;
     } else if let Some((_priority, reminder)) = inbox.unread_reminder() {
-        let reminder = reminder_prompt(&inbox.with_persistence_error_clause(reminder));
+        let reminder = inbox.with_persistence_error_clause(reminder);
         let core_guard = &mut *core_guard;
         let (steering, follow_up) = (&mut core_guard.steering, &mut core_guard.follow_up);
         for item in steering
@@ -1127,22 +1127,19 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
     changed
 }
 
-/// The reminder's user-message text: the waiting count plus the request to read it, so the
-/// reminder is the session's latest user instruction instead of a notice the model may read
-/// as superseded by an earlier user message (a "stop").
-fn reminder_prompt(reminder: &str) -> String {
-    format!("{reminder}\nCheck your inbox now.")
-}
-
-/// Admit one periodic unread reminder: while the inbox stays non-empty and
-/// no turn is running, a user message repeats the waiting count (the
-/// reminderIntervalMs cycle in `agent_inbox.rs`); an empty inbox or a
-/// running turn admits nothing. The count, the render, and the push share
-/// ONE `SessionCore` critical section — the drain sweep's lock order (core
-/// first, then the store), like the arrival admission — so a reminder
-/// racing a draining `rlm.inbox.read` either enqueues ahead of the read's
-/// sweep (its row drops with the rest) or counts the emptied store and
-/// admits nothing: a dead count never queues. The queue key keeps one row.
+/// Admit one periodic unread reminder: while the inbox stays non-empty,
+/// a steering row repeats the waiting count (the reminderIntervalMs
+/// cycle in `agent_inbox.rs`); an empty inbox admits nothing. The count,
+/// the render, and the push share ONE `SessionCore` critical section — the
+/// drain sweep's lock order (core first, then the store), like the
+/// arrival admission — so a reminder racing a draining `rlm.inbox.read`
+/// either enqueues ahead of the read's sweep (its row drops with the
+/// rest) or counts the emptied store and admits nothing: a dead count
+/// never queues. The queue key keeps one row — a later reminder replaces
+/// the queued one on either lane (the daemon refuses a replace of any row
+/// that carries the custom twin, so a live mutation never moves one
+/// across lanes: only a journal written before the upgrade can hold a
+/// reminder on the follow-up lane).
 pub(crate) fn admit_inbox_reminder(
     recovery: &std::sync::Mutex<Option<WorkerRecoveryJournal>>,
     core: &Arc<Mutex<SessionCore>>,
@@ -1173,9 +1170,9 @@ pub(crate) fn admit_inbox_reminder(
         let _ = inbox.count();
         super::inbox_queue_tests::pause_inbox_reminder_after_count(core);
     }
-    // A running turn already reads its own inbox notices; the reminder waits
-    // for the next idle cycle instead of queueing behind it.
-    if core_guard.busy {
+    // A running turn reads its own inbox notices, and a paused session takes no
+    // background wakes: the reminder waits for the next idle, unpaused cycle.
+    if core_guard.busy || core_guard.background_wakes_paused() {
         return;
     }
     let Some((_priority, message)) = inbox.unread_reminder() else {
@@ -1189,7 +1186,15 @@ pub(crate) fn admit_inbox_reminder(
         work_notify.notify_one();
         return;
     }
-    let message = reminder_prompt(&inbox.with_persistence_error_clause(message));
+    let now = bh_core::autonomous::now_millis();
+    let message = inbox.with_persistence_error_clause(message);
+    // The custom twin rides the turn: the reminder delivers as the inbox
+    // system's attributed custom row, its content the model-visible text.
+    let custom_message = bh_core::session_engine::inbox::create_inbox_notice_row(
+        &message,
+        bh_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER,
+        now,
+    );
     {
         core_guard
             .steering
@@ -1201,7 +1206,7 @@ pub(crate) fn admit_inbox_reminder(
             priority: QueuePriority::Background,
             preview: Some("Inbox reminder".to_string()),
             message,
-            custom_message: None,
+            custom_message: Some(custom_message),
             agent_message: None,
             queue_key: Some(INBOX_REMINDER_QUEUE_KEY.to_string()),
             admission_id: None,
@@ -1338,7 +1343,8 @@ pub(crate) fn withdraw_bash_completion_notice(
 /// row re-syncs its custom twin. The progress-note clear and the
 /// checkpoint follow the public read-hook seam's rules: the settled
 /// verdict follows the lanes, so the swept rows cannot revive as
-/// interrupted work. Returns whether any row changed.
+/// interrupted work. The read also ends the ignored-wake streak and lifts a
+/// background-wake pause. Returns whether any row changed.
 pub(crate) fn withdraw_drained_inbox_notice(
     recovery: &std::sync::Mutex<Option<WorkerRecoveryJournal>>,
     core: &Arc<Mutex<SessionCore>>,
@@ -1346,6 +1352,11 @@ pub(crate) fn withdraw_drained_inbox_notice(
     inbox: &std::sync::Arc<bh_core::session_engine::inbox::SessionInbox>,
     engine: &dyn crate::engine::SessionEngine,
 ) -> bool {
+    {
+        let mut core_guard = core.lock().unwrap();
+        core_guard.ignored_background_wakes = 0;
+        core_guard.inbox_read_since_pickup = true;
+    }
     let changed = refresh_inbox_wake_rows(core, arrivals, inbox);
     // The idle-session progress note clears only once the lanes it
     // reported on are final (the sweep may have emptied them; the

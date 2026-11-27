@@ -32,7 +32,7 @@ fn run_quiet(command: &str, args: &[&str]) -> bool {
     matches!(child.status(), Ok(status) if status.success())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod safe_path_tests {
     use super::python_imports;
     use std::os::unix::fs::PermissionsExt;
@@ -258,7 +258,7 @@ pub fn invalidate_runtime_probe_cache() {
 
 /// Drop only the in-process memo layer, leaving the on-disk layer intact:
 /// the fresh-process simulation the disk-memo oracles use. Unix only.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(crate) fn clear_in_process_probe_memo_for_tests() {
     *lock_probe_memo() = None;
 }

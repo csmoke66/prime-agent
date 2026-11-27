@@ -1,49 +1,8 @@
-//! The venv module's unit battery: Windows executable candidates, the
+//! The venv module's unit battery: the
 //! skill-manifest parsing, the version-file round trip, the two-layer
 //! probe memo oracles, and the skill-sync batching.
-#[test]
-fn windows_executable_candidates_default_order() {
-    assert_eq!(
-        windows_executable_candidates("uv", None),
-        vec![
-            "uv".to_string(),
-            "uv.COM".into(),
-            "uv.EXE".into(),
-            "uv.BAT".into(),
-            "uv.CMD".into()
-        ]
-    );
-}
-
-#[test]
-fn windows_executable_candidates_follows_pathext_order() {
-    assert_eq!(
-        windows_executable_candidates("uv", Some(".FOO;.EXE;.BAT")),
-        vec!["uv".to_string(), "uv.exe".into(), "uv.bat".into()]
-    );
-}
-
-#[test]
-fn windows_executable_candidates_skips_suffix_and_duplicates() {
-    assert_eq!(
-        windows_executable_candidates("uv.exe", Some(".EXE;.BAT")),
-        vec!["uv.exe".to_string()]
-    );
-    assert_eq!(
-        windows_executable_candidates("node", Some("")),
-        vec![
-            "node".to_string(),
-            "node.COM".into(),
-            "node.EXE".into(),
-            "node.BAT".into(),
-            "node.CMD".into()
-        ]
-    );
-}
-
 use super::*;
 
-#[cfg(unix)]
 fn kernel_ready(
     python: &str,
     venv: &Path,
@@ -96,7 +55,6 @@ static MEMO_STATE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Collect every `.runtime-probe-memo.json` under `root` (the override
 /// boundary pin: the override path must create none).
-#[cfg(unix)]
 fn collect_memo_files(root: &Path, found: &mut Vec<std::path::PathBuf>) {
     if let Ok(entries) = std::fs::read_dir(root) {
         for entry in entries.flatten() {
@@ -127,7 +85,6 @@ fn version_file_round_trips() {
     ));
 }
 
-#[cfg(unix)]
 #[test]
 fn previous_schema_is_rejected_before_running_a_persisted_venv() {
     use std::os::unix::fs::PermissionsExt;
@@ -199,7 +156,6 @@ fn probe_memo_key_distinguishes_every_input_and_drops_on_invalidate() {
 
 /// The out-of-band-detection trio: the memo must hit on an unchanged venv, miss when the installed
 /// `rlm` tree or the interpreter changes, and miss after invalidation.
-#[cfg(unix)]
 #[test]
 fn probe_memo_misses_on_out_of_band_venv_mutation() {
     let _memo_state = MEMO_STATE_LOCK
@@ -225,7 +181,6 @@ fn probe_memo_misses_on_out_of_band_venv_mutation() {
         ),
     )
     .unwrap();
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -306,7 +261,6 @@ fn probe_memo_misses_on_out_of_band_venv_mutation() {
 
 /// The cross-process layer, pinned: a fresh process (empty in-process map)
 /// hits the on-disk memo under the same identity key and runs ZERO probes.
-#[cfg(unix)]
 #[test]
 fn disk_memo_hits_across_a_fresh_process_with_zero_probes() {
     let _memo_state = MEMO_STATE_LOCK
@@ -365,7 +319,6 @@ fn disk_memo_hits_across_a_fresh_process_with_zero_probes() {
 
 /// Damage across processes: process A memoizes, the venv is damaged
 /// out of band, and a FRESH process must miss both layers and re-probe.
-#[cfg(unix)]
 #[test]
 fn disk_memo_damage_across_processes_misses_and_reprobes() {
     let _memo_state = MEMO_STATE_LOCK
@@ -453,7 +406,6 @@ fn disk_memo_damage_across_processes_misses_and_reprobes() {
 
 /// The masked class, pinned against the DISK layer: fingerprint-invisible damage is masked by a
 /// cross-process hit until the first failed kernel start drops BOTH layers and.
-#[cfg(unix)]
 #[test]
 fn disk_memo_masked_class_hits_across_processes_until_invalidation() {
     let _memo_state = MEMO_STATE_LOCK
@@ -525,7 +477,6 @@ fn disk_memo_masked_class_hits_across_processes_until_invalidation() {
 /// The write-vs-invalidate race: a late atomic write landing after an invalidation resurrects a
 /// key-valid entry. That is BENIGN — the entry's key matches the current environment — and the next
 /// failed start re-invalidates.
-#[cfg(unix)]
 #[test]
 fn disk_memo_late_write_after_invalidate_is_benign() {
     let _memo_state = MEMO_STATE_LOCK
@@ -585,12 +536,10 @@ fn disk_memo_late_write_after_invalidate_is_benign() {
 
 /// Env-mutating tests serialize on this lock: the process env is global.
 /// Unix only: its takers are the unix env-override tests.
-#[cfg(unix)]
 static BEEHIVE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// A caller-owned `BEEHIVE_KERNEL_PYTHON` override resolves through
 /// the DIRECT probe and never reads or writes any memo file.
-#[cfg(unix)]
 #[tokio::test]
 async fn custom_override_never_touches_the_disk_memo() {
     let _guard = BEEHIVE_ENV_LOCK.lock().await;
@@ -667,7 +616,6 @@ fn windows_layout_venv_rlm_is_witnessed() {
 
 /// Live (ignored by default; run with `--ignored` on a machine with a kernel venv under `HOME`):
 /// the memo behavior against a REAL interpreter and a REAL `rlm` import.
-#[cfg(unix)]
 #[test]
 #[ignore = "live: needs a real kernel venv under HOME (bench VMs)"]
 fn live_probe_memo_reprobes_when_installed_rlm_is_removed() {
@@ -961,7 +909,6 @@ fn extra_recorded_skills_do_not_force_reinstall() {
     assert!(recorded_skills_cover(None, &[]));
 }
 
-#[cfg(unix)]
 fn fake_uv(dir: &Path, script: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let uv = dir.join("uv");
@@ -970,7 +917,6 @@ fn fake_uv(dir: &Path, script: &str) -> PathBuf {
     uv
 }
 
-#[cfg(unix)]
 fn uv_invocations(dir: &Path) -> Vec<String> {
     std::fs::read_to_string(dir.join("uv.log"))
         .unwrap_or_default()
@@ -979,7 +925,6 @@ fn uv_invocations(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn skill_sync_batches_missing_installs_into_one_uv_call() {
     // A fake uv records its args: every missing skill must land in ONE
@@ -1053,7 +998,6 @@ async fn skill_sync_batches_missing_installs_into_one_uv_call() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn skill_sync_falls_back_to_per_skill_installs_on_batch_failure() {
     // A batch covering several skills fails; the fallback retries each missing skill alone.
@@ -1122,7 +1066,6 @@ async fn skill_sync_falls_back_to_per_skill_installs_on_batch_failure() {
 
 /// A pyproject on disk, so record project names come from the file instead
 /// of the import-name fallback.
-#[cfg(unix)]
 fn write_skill_pyproject(dir: &Path, project_name: &str) {
     std::fs::create_dir_all(dir).unwrap();
     std::fs::write(
@@ -1139,7 +1082,6 @@ fn write_skill_pyproject(dir: &Path, project_name: &str) {
 /// other source's editable install would shadow the selected one on
 /// sys.path, and its path-keyed record would let a later sync skip a needed
 /// reinstall.
-#[cfg(unix)]
 #[tokio::test]
 async fn switching_a_skill_between_sources_replaces_the_other_install() {
     let dir = tempfile::tempdir().unwrap();
@@ -1219,7 +1161,6 @@ async fn switching_a_skill_between_sources_replaces_the_other_install() {
 /// its code replaced when a sync installs another `goal` distribution. The
 /// stale record must go, or the next session selecting the user skill
 /// short-circuits `kernel_ready` on it and imports a missing module.
-#[cfg(unix)]
 #[tokio::test]
 async fn installing_a_skill_drops_records_displaced_by_distribution_identity() {
     let dir = tempfile::tempdir().unwrap();
@@ -1311,7 +1252,6 @@ async fn installing_a_skill_drops_records_displaced_by_distribution_identity() {
 /// tests skip as root and the gate harness runs the binary via `runuser` as a
 /// non-root user (a shared install dir readable but not writable, like the verifiers
 /// harness's `agent_user` seats).
-#[cfg(unix)]
 fn skip_when_root() -> bool {
     if unsafe { libc::geteuid() } == 0 {
         eprintln!("skipped: run as a non-root user (chmod cannot deny root)");
@@ -1320,7 +1260,6 @@ fn skip_when_root() -> bool {
     false
 }
 
-#[cfg(unix)]
 fn set_mode(path: &Path, mode: u32) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
@@ -1330,7 +1269,6 @@ fn set_mode(path: &Path, mode: u32) {
 /// the candidate) must degrade like a `BEEHIVE_KERNEL_PYTHON` override: the
 /// uncovered skill is disabled with a warning and the venv python is returned, with
 /// nothing installed into the read-only venv. Red on the raw EACCES before the fix.
-#[cfg(unix)]
 #[tokio::test]
 async fn unwritable_venv_disables_uncovered_skills_instead_of_failing() {
     if skip_when_root() {
@@ -1410,7 +1348,6 @@ async fn unwritable_venv_disables_uncovered_skills_instead_of_failing() {
 /// A venv that cannot host the lock AND cannot run the kernel is a setup error that
 /// names the venv and both env overrides — not the raw candidate-file EACCES.
 /// Red on the raw EACCES before the fix.
-#[cfg(unix)]
 #[tokio::test]
 async fn unwritable_stale_venv_names_the_venv_and_both_env_overrides() {
     if skip_when_root() {

@@ -37,7 +37,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 // AtomicBool feeds the unix-gated SOCKET_REFUSAL_LOGGED static only.
-#[cfg(unix)]
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
@@ -728,12 +727,10 @@ fn rand_suffix() -> String {
 /// passes unchanged: Herdr's own socket under the user's runtime
 /// directory is that user's own socket (TS parity). Named pipes on
 /// Windows keep their connect-time ACL model (no lstat to check).
-#[cfg(unix)]
 static SOCKET_REFUSAL_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// The fence's pure decision (unit-testable without `chown`): the
 /// metadata must be a socket owned by `own_uid`.
-#[cfg(unix)]
 fn pane_socket_is_ownable(metadata: &std::fs::Metadata, own_uid: u32) -> bool {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     metadata.file_type().is_socket() && metadata.uid() == own_uid
@@ -744,7 +741,6 @@ fn pane_socket_is_ownable(metadata: &std::fs::Metadata, own_uid: u32) -> bool {
 /// its effective uid — the temp file's owner is exactly the uid the
 /// fence compares against, which is also the uid a socket this process
 /// would bind would carry. Cached once per process.
-#[cfg(unix)]
 fn effective_uid() -> Option<u32> {
     static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
     *UID.get_or_init(|| probe_effective_uid(&std::env::temp_dir()))
@@ -753,7 +749,6 @@ fn effective_uid() -> Option<u32> {
 /// The uid probe itself: `None` when the probe file cannot be created or
 /// read — the fence FAILS CLOSED on `None` (it must never fall back to
 /// uid 0, which would accept a root-owned socket).
-#[cfg(unix)]
 fn probe_effective_uid(dir: &std::path::Path) -> Option<u32> {
     use std::os::unix::fs::MetadataExt;
     let probe = dir.join(format!("pa-herdr-uid-probe-{}", uuid::Uuid::new_v4()));
@@ -766,9 +761,6 @@ fn probe_effective_uid(dir: &std::path::Path) -> Option<u32> {
 }
 
 /// The fence's verdict for one send.
-// Only `Accepted` is constructed on Windows (named pipes keep their
-// connect-time ACL model; the fence is unix-only).
-#[cfg_attr(windows, allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FenceVerdict {
     /// The target is this process's own socket: the send may connect.
@@ -782,7 +774,6 @@ enum FenceVerdict {
     TimedOut,
 }
 
-#[cfg(unix)]
 async fn pane_socket_acceptable(socket_target: &str) -> FenceVerdict {
     // The lstat is a blocking syscall on a CLIENT-SUPPLIED path — it
     // moves off the async runtime (spawn_blocking) under the same
@@ -802,18 +793,9 @@ async fn pane_socket_acceptable(socket_target: &str) -> FenceVerdict {
     }
 }
 
-#[cfg(windows)]
-// The async stays for the shared call site (the unix arm awaits); the
-// windows pipe arm needs no await for its connect-time ACL verdict.
-#[allow(clippy::unused_async)]
-async fn pane_socket_acceptable(_socket_target: &str) -> FenceVerdict {
-    // Named pipes carry their own ACL model at connect time.
-    FenceVerdict::Accepted
-}
 
 /// The fence's blocking decision (runs on the blocking pool): lstat the
 /// target, and accept only a socket this process's own uid owns.
-#[cfg(unix)]
 fn pane_socket_acceptable_blocking(socket_target: &str) -> bool {
     let Ok(metadata) = std::fs::symlink_metadata(socket_target) else {
         // A target that does not exist (yet) NEVER connects: passing it
@@ -926,7 +908,7 @@ pub(crate) fn error_hold_message(messages: &[Value]) -> Option<String> {
 // Unix-only tests: the fake server binds a unix socket and the fence
 // cases use unix symlink identity (the windows pipe arm's connect-time ACL
 // model has no lstat equivalent to exercise here).
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1508,7 +1490,6 @@ mod tests {
     /// (even one pointing at the legitimate socket) never do, and the
     /// pure decision rejects a foreign owner (the `chown`-free mock: a
     /// uid that is not ours).
-    #[cfg(unix)]
     #[tokio::test]
     async fn the_pane_socket_fence_decides_by_type_and_owner() {
         let socket_path = temp_socket("fence");
@@ -1595,7 +1576,6 @@ mod tests {
     /// A uid probe that cannot create its file yields `None`, and the
     /// fence treats `None` as reject (fail closed — the probe must never
     /// fall back to uid 0, which would accept a root-owned socket).
-    #[cfg(unix)]
     #[test]
     fn a_failed_uid_probe_fails_closed() {
         assert!(

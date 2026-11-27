@@ -779,7 +779,6 @@ async fn saved_session_rows_count_the_sessions_stored_factory_specs() {
         saved_session_row(&info, &shells, &specs)["factorySpecs"],
         json!(2)
     );
-    #[cfg(unix)]
     {
         let state_path = bh_core::refinement::get_harness_state_path(&harness);
         let specs = crate::test_support::assert_async_file_read(
@@ -798,7 +797,6 @@ async fn saved_session_rows_count_the_sessions_stored_factory_specs() {
 
 /// One catalog listing reads each session's harness store once: the streamed rows and the final
 /// response share that read, so they publish the same rows.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_saved_session_listing_reads_each_sessions_harness_store_once() {
     let root = std::env::temp_dir().join(format!("pa-saved-once-{}", uuid::Uuid::new_v4()));
@@ -1481,7 +1479,6 @@ async fn an_existing_tombstone_carries_the_stop_past_its_failed_re_write() {
 
 /// The fake worker holds its `shutdown` reply on a test-controlled settle, so a stop
 /// pass that does not wait for the flush barrier fails below.
-#[cfg(unix)] // the signal-drain state machine: unix signal source
 #[tokio::test]
 async fn first_signal_drains_a_settling_turn_and_rejects_new_work() {
     let dir = tempfile::TempDir::new().unwrap();
@@ -1718,7 +1715,6 @@ async fn a_prompt_and_wait_route_outlives_the_old_ten_minute_cap() {
 /// shutdown command's gate, and a signal racing an update exit - the
 /// last without flipping the gate, so the update's
 /// descriptor-preserving exit never becomes a terminal stop pass.
-#[cfg(unix)] // the signal-drain state machine: unix signal source
 #[tokio::test]
 async fn a_signal_during_an_in_flight_shutdown_forces() {
     let dir = tempfile::TempDir::new().unwrap();

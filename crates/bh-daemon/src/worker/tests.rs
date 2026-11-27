@@ -54,7 +54,6 @@ fn session_events_since(
 /// answers every request line with success, and records the full command
 /// values in arrival order. The callers read the field they need (roster
 /// deltas read `command["summary"]`, message probes filter the type).
-#[cfg(unix)]
 pub(crate) fn fake_supervisor(
     socket: &std::path::Path,
 ) -> (

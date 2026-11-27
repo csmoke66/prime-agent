@@ -7,8 +7,6 @@
 
 //! Long-session transcript scrolling through a real daemon: a session file with
 //! thousands of rows and a compaction, attached headlessly and scrolled to the top.
-#![cfg(unix)]
-
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

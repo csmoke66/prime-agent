@@ -14,8 +14,6 @@
 //! slices, so keys typed inside the window deliver while the probe listens.
 //! The 150ms bound is the red/green line: the pre-slice base delivers at the
 //! ~250ms settle.
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

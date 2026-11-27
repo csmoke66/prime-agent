@@ -1,8 +1,6 @@
 //! Headless e2e for the compaction-window queued prompt: a queued prompt
 //! renders once and the compaction path never refetches. The mock still
 //! answers `get_messages`, so a refetch would be recorded.
-#![cfg(unix)]
-
 mod support;
 
 use std::os::unix::net::UnixListener;

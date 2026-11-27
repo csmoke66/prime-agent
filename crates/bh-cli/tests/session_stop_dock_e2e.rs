@@ -1,8 +1,6 @@
 // Pedantic-gate dispositions: the flow is intentionally linear and its async test future is
 // stack-resident by shape.
 #![allow(clippy::large_futures, clippy::too_many_lines)]
-#![cfg(unix)]
-
 //! E2E verifier for the dock after a session stop: a chat attached to a live session whose kernel
 //! runs a shell drops the shell from its dock when the daemon stops the session, instead of
 //! keeping the dead kernel's last list.

@@ -1,7 +1,5 @@
 //! `/model` picker catalog e2e: `get_model_catalog` must serve the registry
 //! snapshot: the compiled catalog plus the providers with configured auth.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

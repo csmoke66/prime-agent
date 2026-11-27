@@ -16,8 +16,6 @@
 //! Ctrl+C. A DRAINING terminal is not a stalled shutdown (per-chunk progress
 //! holds the watchdog's fire; TS has no watchdog), and a stalled drain fires.
 //! A Ctrl+C pair the loop handled without exiting never fires it either.
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

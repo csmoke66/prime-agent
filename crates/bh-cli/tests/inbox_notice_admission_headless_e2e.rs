@@ -12,8 +12,6 @@
 // (fn-length is style, not correctness) and its async test future is
 // stack-resident by shape.
 #![allow(clippy::large_futures, clippy::too_many_lines)]
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};

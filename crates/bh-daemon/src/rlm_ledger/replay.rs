@@ -339,7 +339,6 @@ pub(super) struct ReplaySnapshot {
 pub(super) struct FileIdentity {
     size: u64,
     mtime: Option<std::time::SystemTime>,
-    #[cfg(unix)]
     ino: Option<u64>,
 }
 
@@ -400,7 +399,6 @@ fn path_identity(path: &Path) -> Option<FileIdentity> {
     Some(FileIdentity {
         size: metadata.len(),
         mtime: metadata.modified().ok(),
-        #[cfg(unix)]
         ino: {
             use std::os::unix::fs::MetadataExt;
             Some(metadata.ino())

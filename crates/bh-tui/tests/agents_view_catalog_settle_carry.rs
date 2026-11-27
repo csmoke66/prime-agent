@@ -2,7 +2,6 @@
 //! carry the entry anchor's row settles the wait (TS
 //! `resolveMissingSelectionAnchor`), and the carried catalog paints the
 //! next view run's first frame with no re-fetch.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

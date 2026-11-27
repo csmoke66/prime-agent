@@ -233,7 +233,6 @@ fn auto_discovers_project_prompts_with_overrides() {
 
 /// Unix symlink layout; Windows needs `symlink_dir` and a privileged
 /// developer mode to create links, so the case runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn resolves_symlinked_user_and_project_resources_once() {
     use std::os::unix::fs::symlink;
@@ -389,7 +388,6 @@ fn home_agents_skills_stays_user_scoped_when_cwd_is_under_home() {
 }
 
 /// Unix symlink layout (see `resolves_symlinked_user_and_project_resources_once`).
-#[cfg(unix)]
 #[test]
 fn user_skill_entries_dedupe_when_agent_skills_symlinks_agents_skills() {
     use std::os::unix::fs::symlink;

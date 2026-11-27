@@ -998,7 +998,6 @@ mod tests {
     use crate::settings::types::{MarkdownSettings, DEFAULT_PYTHON_CELL_TIMEOUT_MS};
 
     #[test]
-    #[cfg(unix)]
     fn project_settings_cannot_copy_a_linked_auth_document() {
         let root = tempfile::tempdir().unwrap();
         let project = root.path().join("project");

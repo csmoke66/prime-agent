@@ -1,8 +1,7 @@
 # CI gates for the beehive Rust port: the tip-compiles-tests guarantee
 # plus PR gating, in one workflow (the shape of the TS product's ci.yml).
 # `.github/workflows/` is the one home for workflow files; the
-# windows-cross/windows/deny jobs run live in this file alongside the unix
-# gates.
+# deny job runs live in this file alongside the other gates.
 # Two triggers, one
 # gate set mirroring `make check` exactly (fmt --all --check, clippy --workspace
 # --all-targets -- -D warnings, cargo test --workspace) on the pinned
@@ -416,52 +415,10 @@ jobs:
           uv run --python 3.11 python -m unittest discover -s test
           PYTHONPATH=../skills/attach-video/src uv run --python 3.11 python -m unittest discover -s ../skills/attach-video/tests
 
-  # The Windows job set + the supply-chain deny gate:
-  #
-  #   windows-cross — the cfg-hygiene cross-target gate, the CI mirror of
-  #   `make windows-cross`. The Sep-23..25
-  #   unix-only test regressions that broke it were fixed by #2833, so it
-  #   type-checks every crate (including the cfg(windows) implementations
-  #   and the Windows-only tests) for x86_64-pc-windows-gnu; ring's C needs
-  #   the mingw cross compiler even for check builds.
-  #
-  #   windows-latest — NOT in this promotion set. The full MSVC battery
-  #   surfaced tip-side windows product debt the trunk has carried invisibly
-  #   (the on-demand windows-runtime-triage.yml battery never ran on main;
-  #   its first dispatches read deep red across crates, and the ACP
-  #   daemon-attach e2e deadlocks on the named-pipe transport). The
-  #   windows-latest promotion lands with the windows-readiness lane's
-  #   product fixes; windows-cross below stays this PR's windows authority
-  #   (the compile + clippy proof for the whole workspace incl. the
-  #   cfg(windows) implementations).
-  #
-  #   deny — cargo-deny advisories + licenses, the CI mirror of `make deny`,
-  #   the same check ci.yml's deny job runs on every push.
-  #   Promoted on the operator's 2026-09-28 policy decision: the advisory
-  #   DB drifts daily, so a drifted advisory can gate PRs — that is the
-  #   accepted trade.
-  windows-cross:
-    name: windows cross-check + clippy (x86_64-pc-windows-gnu)
-    needs: trust
-    if: needs.trust.result == 'success' && needs.trust.outputs.allowed == 'true' && (github.event_name == 'push' || !github.event.pull_request.draft)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # the ref IS the 1.98.1 toolchain; the action ignores the toolchain input
-        with:
-          targets: x86_64-pc-windows-gnu
-          components: clippy
-      - name: Install the mingw-w64 cross toolchain (ring C for the target)
-        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: windows-cross
-      - run: cargo check --locked --workspace --target x86_64-pc-windows-gnu --all-targets
-      - run: cargo clippy --locked --workspace --target x86_64-pc-windows-gnu --all-targets -- -D warnings
-
+  # The supply-chain deny gate: cargo-deny advisories + licenses, the CI
+  # mirror of `make deny`. Promoted on the operator's 2026-09-28 policy
+  # decision: the advisory DB drifts daily, so a drifted advisory can gate
+  # PRs — that is the accepted trade.
   deny:
     name: deny (cargo-deny advisories + licenses)
     needs: trust
@@ -495,7 +452,6 @@ jobs:
         test-shard,
         test-summary,
         runtime,
-        windows-cross,
         deny,
       ]
     if: always()

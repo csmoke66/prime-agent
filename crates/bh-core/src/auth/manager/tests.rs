@@ -153,7 +153,6 @@ fn command_keys_resolve() {
 /// lookup resolves it once and the process cache holds it afterwards.
 /// The counter key is a POSIX-shell pipeline (the ambient shell on
 /// Windows resolves it differently), so the test runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn a_command_keys_status_probe_never_runs_the_command() {
     let counter = std::env::temp_dir().join(format!(

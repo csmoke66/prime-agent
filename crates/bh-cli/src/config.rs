@@ -92,10 +92,6 @@ pub fn expand_tilde_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         return home.join(rest);
     }
-    #[cfg(windows)]
-    if let Some(rest) = path.strip_prefix("~\\") {
-        return home.join(rest);
-    }
     PathBuf::from(path)
 }
 
@@ -183,23 +179,5 @@ mod tests {
         );
         assert_eq!(expand_tilde_path("/abs/path"), PathBuf::from("/abs/path"));
         assert_eq!(expand_tilde_path("~foo"), PathBuf::from("~foo"));
-    }
-
-    /// The TS `expandTildePath` win32 arm (the bh-types twin carries it too).
-    #[test]
-    #[cfg(windows)]
-    fn expands_the_win32_backslash_tilde() {
-        let _env = env_lock();
-        std::env::remove_var("HOME");
-        std::env::set_var("USERPROFILE", r"C:\Users\tester");
-        assert_eq!(
-            expand_tilde_path(r"~\sessions"),
-            PathBuf::from(r"C:\Users\tester\sessions")
-        );
-        assert_eq!(
-            expand_tilde_path(r"~\deep\dir"),
-            PathBuf::from(r"C:\Users\tester\deep\dir")
-        );
-        std::env::remove_var("USERPROFILE");
     }
 }

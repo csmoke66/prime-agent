@@ -2,7 +2,6 @@
 //! interactive-mode `onSubmit`): a mock supervisor serves one attached
 //! session and answers the `execute_bash` request with the streamed
 //! `bash_start`/`bash_output`/`bash_end` events.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

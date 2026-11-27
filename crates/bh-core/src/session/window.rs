@@ -231,11 +231,6 @@ impl WindowedSessionStore {
     ///
     /// The two internal `expect`s cannot fire (rows parse first; the header is proven).
     pub fn open(path: &Path) -> io::Result<Option<Self>> {
-        // The generation certificate anchors on unix inode identity; a
-        // same-length replace is indistinguishable under weak non-unix metadata.
-        if !cfg!(unix) {
-            return Ok(None);
-        }
         let mut file = std::fs::File::open(path)?;
         let generation = Generation::of(&file.metadata()?);
         let size = file.metadata()?.len();

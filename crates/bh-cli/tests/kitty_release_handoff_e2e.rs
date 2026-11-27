@@ -13,8 +13,6 @@
 //! handoff (the `enhanced_keys` drain): the LEFT press's companion release is
 //! in flight during the teardown, and later releases arrive on the adopting
 //! surface — none may become user-visible input; the exit pops the flags.
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

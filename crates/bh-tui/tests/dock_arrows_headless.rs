@@ -4,7 +4,6 @@
 //! collapse back to the prompt; the TS dock has no group rows (Rust divergence).
 //! The event-driven pins below hold the dock's update contract: every dock
 //! input repaints on its own daemon event, never on a per-wake recompute.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

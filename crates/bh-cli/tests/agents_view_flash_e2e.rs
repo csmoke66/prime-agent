@@ -14,8 +14,6 @@
 //! a departed root's registration-seeded rows stayed top-level until the
 //! catalog re-parented them minutes later): the first render must show the
 //! live roster alone; the catalog keeps every dead row resumable.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

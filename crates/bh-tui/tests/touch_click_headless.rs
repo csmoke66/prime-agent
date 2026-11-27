@@ -2,7 +2,6 @@
 //! and the harness feeds byte-identical SGR pairs through the same decode-and-dispatch path
 //! a terminal's clicks take. A plain click toggles the card it lands on (operator directive
 //! 2026-09-26), places the caret, or moves a `/model` picker row.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

@@ -2,7 +2,6 @@
 //! `handleFullscreenInput`): wheel up/down scroll the transcript three
 //! lines per turn, the wheel is consumed without scrolling while a
 //! picker owns the frame, and tracking-off reports are consumed either way.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

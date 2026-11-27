@@ -134,7 +134,6 @@ pub struct BenchCorpus {
 ///
 /// Propagates spawn, needle-timeout, daemon, and IO failures; errors
 /// immediately on non-unix platforms.
-#[cfg(unix)]
 pub fn run(options: &BenchOptions) -> anyhow::Result<BenchResult> {
     runner::run(options)
 }
@@ -145,23 +144,12 @@ pub fn run(options: &BenchOptions) -> anyhow::Result<BenchResult> {
 ///
 /// Propagates corpus-generation, spawn, needle-timeout, daemon, and IO
 /// failures; errors immediately on non-unix platforms.
-#[cfg(unix)]
 pub fn run_suite(options: &RunOptions) -> anyhow::Result<Vec<BenchResult>> {
     runner::run_suite(options)
 }
 
-#[cfg(not(unix))]
-pub fn run(_options: &BenchOptions) -> anyhow::Result<BenchResult> {
-    anyhow::bail!("the bench harness is unix-only")
-}
 
-#[cfg(not(unix))]
-pub fn run_suite(_options: &RunOptions) -> anyhow::Result<Vec<BenchResult>> {
-    anyhow::bail!("the bench harness is unix-only")
-}
 
-#[cfg(unix)]
 mod pty;
 /// The unix-only harness (pty, daemon lifecycle, scenario runners).
-#[cfg(unix)]
 mod runner;

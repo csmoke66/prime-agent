@@ -10,8 +10,6 @@
 // command); splitting it would add indirection without changing the
 // flow.
 #![allow(clippy::too_many_lines)]
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;

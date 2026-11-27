@@ -180,10 +180,7 @@ fn spawn_supervisor_detached(socket_path: &Path, spawn_cwd: &Path, exe: &Path) -
     // share the launching TUI's terminal session: a session-wide terminal
     // cleanup could hang it up after the TUI exits; on Unix, setsid also
     // creates its own process group.
-    #[cfg(unix)]
     bh_core::platform::process::set_new_session(&mut command);
-    #[cfg(not(unix))]
-    bh_core::platform::process::set_new_process_group(&mut command);
     command
         .spawn()
         .with_context(|| format!("spawn the Beehive daemon on {}", socket_path.display()))?;

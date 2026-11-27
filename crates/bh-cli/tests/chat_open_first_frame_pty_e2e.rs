@@ -15,8 +15,6 @@
 //! the dock's data responses must paint ONE complete frame (transcript,
 //! pinned title row, dock) and never paint the brand splash.
 
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

@@ -14,8 +14,6 @@
 //! handoff opens the view anchored on the session just left (TS
 //! `launchAgentsView`), and Enter opens the anchor's file, not the
 //! first-listed session's.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

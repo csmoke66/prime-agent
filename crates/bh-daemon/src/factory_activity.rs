@@ -203,7 +203,6 @@ mod tests {
             graph.data,
             Some(serde_json::json!({ "runs": [], "factorySpecs": 2 }))
         );
-        #[cfg(unix)]
         {
             let harness = bh_core::refinement::get_local_harness_state_dir(artifacts.as_deref())
                 .expect("local harness dir");

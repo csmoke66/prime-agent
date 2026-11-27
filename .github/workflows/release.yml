@@ -1,9 +1,9 @@
 # Release pipeline for Beehive (Rust).
 #
-# Tagged builds (vX.Y.Z, or vX.Y.Z-beta*) build all five targets, then the
+# Tagged builds (vX.Y.Z, or vX.Y.Z-beta*) build all four targets, then the
 # promote job attaches the archives, split-debug decoders, SHA256SUMS and
 # manifest to this repository's GitHub release. Nothing is published
-# anywhere else; install-rust.sh and install.ps1 download from there.
+# anywhere else; install-rust.sh downloads from there.
 
 name: release
 
@@ -75,11 +75,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows cannot ride this matrix: the job-level `container:` pins the
-        # linux builds to the reviewed ubuntu:22.04 image (the digest-pinned
-        # glibc baseline), and a Windows runner cannot host that container.
-        # The MSVC target builds in its own `build-windows` job below (the
-        # build-darwin pattern).
         include:
           - target: x86_64-unknown-linux-gnu
             runs-on: ubuntu-24.04
@@ -309,51 +304,11 @@ jobs:
             target/${{ matrix.target }}/dist/manifest.json
           if-no-files-found: error
 
-  # The Windows build: its own job (the build-darwin pattern), because the
-  # GNU builds pin their glibc baseline inside the digest-reviewed ubuntu:22.04
-  # container - a runner-level image a windows runner cannot host. The runner
-  # label is pinned to windows-2022 (never the mutable windows-latest) for the
-  # same reviewed-baseline reason as the container digest: a label that
-  # drifts under promote would drift the release baseline; it moves only
-  # through reviewed changes.
-  #
-  build-windows:
-    needs: tag-check
-    name: build-${{ matrix.target }}
-    runs-on: ${{ matrix.runs-on }}
-    permissions:
-      contents: read
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-pc-windows-msvc
-            runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Build and package Windows
-        uses: ./.github/actions/assemble-windows-release
-        with:
-          target: ${{ matrix.target }}
-          version: ${{ env.RELEASE_VERSION }}
-      - name: Upload artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: artifacts-${{ matrix.target }}
-          path: |
-            target/${{ matrix.target }}/dist/beehive-*
-            target/${{ matrix.target }}/dist/SHA256SUMS
-            target/${{ matrix.target }}/dist/manifest.json
-          if-no-files-found: error
-
   # One gate: collect every target's artifacts, merge the checksums, and
   # attach everything to this repository's GitHub release for the tag.
   promote:
-    if: ${{ !cancelled() && needs.build-gnu.result == 'success' && needs.build-darwin.result == 'success' && needs.build-windows.result == 'success' }}
-    needs: [build-gnu, build-darwin, build-windows]
+    if: ${{ !cancelled() && needs.build-gnu.result == 'success' && needs.build-darwin.result == 'success' }}
+    needs: [build-gnu, build-darwin]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -374,8 +329,8 @@ jobs:
           out.mkdir()
           sums, binaries, decoders, version = [], [], [], None
           dirs = sorted(p for p in incoming.iterdir() if p.is_dir())
-          if len(dirs) != 5:
-              raise SystemExit(f"expected 5 target artifacts, found {[p.name for p in dirs]}")
+          if len(dirs) != 4:
+              raise SystemExit(f"expected 4 target artifacts, found {[p.name for p in dirs]}")
           for d in dirs:
               manifest = json.loads((d / "manifest.json").read_text())
               version = manifest["version"]

@@ -431,7 +431,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn a_probe_that_fills_the_pipe_still_drains_and_exits() {
         use std::process::{Command, Stdio};
         // The payload overruns any platform's pipe buffer: the drain runs

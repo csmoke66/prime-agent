@@ -11,8 +11,6 @@
 //! Verifier: the turn-boundary host-request contract (`model.info`, `compact.*`, `refine.*`) over a
 //! REAL kernel: one turn's `ipython` cell calls the `rlm.host_request` bridge directly; the raw
 //! handler responses are asserted, then the scheduled refinement reaches the boundary seam.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 
 use bh_agent::scripted::{tool_call_turn_steps, ScriptStep, ScriptedProvider, ScriptedTurn};

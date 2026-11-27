@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 
 /// The fixed `xdg-open` tool slots — searched in order, the first that
 /// exists wins.
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 const XDG_OPEN_SLOTS: [&str; 3] = [
     "/usr/bin/xdg-open",
     "/usr/local/bin/xdg-open",
@@ -22,26 +22,13 @@ fn opener(url: &str) -> Option<(PathBuf, Vec<String>)> {
     {
         Some((PathBuf::from("/usr/bin/open"), vec![url.to_string()]))
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let path = XDG_OPEN_SLOTS
             .into_iter()
             .map(PathBuf::from)
             .find(|path| path.exists())?;
         Some((path, vec![url.to_string()]))
-    }
-    #[cfg(windows)]
-    {
-        // Absolute System32 path (the TS dialog resolves it from
-        // `SystemRoot`, defaulting to `C:\Windows`).
-        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
-        let rundll32 = std::path::Path::new(&system_root)
-            .join("System32")
-            .join("rundll32.exe");
-        Some((
-            rundll32,
-            vec!["url.dll,FileProtocolHandler".to_string(), url.to_string()],
-        ))
     }
 }
 

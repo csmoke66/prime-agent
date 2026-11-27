@@ -11,8 +11,6 @@
 //! Verifier integration tests for the restore-path guards: a restored function runs against the
 //! LIVE namespace; the post-restore debounced auto-snapshot skips while unchanged; a failed restore
 //! keeps the on-disk payload the fresher copy.
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

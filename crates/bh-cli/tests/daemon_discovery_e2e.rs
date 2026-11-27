@@ -13,8 +13,6 @@
 //! daemon lives in a test-created fixture directory. A discovery scan or
 //! `shutdown --force` run from a *different* fixture root must never see or
 //! stop it — nor any other live daemon on the machine.
-#![cfg(unix)]
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

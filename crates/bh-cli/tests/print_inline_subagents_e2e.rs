@@ -15,7 +15,6 @@
 //! full in-process tree — spawn, child reply turns, the #2270 quiescence
 //! wait, the depth gate, and the exit disposal.
 
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -75,7 +74,6 @@ impl PrintLane {
         let skills = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skills");
         let python_paths = [skills.join("agent-message/src"), skills.join("goal/src")];
         let python_path = std::env::join_paths(python_paths).expect("skill import paths");
-        #[cfg(unix)]
         let wrapper = {
             let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
             let wrapper = self.home.path().join("kernel-python-with-skills");
@@ -89,20 +87,6 @@ impl PrintLane {
             )
             .unwrap();
             std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
-            wrapper
-        };
-        #[cfg(windows)]
-        let wrapper = {
-            let wrapper = self.home.path().join("kernel-python-with-skills.cmd");
-            std::fs::write(
-                &wrapper,
-                format!(
-                    "@echo off\r\nset \"PYTHONPATH={}\"\r\n\"{}\" %*\r\n",
-                    python_path.to_string_lossy().replace('%', "%%"),
-                    kernel_python.to_string_lossy().replace('%', "%%")
-                ),
-            )
-            .unwrap();
             wrapper
         };
         let mut command = std::process::Command::new(bin);

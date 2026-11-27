@@ -6,11 +6,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-#[cfg(unix)]
 use anyhow::anyhow;
 use anyhow::Result;
 
-#[cfg(unix)]
 pub use crate::platform::socket_dir;
 pub use crate::platform::{
     default_daemon_socket_path, socket_identity, worker_socket_path, SocketIdentity,
@@ -35,18 +33,14 @@ pub async fn can_connect(path: &Path, timeout: Duration) -> bool {
 
 /// Staleness after which the cleanup lock of a crashed holder is reclaimed.
 /// Unix only: every taker of the cleanup lock sits behind the unix stale-file wall.
-#[cfg(unix)]
 const LOCK_STALE_AFTER: Duration = Duration::from_secs(5);
 /// Live-lock retry cadence and cap (600 retries): ~15s total.
-#[cfg(unix)]
 const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
-#[cfg(unix)]
 const LOCK_RETRIES: u32 = 600;
 
 /// Acquire the cross-process cleanup lock (proper-lockfile's empty
 /// `{path}.lock` directory): held for the whole probe/unlink sequence, so a
 /// competing startup worker cannot bind a live listener in between.
-#[cfg(unix)]
 async fn acquire_cleanup_lock(path: &Path) -> Result<bh_core::platform::LockDir> {
     for attempt in 0..=LOCK_RETRIES {
         match bh_core::platform::LockDir::acquire(path, LOCK_STALE_AFTER) {
@@ -74,7 +68,6 @@ async fn acquire_cleanup_lock(path: &Path) -> Result<bh_core::platform::LockDir>
 /// Returns an error when the parent directory cannot be created or is an
 /// owned socket directory that fails the owner check, a live listener
 /// answers, the cleanup lock cannot be acquired, or the cleanup fails.
-#[cfg(unix)]
 pub async fn prepare_socket_path(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if parent == socket_dir() || !parent.exists() {
@@ -103,7 +96,6 @@ pub async fn prepare_socket_path(path: &Path) -> Result<()> {
 /// creates for a custom socket) and refuse it unless it is a real directory
 /// owned by the current user: another user who pre-created or symlinked it
 /// could swap the socket. Then restrict it to the owner.
-#[cfg(unix)]
 fn prepare_owned_socket_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
     std::fs::create_dir_all(dir)?;
@@ -127,7 +119,6 @@ fn prepare_owned_socket_dir(dir: &Path) -> Result<()> {
 }
 
 /// Probe + grace wait + unlink for a probed-stale socket file; the caller owns the cleanup lock.
-#[cfg(unix)]
 async fn prepare_locked_socket_path(path: &Path) -> Result<()> {
     use std::os::unix::fs::FileTypeExt;
     let Ok(metadata) = std::fs::symlink_metadata(path) else {
@@ -173,7 +164,6 @@ async fn prepare_locked_socket_path(path: &Path) -> Result<()> {
 /// listener answers, and remove only the exact inode that was probed stale —
 /// a file replaced between the probe and the unlink stays untouched. The
 /// identity gate covers processes that do not take the cleanup lock.
-#[cfg(unix)]
 async fn unlink_stale_socket(path: &Path, expected: SocketIdentity) -> Result<()> {
     if can_connect(path, Duration::from_millis(250)).await {
         return Err(anyhow!("Daemon socket already in use: {}", path.display()));
@@ -200,11 +190,6 @@ async fn unlink_stale_socket(path: &Path, expected: SocketIdentity) -> Result<()
 /// Does not error: there is no path to prepare for a named pipe.
 // The signature stays async for the shared unix callers (the await is
 // the unix arm's own; the pipe arm has no path to prepare).
-#[cfg(not(unix))]
-#[cfg_attr(not(unix), allow(clippy::unused_async))]
-pub async fn prepare_socket_path(_path: &Path) -> Result<()> {
-    Ok(())
-}
 
 /// Remove the socket file when it still belongs to this supervisor
 /// incarnation (no-op for named pipes). The remove runs best-effort under
@@ -213,7 +198,6 @@ pub fn cleanup_socket_path(path: &Path, expected_identity: Option<SocketIdentity
     if !path.exists() {
         return;
     }
-    #[cfg(unix)]
     let Ok(_cleanup_lock) = bh_core::platform::LockDir::acquire(path, LOCK_STALE_AFTER) else {
         return;
     };
@@ -245,7 +229,6 @@ pub fn cleanup_socket_path(path: &Path, expected_identity: Option<SocketIdentity
 /// reads its own captured identity; `None` reaches here only from exits
 /// before the bind (no listener, no file) or from platforms without a
 /// file identity (named pipes), and the cleanup stays a no-op.
-#[cfg(unix)]
 pub fn cleanup_socket_path_after_close(path: &Path, expected_identity: Option<SocketIdentity>) {
     if expected_identity.is_none()
         || !path.exists()
@@ -256,8 +239,6 @@ pub fn cleanup_socket_path_after_close(path: &Path, expected_identity: Option<So
     cleanup_socket_path(path, expected_identity);
 }
 
-#[cfg(not(unix))]
-pub fn cleanup_socket_path_after_close(_path: &Path, _expected_identity: Option<SocketIdentity>) {}
 
 /// Restrict the bound socket file to its owner (Unix mode 0o600; Windows
 /// named pipes use ACLs on the pipe object instead).
@@ -285,7 +266,7 @@ pub async fn bind_capture_gap() {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use bh_types::platform::transport::bind_transport;

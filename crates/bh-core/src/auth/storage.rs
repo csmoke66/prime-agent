@@ -180,7 +180,6 @@ struct FileIdentity {
 // The fallible non-Unix twin pins the Option shape across
 // platforms - unwrapping only this arm would split the contract.
 #[allow(clippy::unnecessary_wraps)]
-#[cfg(unix)]
 fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
     use std::os::unix::fs::MetadataExt;
     Some(FileIdentity {
@@ -192,23 +191,7 @@ fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
     })
 }
 
-#[cfg(windows)]
-fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
-    let modified = metadata.modified().ok()?;
-    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
-    Some(FileIdentity {
-        dev: 0,
-        ino: 0,
-        mtime_sec: since.as_secs() as i64,
-        mtime_nsec: i64::from(since.subsec_nanos()),
-        len: metadata.len(),
-    })
-}
 
-#[cfg(not(any(unix, windows)))]
-fn stat_identity(_metadata: &fs::Metadata) -> Option<FileIdentity> {
-    None
-}
 
 /// One validated document read held in the process-wide read-through cache.
 struct CachedRead {
@@ -410,7 +393,6 @@ mod tests {
             .unwrap();
         let path = dir.path().join("auth.json");
         // Owner-only mode is a Unix guarantee; Windows inherits ACLs.
-        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
         let data = parse_storage_data(Some(&fs::read_to_string(&path).unwrap())).unwrap();
         assert!(data.credential("test-provider").is_some());

@@ -1,6 +1,5 @@
 //! The transcript window against a paging mock: anchored scrolling through older
 //! pages, and a bounded resident run.
-#![cfg(unix)]
 // Casts: bounded fixture arithmetic.
 #![allow(
     clippy::too_many_lines,

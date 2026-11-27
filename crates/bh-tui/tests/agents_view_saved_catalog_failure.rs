@@ -2,7 +2,6 @@
 //! failure settles the entry anchor's wait and reports the honest error —
 //! an Enter after the failure opens the default row, and the fetch
 //! re-arms on the next query change (TS `rearmSavedSearchFetch`).
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

@@ -1,7 +1,6 @@
 //! Headless e2e for the agents view's row-click grammar: a plain click on
 //! a session row selects and opens it (the Enter action); a dragged
 //! release never opens.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

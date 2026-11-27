@@ -109,14 +109,6 @@ pub(crate) fn current_state_root() -> DaemonStateRoot {
 /// in the product-default socket dir (a pinned root has none), or anywhere
 /// inside the agent dir (TS ownership registry not ported).
 fn state_root_matches(root: &DaemonStateRoot, socket_path: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        // Windows daemons share one named pipe per machine, so there is
-        // nothing to scope.
-        let _ = (root, socket_path);
-        true
-    }
-    #[cfg(not(windows))]
     {
         if socket_path == root.default_socket_path
             || root
@@ -130,7 +122,6 @@ fn state_root_matches(root: &DaemonStateRoot, socket_path: &Path) -> bool {
     }
 }
 
-#[cfg(not(windows))]
 fn inside(directory: Option<&Path>, parent: &Path) -> bool {
     let Some(directory) = directory else {
         return false;
@@ -188,7 +179,6 @@ pub(crate) fn is_daemon_process_listening(
 /// Socket files in the root's socket dir: live daemons and orphaned files
 /// alike. A pinned root has no socket dir (`None`), so it sweeps nothing
 /// but its own socket file (added by the caller).
-#[cfg(unix)]
 fn scan_socket_dir(socket_dir: Option<&Path>) -> Vec<PathBuf> {
     let Some(socket_dir) = socket_dir else {
         return Vec::new();
@@ -206,16 +196,7 @@ fn scan_socket_dir(socket_dir: Option<&Path>) -> Vec<PathBuf> {
     sockets
 }
 
-/// Windows daemon endpoints are named pipes: there is no socket directory to
-/// sweep, and discovery comes from tracked worker descriptors and the
-/// default pipe (see [`discover_daemons_with`]; TS `scanSocketDir` returns
-/// [] on win32).
-#[cfg(not(unix))]
-fn scan_socket_dir(_socket_dir: Option<&Path>) -> Vec<PathBuf> {
-    Vec::new()
-}
 
-#[cfg(unix)]
 fn is_socket_file(path: &Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
@@ -436,10 +417,7 @@ fn discover_daemons_with(root: &DaemonStateRoot, named_pipes: bool) -> Vec<Daemo
     // belong to their supervisors); a pinned root has no dir to sweep and
     // considers only its own socket file, so a dead pinned daemon's stale
     // file is still found and removable.
-    #[cfg(unix)]
     let pinned_socket_file = is_socket_file(&root.default_socket_path);
-    #[cfg(not(unix))]
-    let pinned_socket_file = false;
     let orphan_files: Vec<PathBuf> = root
         .socket_dir
         .as_deref()
@@ -535,7 +513,6 @@ mod tests {
 
     /// A synthetic state root inside a fixture directory: unit tests
     /// never touch the ambient environment's real agent dir or socket dir.
-    #[cfg(not(windows))]
     fn fixture_root(dir: &Path) -> DaemonStateRoot {
         DaemonStateRoot {
             agent_dir: dir.join("agent"),
@@ -559,7 +536,6 @@ mod tests {
         ));
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn state_root_matches_own_paths_only() {
         let root = fixture_root(Path::new("/fixture"));
@@ -576,7 +552,6 @@ mod tests {
         ));
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn a_pinned_root_claims_only_its_pinned_socket() {
         let mut root = fixture_root(Path::new("/fixture"));
@@ -591,7 +566,6 @@ mod tests {
         assert!(!state_root_matches(&root, Path::new("/pins/daemon.sock")));
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn the_linux_default_socket_dir_belongs_to_its_root() {
         // `/tmp/beehive-<uid>` is the product-default socket dir on Linux
@@ -611,7 +585,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn discovery_reports_orphan_files_inside_the_given_root_only() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -630,7 +603,6 @@ mod tests {
         assert!(!infos[0].is_default);
     }
 
-    #[cfg(unix)]
     #[test]
     fn named_pipe_discovery_probes_the_default_endpoint_without_tracked_workers() {
         let tmp = tempfile::tempdir().expect("tempdir");

@@ -5,8 +5,6 @@
 //! cleared the frame deadline and nothing re-armed the spinner's phase
 //! boundary, so the quiet select parked — the loader froze and the
 //! counter skipped whole seconds.
-#![cfg(unix)]
-
 mod support;
 
 use bh_tui::interactive::{

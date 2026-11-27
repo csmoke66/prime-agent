@@ -76,7 +76,6 @@ fn same_cwd(requested: &Path, actual: &Path) -> bool {
     if requested == actual {
         return true;
     }
-    #[cfg(unix)]
     {
         let identity = |path: &Path| -> Option<(u64, u64)> {
             use std::os::unix::fs::MetadataExt;

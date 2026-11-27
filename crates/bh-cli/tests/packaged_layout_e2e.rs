@@ -52,16 +52,9 @@ fn serial_lock() -> std::sync::MutexGuard<'static, ()> {
     }
 }
 
-/// The staged binary name: Cargo's MSVC linker emits `beehive.exe` on
-/// Windows (`std::env::consts::EXE_SUFFIX`), and the packaged layout - the
-/// installer's extract target and the binary's own exe-adjacent resolution
-/// - names the platform's spelling.
+/// The staged binary name in the packaged layout.
 fn packaged_binary_name() -> &'static str {
-    if cfg!(windows) {
-        "beehive.exe"
-    } else {
-        "beehive"
-    }
+    "beehive"
 }
 
 /// Stage the packaged layout into `dir`: the binary, the version manifest,
@@ -117,7 +110,6 @@ fn copy_dir(source: &Path, target: &Path) {
     }
 }
 
-#[cfg(unix)]
 fn set_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path)
@@ -127,10 +119,6 @@ fn set_executable(path: &Path) {
     std::fs::set_permissions(path, permissions).expect("staged binary permissions");
 }
 
-#[cfg(not(unix))]
-fn set_executable(path: &Path) {
-    let _ = path;
-}
 
 /// The kernel Python with beehive-runtime installed (skipped with a
 /// note without a live install).
@@ -144,14 +132,7 @@ fn kernel_python() -> Option<PathBuf> {
         );
         return Some(explicit);
     }
-    // The kernel venv's interpreter spelling is platform-shaped (the venv
-    // layout the product's own bootstrap creates: `bin/python` on unix,
-    // `Scripts\python.exe` on Windows).
-    let venv_python = if cfg!(windows) {
-        "kernel-venv/Scripts/python.exe"
-    } else {
-        "kernel-venv/bin/python"
-    };
+    let venv_python = "kernel-venv/bin/python";
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
         |_| format!("/home/ubuntu/.beehive/{venv_python}"),
         |home| format!("{home}/.beehive/{venv_python}"),
@@ -644,8 +625,7 @@ fn packaging_dry_run_produces_artifact() {
     // Linux fail-closed: the packer accepts only a paired shipped ELF +
     // decoder from split_debug.py, so the dry run first splits a tiny real
     // ELF fixture — the same artifact shape the CI channel ships. The
-    // Windows arm stages the MSVC exe (the packer carries no split-debug
-    // there). The split fixture dir must outlive the invocation (_split_dir
+    // The split fixture dir must outlive the invocation (_split_dir
     // below).
     let (staged_binary, staged_decoder, _split_dir): (
         std::ffi::OsString,
@@ -667,20 +647,13 @@ fn packaging_dry_run_produces_artifact() {
         (env!("CARGO_BIN_EXE_beehive").into(), None, None)
     };
     // The platform tag the packer derives on this host (`release_platform`):
-    // linux-x64 on the linux CI host, win32-x64 on the windows-latest battery
-    // (the channel alias, never a bare `windows-x64` — the naming the update
-    // reader's manifest contract requires), darwin-<arch> on a macOS dev host.
+    // linux-x64 on the linux CI host, darwin-<arch> on a macOS dev host.
     let host_platform = match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", _) => "win32-x64",
         ("macos", "aarch64") => "darwin-arm64",
         ("macos", _) => "darwin-x64",
         _ => "linux-x64",
     };
-    let staged_binary_name = if cfg!(windows) {
-        "beehive.exe"
-    } else {
-        "beehive"
-    };
+    let staged_binary_name = "beehive";
     let mut command = Command::new(python);
     command
         .arg(repo_root().join("scripts").join("package_release.py"))
@@ -978,13 +951,7 @@ fn bootstrap_kernel_venv_from_packaged_sidecar() {
         stdout.contains("kernel python:"),
         "bootstrap stdout: {stdout}"
     );
-    // The venv layout the product's bootstrap creates: `bin/python` on
-    // unix, `Scripts\python.exe` on Windows.
-    let venv_python = if cfg!(windows) {
-        venv.join("Scripts").join("python.exe")
-    } else {
-        venv.join("bin").join("python")
-    };
+    let venv_python = venv.join("bin").join("python");
     assert!(venv_python.exists(), "kernel venv python missing");
 
     // A session boots on the fresh venv, without any kernel override.

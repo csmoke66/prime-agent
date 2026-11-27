@@ -13,8 +13,6 @@
 //! headless `-c`/`-r` must refuse to open a session file that a live daemon
 //! worker already hosts, with the exact TS `SessionAlreadyActiveError`
 //! message.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

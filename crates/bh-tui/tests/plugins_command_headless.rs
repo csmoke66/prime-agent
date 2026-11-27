@@ -1,7 +1,6 @@
 //! Headless e2e for the `/plugins` command (TS `handlePluginsCommand` ->
 //! `showServiceCatalogPicker`): opens the external-services catalog view
 //! (the merged `/mcp` view) and an argument prefills the search field.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

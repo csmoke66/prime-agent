@@ -1,7 +1,5 @@
 //! The CLI's direct Python dispatch must use the same project startup boundary
 //! as kernel probes and the persistent REPL.
-#![cfg(unix)]
-
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;

@@ -8,7 +8,6 @@ use crate::daemon::SocketIdentity;
 
 /// Stat the endpoint's filesystem identity (dev + ino); Unix sockets only
 /// (named pipes have no file to stat).
-#[cfg(unix)]
 #[must_use]
 pub fn socket_identity(path: &Path) -> Option<SocketIdentity> {
     use std::os::unix::fs::MetadataExt;
@@ -19,13 +18,8 @@ pub fn socket_identity(path: &Path) -> Option<SocketIdentity> {
     })
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn socket_identity(_path: &Path) -> Option<SocketIdentity> {
-    None
-}
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

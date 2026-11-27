@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 mod support;
 
 use std::os::unix::net::UnixListener;

@@ -1,5 +1,4 @@
 //! Result clipping must preserve UTF-8 and leave the reader serving later cells.
-#![cfg(unix)]
 // Kernel manager futures follow the crate's existing integration-test disposition.
 #![allow(clippy::large_futures)]
 

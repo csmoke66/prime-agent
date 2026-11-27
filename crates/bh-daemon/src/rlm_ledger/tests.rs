@@ -177,7 +177,6 @@ fn edge_is_live_reflects_tombstones_and_files() {
 // File changes do not invalidate the ledger's stat-identity cache. A
 // canonical path recorded at spawn can later become a symlink, so the
 // replay index alone cannot establish that no live edge matches a path.
-#[cfg(unix)]
 #[test]
 fn edge_is_live_revalidates_paths_without_a_ledger_append() {
     use std::os::unix::fs::symlink;
@@ -786,7 +785,6 @@ fn display_entry_file_is_owner_only() {
     assert!(write_rlm_subagent_display(&entry).unwrap());
     // The TS display writer creates its temp 0o600; the rename carries
     // that mode onto the visible file.
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mode = fs::metadata(child_dir.join("rlm-subagent.json"))
@@ -1698,7 +1696,6 @@ fn family_edges_track_restore_and_relocation_without_a_ledger_append() {
     assert!(family_children().is_empty());
 }
 
-#[cfg(unix)]
 #[test]
 fn family_edges_recheck_symlink_targets_without_a_ledger_append() {
     use std::os::unix::fs::symlink;

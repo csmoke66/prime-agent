@@ -818,7 +818,6 @@ fn a_refused_forced_refresh_ends_the_turn_with_the_re_login_sentence() {
 }
 
 /// Runs of a counting `!command` (one line appended per execution).
-#[cfg(unix)]
 fn command_runs(counter: &std::path::Path) -> usize {
     std::fs::read_to_string(counter).map_or(0, |text| text.lines().count())
 }
@@ -831,7 +830,6 @@ fn command_runs(counter: &std::path::Path) -> usize {
 /// call, and the per-call lookup hits the process cache. The counter key
 /// is a POSIX-shell pipeline (the ambient shell on Windows resolves it
 /// differently), so the test runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn a_stored_command_key_resolves_once_and_never_re_runs_per_call() {
     let _faux = FAUX_TEST_LOCK
@@ -889,7 +887,6 @@ fn a_stored_command_key_resolves_once_and_never_re_runs_per_call() {
 /// building defers command-backed fingerprints. The counter key
 /// is a POSIX-shell pipeline (the ambient shell on Windows resolves it
 /// differently), so the test runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn a_provider_command_key_never_runs_for_another_providers_call() {
     let _faux = FAUX_TEST_LOCK
@@ -940,7 +937,6 @@ fn a_provider_command_key_never_runs_for_another_providers_call() {
 /// must not rebuild the registry that resolves it. The counter
 /// key is a POSIX-shell pipeline (the ambient shell on Windows resolves
 /// it differently), so the test runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn a_failed_provider_command_key_never_runs_for_another_providers_call() {
     let _faux = FAUX_TEST_LOCK
@@ -994,7 +990,6 @@ fn a_failed_provider_command_key_never_runs_for_another_providers_call() {
 /// fallback key — streams per call, never the captured pair. The counter
 /// key is a POSIX-shell pipeline (the ambient shell on Windows resolves
 /// it differently), so the test runs on Unix only.
-#[cfg(unix)]
 #[test]
 fn a_failed_serving_command_key_resolves_once_per_call() {
     let _faux = FAUX_TEST_LOCK

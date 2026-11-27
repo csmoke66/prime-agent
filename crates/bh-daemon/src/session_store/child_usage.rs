@@ -39,24 +39,9 @@ pub(super) struct UnconfirmedChildRow {
 }
 
 fn file_identity(metadata: &std::fs::Metadata) -> (u64, u64) {
-    #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         (metadata.dev(), metadata.ino())
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        // Creation time is a limited replacement anchor, not a unique Windows
-        // file ID. Owned path/header/prefix/row checks and the existing managed
-        // single-writer lease remain necessary; noncooperative writers are out
-        // of this attribution-local recovery contract.
-        (metadata.creation_time(), 0)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = metadata;
-        (0, 0)
     }
 }
 

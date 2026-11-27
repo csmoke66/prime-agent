@@ -38,6 +38,6 @@ If a maintainer has invited a pull request:
 4. Run the relevant checks locally and describe the validation in the pull request.
 5. Avoid unrelated refactors or dependency changes.
 
-Development rules, setup, and commands for this branch are documented in [AGENTS.md](AGENTS.md) and the Makefile gate targets (`make check`, `make deny`, `make windows-cross`).
+Development rules, setup, and commands for this branch are documented in [AGENTS.md](AGENTS.md) and the Makefile gate targets (`make check`, `make deny`).
 
 Maintainers may close a pull request that changes scope, cannot be validated safely, or no longer fits the project roadmap.

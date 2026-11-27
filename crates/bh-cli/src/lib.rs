@@ -135,8 +135,6 @@ fn main_impl(args: &[String], runtime: &dyn mode::Runtime) -> Result<i32, String
         bh_ai::utils::log::install_stderr_log_sink();
     }
 
-    // Enable Windows VT processing before raw ANSI mode writes.
-    bh_types::platform::console_init();
 
     if public_command.attach_agent.is_some() && app_mode != mode::AppMode::Interactive {
         return Err("attach requires an interactive terminal".to_string());

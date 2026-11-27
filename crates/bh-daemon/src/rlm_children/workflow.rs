@@ -546,7 +546,7 @@ fn read_result(session_file: &Path, output_fields: &Fields) -> Result<Value> {
     bail!("workflow has no final assistant message")
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::model_allowlist::ModelRefusalTelemetry;

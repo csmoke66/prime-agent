@@ -606,11 +606,7 @@ impl SessionUi {
         // Suspend hands the terminal to the shell; the loop performs the cycle right after
         // dispatch, and the SIGCONT continuation re-applies raw mode and mouse tracking.
         if view.editor.keybindings().matches(&id, "app.suspend") {
-            if crate::suspend::supported() {
-                self.suspend_requested = true;
-            } else {
-                self.note("Suspend to background is not supported on Windows", view);
-            }
+            self.suspend_requested = true;
             return Ok(());
         }
         if view.editor.keybindings().matches(&id, "app.model.select") {

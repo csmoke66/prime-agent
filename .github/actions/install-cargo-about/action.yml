@@ -22,12 +22,6 @@ runs:
             asset=aarch64-apple-darwin
             sha256=45520df8680978a6e7c4023ace0e3f311c73efc208cd68e5a7f4ed4822fa0349
             hash_check="shasum -a 256 --check --strict" ;;
-          MINGW*-x86_64)
-            asset=x86_64-pc-windows-msvc
-            sha256=9e2942533ef1c592c4a70bdb384cae1550a3f5fc9ae40379b6662e3d2f16fe02
-            # Git Bash's tar reads a drive-letter path as a remote host.
-            install_dir="$(cygpath -u "${install_dir}")"
-            path_entry="$(cygpath -w "${install_dir}")" ;;
           *)
             echo "::error::no pinned cargo-about build for $(uname -s)-$(uname -m)"
             exit 1 ;;

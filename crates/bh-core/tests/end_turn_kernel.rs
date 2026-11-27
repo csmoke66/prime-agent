@@ -18,8 +18,6 @@
 //! running, and its `[bash-done]` completion notice lands on the agent
 //! AFTER the turn returned, collecting the result. No model call: the
 //! `ScriptedProvider` answers from the pushed turns.
-#![cfg(unix)]
-
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

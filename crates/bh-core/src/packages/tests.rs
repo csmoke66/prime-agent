@@ -1,12 +1,10 @@
 //! npm/git package flows against local fixtures: a bash "npm" shim (no
 //! network) and a bare git repo cloned over the filesystem.
 
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[cfg(unix)]
 use crate::packages::exe_dir_of;
 use crate::packages::source::{GitSource, SourceScope, UserOrProject};
 use crate::packages::PackageManager;
@@ -66,7 +64,6 @@ esac
     );
     let shim = dir.join("npm-shim.sh");
     std::fs::write(&shim, script).unwrap();
-    #[cfg(unix)]
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
     shim
 }
@@ -333,7 +330,6 @@ fn git_ref_checkout_installs_the_pinned_revision() {
 /// A launcher symlink resolves to the real binary's directory (the
 /// Homebrew formula's `bin` link): the shipped payload sits beside the
 /// real file, and a plain path stays untouched.
-#[cfg(unix)]
 #[test]
 fn exe_dir_of_resolves_a_launcher_symlink() {
     let root = tempfile::tempdir().unwrap();

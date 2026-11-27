@@ -1094,19 +1094,13 @@ impl Supervisor {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     use super::*;
-    #[cfg(unix)]
     use crate::supervisor::SupervisorOptions;
-    #[cfg(unix)]
     use bh_types::daemon::DaemonWorkerDescriptor;
-    #[cfg(unix)]
     use bh_types::platform::transport::TransportStream;
-    #[cfg(unix)]
     use serde_json::json;
-    #[cfg(unix)]
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -1186,7 +1180,6 @@ mod tests {
         assert!(dispatch_rx.recv().await.is_none());
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_shutdown_request_logs_its_client() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1243,7 +1236,6 @@ mod tests {
         connection.abort();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_lagged_client_event_stream_is_logged() {
         use tokio::io::AsyncReadExt as _;
@@ -1367,7 +1359,6 @@ mod tests {
     /// Reconnecting while an expired timer waits on the descriptor must
     /// prevent a stop. The first connectivity check already happened when
     /// the slot clears, but the descriptor read can yield to a new client.
-    #[cfg(unix)]
     #[tokio::test]
     async fn reconnect_during_expired_cleanup_keeps_owned_worker() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1441,7 +1432,6 @@ mod tests {
     /// connections) keeps the worker, an owner that reconnects inside
     /// the grace keeps it, and the stop waits out the full grace instead
     /// of firing at the disconnect.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_client_owned_worker_stops_after_its_owner_s_last_connection_closes() {
         let dir = tempfile::TempDir::new().unwrap();

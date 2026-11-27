@@ -2,8 +2,6 @@
 //! states whose observation needs a loop iteration (first frame after the
 //! open, barrier deadlines, expiry arms). The work-conditional tick parks
 //! without them, so each member needs its own frame-arm deadline.
-#![cfg(unix)]
-
 mod support;
 
 use bh_tui::interactive::{

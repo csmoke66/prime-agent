@@ -16,8 +16,6 @@
 //! the mock terminal records every mode-affecting byte the child writes,
 //! answers the kitty query, drives one exit route, and asserts the delta
 //! is empty.
-#![cfg(unix)]
-
 mod harness;
 mod ledger;
 

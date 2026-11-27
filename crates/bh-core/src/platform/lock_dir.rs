@@ -37,7 +37,6 @@ fn probe_mtime() -> (i64, i64) {
 // The `libc::timespec` field names are the syscall's own vocabulary; the struct-literal shorthand
 // below is the point.
 #[allow(clippy::similar_names)]
-#[cfg(unix)]
 fn set_mtime(path: &Path, tv_sec: i64, tv_nsec: i64) -> io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     // Lock paths come from agent-dir joins, but keep the NUL case an error
@@ -62,120 +61,8 @@ fn set_mtime(path: &Path, tv_sec: i64, tv_nsec: i64) -> io::Result<()> {
 // The `libc::timespec` field names are the syscall's own vocabulary; the struct-literal shorthand
 // below is the point.
 #[allow(clippy::similar_names)]
-#[cfg(windows)]
-fn set_mtime(path: &Path, tv_sec: i64, tv_nsec: i64) -> io::Result<()> {
-    win32::set_last_write_time(path, tv_sec, tv_nsec)
-}
 
-#[cfg(not(any(unix, windows)))]
-fn set_mtime(_path: &Path, _tv_sec: i64, _tv_nsec: i64) -> io::Result<()> {
-    Err(io::Error::other(
-        "directory lock mtime probe is not implemented on this platform",
-    ))
-}
 
-/// The kernel32 file-time surface for the lock probe, hand-declared (repo
-/// policy: pinned constants/externs, no windows-sys dependency).
-#[cfg(windows)]
-mod win32 {
-    #![allow(non_snake_case)]
-
-    use std::ffi::c_void;
-    use std::io;
-    use std::os::windows::ffi::OsStrExt;
-    use std::path::Path;
-
-    /// `winbase.h`: required to open a directory handle.
-    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-    /// `winbase.h`: write access to the file's times.
-    const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
-    /// `winnt.h` `FILE_SHARE_READ | WRITE | DELETE`: a concurrent stat of the lock dir must not be
-    /// blocked.
-    const FILE_SHARE_ALL: u32 = 0x0000_0007;
-    /// `winbase.h` `OPEN_EXISTING`.
-    const OPEN_EXISTING: u32 = 3;
-    /// `winbase.h`: `CreateFileW` returns this (not null) on failure.
-    const INVALID_HANDLE_VALUE: isize = -1;
-
-    /// A Win32 `FILETIME`: 100ns ticks since 1601-01-01 UTC, split 32/32.
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct FileTime {
-        dwLowDateTime: u32,
-        dwHighDateTime: u32,
-    }
-
-    type Handle = *mut c_void;
-
-    extern "system" {
-        fn CreateFileW(
-            filename: *const u16,
-            desired_access: u32,
-            share_mode: u32,
-            security_attributes: *mut c_void,
-            creation_disposition: u32,
-            flags_and_attributes: u32,
-            template_file: Handle,
-        ) -> Handle;
-        fn CloseHandle(handle: Handle) -> i32;
-        fn SetFileTime(
-            handle: Handle,
-            creation_time: *const FileTime,
-            last_access_time: *const FileTime,
-            last_write_time: *const FileTime,
-        ) -> i32;
-    }
-
-    /// `(tv_sec, tv_nsec)` -> FILETIME. The Windows epoch trails the Unix
-    /// epoch by 11644473600 seconds; the sub-second part is nanoseconds
-    /// against FILETIME's 100ns ticks.
-    // `tv_sec`/`tv_nsec` are the POSIX timespec spellings the callers
-    // pass through; the pair is the domain's own vocabulary.
-    #[allow(clippy::similar_names)]
-    fn unix_to_filetime(tv_sec: i64, tv_nsec: i64) -> FileTime {
-        const EPOCH_DELTA_TICKS: i64 = 11_644_473_600 * 10_000_000;
-        let ticks = tv_sec * 10_000_000 + EPOCH_DELTA_TICKS + tv_nsec / 100;
-        FileTime {
-            dwLowDateTime: ticks as u32,
-            dwHighDateTime: (ticks >> 32) as u32,
-        }
-    }
-
-    /// Set the directory's last-write time. The `tv_sec`/`tv_nsec` pair
-    /// is the POSIX timespec vocabulary, same as `unix_to_filetime`.
-    #[allow(clippy::similar_names)]
-    pub(crate) fn set_last_write_time(path: &Path, tv_sec: i64, tv_nsec: i64) -> io::Result<()> {
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        let handle = unsafe {
-            CreateFileW(
-                wide.as_ptr(),
-                FILE_WRITE_ATTRIBUTES,
-                FILE_SHARE_ALL,
-                std::ptr::null_mut(),
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
-                std::ptr::null_mut(),
-            )
-        };
-        if handle as isize == INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error());
-        }
-        let last_write = unix_to_filetime(tv_sec, tv_nsec);
-        let ok = unsafe {
-            SetFileTime(
-                handle,
-                std::ptr::null(),
-                std::ptr::null(),
-                std::ptr::from_ref(&last_write),
-            )
-        };
-        unsafe { CloseHandle(handle) };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
-}
 
 /// An exclusive cross-process lock on `{path}.lock`, released on drop by
 /// removing the directory.
@@ -356,39 +243,23 @@ impl LockDir {
         if pid == 0 || pid > i32::MAX as u32 {
             return true;
         }
-        #[cfg(unix)]
         {
             let result = unsafe { libc::kill(pid as i32, 0) };
             result != 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        }
-        #[cfg(windows)]
-        {
-            matches!(
-                bh_types::platform::process::is_process_alive(pid),
-                Ok(false)
-            )
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            false
         }
     }
 
     /// The mkdir is the acquisition signal: EEXIST is the only collision.
     /// Returns the created lock's [`lock_identity`].
-    #[cfg(any(unix, windows))]
     fn create(path: &Path, owner: Option<&str>) -> io::Result<SystemTime> {
-        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
         fs::create_dir(path)?;
         let result = (|| {
             if let Some(owner) = owner {
-                #[cfg(unix)]
                 {
                     fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
                 }
                 fs::write(path.join("owner"), format!("{owner}\n"))?;
-                #[cfg(unix)]
                 fs::set_permissions(path.join("owner"), fs::Permissions::from_mode(0o600))?;
             }
             let (sec, nanos) = probe_mtime();
@@ -402,17 +273,6 @@ impl LockDir {
         result
     }
 
-    #[cfg(not(any(unix, windows)))]
-    fn create(path: &Path, owner: Option<&str>) -> io::Result<SystemTime> {
-        fs::create_dir(path)?;
-        if let Some(owner) = owner {
-            if let Err(error) = fs::write(path.join("owner"), format!("{owner}\n")) {
-                let _ = fs::remove_dir(path);
-                return Err(error);
-            }
-        }
-        lock_identity(&fs::symlink_metadata(path)?)
-    }
 
     /// Decide the fate of an incumbent at `path`. Returns only when the
     /// incumbent was removed (or vanished) and acquisition may be retried;
@@ -428,7 +288,6 @@ impl LockDir {
             // A regular file is not a lock in this protocol (a pre-compat
             // Rust build or foreign artifact): remove it and retry - but
             // only when no live flock holder guards it.
-            #[cfg(unix)]
             {
                 if Self::legacy_flock_held(path) {
                     return Err(io::Error::new(
@@ -499,7 +358,6 @@ impl LockDir {
     /// True while another process holds the pre-compat flock on a legacy
     /// lock FILE. Its absence (or an unopenable path) means nobody guards
     /// it, so the artifact can be reclaimed safely.
-    #[cfg(unix)]
     fn legacy_flock_held(path: &Path) -> bool {
         use std::os::unix::io::AsRawFd;
         let Ok(file) = fs::OpenOptions::new().write(true).open(path) else {
@@ -660,7 +518,6 @@ mod tests {
         assert!(!stale.exists());
     }
 
-    #[cfg(unix)]
     #[test]
     fn live_owned_lock_cannot_be_stolen_after_stale_age() {
         let dir = tempfile::tempdir().unwrap();
@@ -674,7 +531,6 @@ mod tests {
         guard.ensure_owned().unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn dead_owned_lock_is_reclaimed_and_old_guard_cannot_remove_successor() {
         let dir = tempfile::tempdir().unwrap();
@@ -695,7 +551,6 @@ mod tests {
         assert!(!LockDir::path_for(&file).exists());
     }
 
-    #[cfg(unix)]
     #[test]
     fn unparseable_owned_lock_is_reclaimed_by_age() {
         let dir = tempfile::tempdir().unwrap();

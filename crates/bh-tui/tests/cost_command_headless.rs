@@ -1,5 +1,4 @@
 //! Headless regression for the client-only `/cost` display checkpoint.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

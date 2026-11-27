@@ -13,8 +13,6 @@
 //! Real-terminal e2e for the inline auth panel (the `/mcp` view login): the login flow must NEVER take the terminal
 //! over — no alternate-screen leave, no screen clear, no mouse-tracking
 //! release — while the panel renders inline.
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::PathBuf;

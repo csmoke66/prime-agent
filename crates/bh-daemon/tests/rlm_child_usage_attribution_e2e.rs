@@ -6,8 +6,6 @@
 #![allow(clippy::large_futures)]
 // Fn length is a style gate, not correctness.
 #![allow(clippy::too_many_lines)]
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

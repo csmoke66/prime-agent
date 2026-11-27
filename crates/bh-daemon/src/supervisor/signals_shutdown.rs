@@ -4,7 +4,6 @@ use super::{
     json, Arc, Ordering, RouteAdmission, Supervisor, Value, WorkerTransition, ROUTE_TIMEOUT_MS,
 };
 // The only use is the broadcast inside the unix begin_signal_drain arm.
-#[cfg(unix)]
 use super::ClientRouting;
 
 /// The `daemon_closing` frame: every connected client learns the daemon is
@@ -63,7 +62,6 @@ impl Supervisor {
     /// that finds a shutdown already committed, force-exits. Returns `true` when this
     /// call started the drain; `false` when one was already in flight. A signal that
     /// finds `accept_exit` published never flips the gate.
-    #[cfg(unix)]
     pub(crate) fn begin_signal_drain(self: &Arc<Self>) -> bool {
         if self.accept_exit.load(Ordering::SeqCst)
             || self.shutting_down.swap(true, Ordering::SeqCst)

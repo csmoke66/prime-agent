@@ -13,8 +13,6 @@
 //! answer on kitty and DA1-answering terminals; only the fully-silent pty
 //! class pays the 250ms deadline (a late flags reply never upgrades past the
 //! conclusion; a raced suspend stalls behind the mode lock).
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

@@ -1269,7 +1269,6 @@ mod tests {
     /// error slot holds the failure across later successful appends too
     /// (the append-only journal never re-persists the failed records)
     /// until a full rewrite re-persists the pending set.
-    #[cfg(unix)]
     #[test]
     fn a_journal_write_failure_surfaces_until_a_rewrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -1466,7 +1465,6 @@ mod tests {
     /// nothing it does can erase the records a later open replays, even
     /// after the read failure clears (without the detach, the drain's
     /// `Drained` marker would erase the unseen record).
-    #[cfg(unix)]
     #[test]
     fn an_unreadable_journal_detaches_the_instance_from_the_path() {
         let dir = tempfile::tempdir().unwrap();

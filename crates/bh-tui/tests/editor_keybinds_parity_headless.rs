@@ -1,7 +1,6 @@
 //! Headless e2e for the prompt-bar editing keybind set (operator ask 2026-09-24): undo/redo of a
 //! paste, shift+arrow selection, select-all replace, doc/paragraph jumps. SANCTIONED DIVERGENCE
 //! from TS (per the #289 precedent): the TS editor has none of these; pins the forward feature.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

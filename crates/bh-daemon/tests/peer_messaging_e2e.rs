@@ -2,8 +2,6 @@
 //! burns a single-use worker ticket on B's socket and delivers with the TS
 //! sender identity; the two-client shape completes without starving the
 //! route plane; a supervisor `kill -9` does not stop messaging.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

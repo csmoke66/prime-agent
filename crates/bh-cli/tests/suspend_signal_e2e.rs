@@ -15,8 +15,6 @@
 //! The TS SIGINT shield window lives in the bh-types disposition-pair
 //! unit test: a SIGINT to a stopped process queues until SIGCONT.
 
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

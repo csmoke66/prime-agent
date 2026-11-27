@@ -5,7 +5,6 @@
 //! to the draft. The compact dock coexists with the recall: the draft's
 //! own Down enters the dock in every session shape, and the Up that
 //! follows returns to the prompt before the next Up recalls.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

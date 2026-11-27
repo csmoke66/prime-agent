@@ -1161,7 +1161,6 @@ mod tombstone_usage_tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn symlink_delete_tombstones_the_edge_keyed_at_the_target() {
         let root = temp_dir("symlink-del");
@@ -1210,7 +1209,6 @@ mod tombstone_usage_tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_non_regular_session_path_captures_nothing() {
         // A short canonical root: the socket path must fit SUN_LEN, and the

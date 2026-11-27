@@ -1,5 +1,4 @@
 //! The Output speed setting shows response throughput in the footer; disabling clears it.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

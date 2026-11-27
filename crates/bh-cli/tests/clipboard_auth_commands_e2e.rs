@@ -13,8 +13,6 @@
 //! daemon session driven headlessly — `/copy`, `/import`, `/settings`,
 //! `/login`, `/logout`, and `/update` through their
 //! composition-root hooks.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

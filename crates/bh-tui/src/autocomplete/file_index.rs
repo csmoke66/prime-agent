@@ -787,7 +787,6 @@ mod freshness_tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn saving_backslash_filename_preserves_live_walk_results() {
         let outer = tempfile::tempdir().expect("tempdir");

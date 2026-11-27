@@ -474,10 +474,7 @@ impl Inner {
             let exit = match child.wait().await {
                 Ok(status) => ExitInfo {
                     code: status.code(),
-                    #[cfg(unix)]
                     signal: unix_signal_of(status),
-                    #[cfg(not(unix))]
-                    signal: None,
                 },
                 Err(_) => ExitInfo {
                     code: None,
@@ -595,14 +592,7 @@ fn kernel_spawn_env(
 ) -> HashMap<std::ffi::OsString, std::ffi::OsString> {
     let mut env: HashMap<std::ffi::OsString, std::ffi::OsString> = std::env::vars_os().collect();
     for (key, value) in options_env {
-        #[cfg(windows)]
-        env.retain(|name, _| !name.to_string_lossy().eq_ignore_ascii_case(key));
         env.insert(key.into(), value.into());
-    }
-    #[cfg(windows)]
-    {
-        env.retain(|name, _| !name.to_string_lossy().eq_ignore_ascii_case("PYTHONUTF8"));
-        env.insert("PYTHONUTF8".into(), "1".into());
     }
     env.insert(
         "BEEHIVE_KERNEL_OWNER_PID".into(),
@@ -612,7 +602,6 @@ fn kernel_spawn_env(
     env
 }
 
-#[cfg(unix)]
 fn unix_signal_of(status: std::process::ExitStatus) -> Option<i32> {
     crate::platform::process::termination_signal(&status)
 }
@@ -665,23 +654,6 @@ mod tests {
         dir
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn kernel_spawn_env_forces_utf8_mode() {
-        let mut options_env = HashMap::new();
-        options_env.insert("pythonutf8".to_string(), "0".to_string());
-        let env = kernel_spawn_env(&options_env);
-        assert_eq!(
-            env.get(std::ffi::OsStr::new("PYTHONUTF8"))
-                .and_then(|value| value.to_str()),
-            Some("1")
-        );
-        assert_eq!(
-            env.get(std::ffi::OsStr::new("BEEHIVE_KERNEL_OWNER_PID"))
-                .and_then(|value| value.to_str()),
-            Some(std::process::id().to_string().as_str())
-        );
-    }
 
     #[test]
     fn kernel_stderr_log_is_owner_only() {
@@ -692,7 +664,6 @@ mod tests {
             .open_stderr_log_at(&path)
             .expect("stderr log opens");
         drop(log);
-        #[cfg(unix)]
         {
             assert_eq!(
                 crate::platform::perms::file_mode(&path),
@@ -703,8 +674,6 @@ mod tests {
                 Some(crate::platform::perms::PRIVATE_DIR_MODE)
             );
         }
-        #[cfg(not(unix))]
-        assert!(path.is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -721,7 +690,6 @@ mod tests {
             .truncate(true)
             .open(&path)
             .expect("loose log");
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = loose.set_permissions(std::fs::Permissions::from_mode(0o644));
@@ -735,7 +703,6 @@ mod tests {
             .open_stderr_log_at(&path)
             .expect("stderr log opens");
         drop(log);
-        #[cfg(unix)]
         {
             let old = path.with_extension("log.old");
             assert_eq!(
@@ -749,8 +716,6 @@ mod tests {
                 "the fresh log is tightened despite a loose predecessor"
             );
         }
-        #[cfg(not(unix))]
-        assert!(path.with_extension("log.old").is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

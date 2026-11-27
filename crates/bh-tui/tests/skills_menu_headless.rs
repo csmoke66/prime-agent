@@ -1,7 +1,6 @@
 //! Headless e2e for skills-as-slash-commands (TS
 //! `createBaseAutocompleteProvider`): the session's `get_commands`
 //! response enumerates the installed skills into the slash menu.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

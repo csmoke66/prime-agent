@@ -2,7 +2,6 @@
 //! `handleFullscreenInput`): a press-drag-release over transcript rows
 //! copies the spanned text (recorded `copies` stand in for the OSC 52
 //! write); a dock press starts a frame selection; a plain click copies nothing.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

@@ -14,8 +14,6 @@
 //! root's chat with the dock focused on the SUBAGENTS item — the panel's own
 //! dock icon — not the prompt bar. Proven behaviorally: a bare Enter re-opens
 //! the scoped view, and the scoped view's outcome carries `scope_back`.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

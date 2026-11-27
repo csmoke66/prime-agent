@@ -417,5 +417,5 @@ impl Drop for ReplacingGate<'_> {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests;

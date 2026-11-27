@@ -11,8 +11,6 @@
 //! The cell time limit interrupts a cell that runs past it: the tool result is an
 //! error naming the limit, the turn continues, and the namespace survives. A cell
 //! that ignores the interrupt gets the kernel restarted.
-#![cfg(unix)]
-
 use std::path::PathBuf;
 
 use bh_agent::scripted::{tool_call_turn_steps, ScriptedProvider, ScriptedTurn};

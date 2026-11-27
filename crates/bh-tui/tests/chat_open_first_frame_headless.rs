@@ -2,7 +2,6 @@
 //! layout-shift report): opening a chat must paint its final geometry in
 //! the FIRST frame — the dock folds synchronously with the attach even
 //! when the catalog responses lag; no captured frame repaints the dock.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

@@ -474,17 +474,14 @@ fetch() {
 # --- platform detection ------------------------------------------------------
 OS="$(uname -s)"
 ARCH="$(uname -m)"
-WINDOWS="no"
 case "$OS:$ARCH" in
   Darwin:arm64) PLATFORM=darwin-arm64 ;;
   Darwin:x86_64) PLATFORM=darwin-x64 ;;
   Linux:x86_64) PLATFORM=linux-x64 ;;
   Linux:aarch64) PLATFORM=linux-arm64 ;;
-  MINGW64_NT*:x86_64|MINGW_NT*:x86_64|MSYS_NT*:x86_64|CYGWIN_NT*:x86_64)
-    PLATFORM=win32-x64; WINDOWS=yes ;;
   *) die "no build is published for ${OS} ${ARCH}" ;;
 esac
-if [ "$WINDOWS" = "yes" ]; then BINARY_NAME="beehive.exe"; else BINARY_NAME="beehive"; fi
+BINARY_NAME="beehive"
 if [ "$OS" = "Linux" ]; then
   glibc="$(ldd --version 2>&1 | head -n 1)"
   case "$glibc" in
@@ -574,15 +571,7 @@ stage=""
 # Written literally (quoted heredoc): nothing expands at install time; the
 # payload path resolves from the launcher's own location at launch.
 launcher_tmp="$(mktemp "${bin_dir}/.beehive.XXXXXX")"
-if [ "$WINDOWS" = "yes" ]; then
-  cat > "$launcher_tmp" <<'EOF'
-#!/bin/sh
-# beehive — launcher written by install-rust.sh.
-export BEEHIVE_CODING_AGENT_DIR="${BEEHIVE_CODING_AGENT_DIR:-$HOME/.beehive}"
-exec "$(dirname "$0")/../share/beehive/beehive.exe" "$@"
-EOF
-else
-  cat > "$launcher_tmp" <<'EOF'
+cat > "$launcher_tmp" <<'EOF'
 #!/bin/sh
 # beehive — launcher written by install-rust.sh.
 export BEEHIVE_CODING_AGENT_DIR="${BEEHIVE_CODING_AGENT_DIR:-$HOME/.beehive}"
@@ -597,19 +586,8 @@ if [ -z "${BEEHIVE_DAEMON_SOCKET:-}" ]; then
 fi
 exec "$(dirname "$0")/../share/beehive/beehive" "$@"
 EOF
-fi
 chmod 0755 "$launcher_tmp"
 mv -f "$launcher_tmp" "$launcher"
-if [ "$WINDOWS" = "yes" ]; then
-  cmd_tmp="$(mktemp "${bin_dir}/.beehive-cmd.XXXXXX")"
-  cat > "$cmd_tmp" <<'EOF'
-@echo off
-rem beehive - launcher written by install-rust.sh.
-if not defined BEEHIVE_CODING_AGENT_DIR set "BEEHIVE_CODING_AGENT_DIR=%USERPROFILE%\.beehive"
-"%~dp0..\share\beehive\beehive.exe" %*
-EOF
-  mv -f "$cmd_tmp" "${bin_dir}/beehive.cmd"
-fi
 [ -z "$aside" ] || rm -rf "$aside"
 step_ok "Installed" "$(tilde "$launcher")"
 

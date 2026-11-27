@@ -929,7 +929,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn harness_browser_delete_contends_on_the_state_symlink_target_lock() {
         let root = tempfile::tempdir().unwrap();

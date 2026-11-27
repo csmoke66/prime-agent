@@ -325,7 +325,6 @@ async fn a_resumed_session_repairs_a_non_utf8_torn_tail_before_its_first_append(
     drop(worker);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn a_symlinked_session_repairs_its_target_and_keeps_the_append_lease() {
     let dir = tempfile::tempdir().unwrap();

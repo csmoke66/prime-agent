@@ -45,7 +45,6 @@ pub(crate) async fn edit(command: &str, text: &str, extension: &str) -> Result<O
     // overwrite or remove.
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     // A path we did not create is not ours to delete: the cleanup runs on
     // every path past a successful create. The write handle is scoped to the
@@ -62,17 +61,10 @@ pub(crate) async fn edit(command: &str, text: &str, extension: &str) -> Result<O
         // first token is the program, the rest its arguments, and the
         // temp path rides last; win32 shells out instead (`shell:
         // process.platform === "win32"`).
-        #[cfg(not(windows))]
         let mut editor = {
             let mut tokens = command.split(' ');
             let mut editor = tokio::process::Command::new(tokens.next().unwrap_or_default());
             editor.args(tokens);
-            editor
-        };
-        #[cfg(windows)]
-        let mut editor = {
-            let mut editor = tokio::process::Command::new("cmd");
-            editor.arg("/C").arg(command);
             editor
         };
         editor.arg(&path);

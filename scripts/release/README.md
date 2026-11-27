@@ -7,7 +7,7 @@ GitHub releases; beta tags refresh the single prerelease named `nightly`.
 
 For future beta versions, the public R2 prefix
 `releases/v<version>/` retains the entire published payload: platform tarballs,
-Linux debug decoders, the npm migration bridge, SHA256SUMS, merged manifest,
+Linux debug decoders, SHA256SUMS, merged manifest,
 beta.json, and per-target SPDX SBOMs. Audit files upload before channel pointers
 advance, even when a newer main commit has superseded the build. The existing
 provenance attestation step continues to cover tarballs and decoders. The rolling
@@ -19,7 +19,7 @@ uses a newly read main HEAD. Failed uploads leave the existing tag unchanged;
 a failed tag/metadata update fails the job and can be repaired by rerunning the
 same version. GitHub's original release publication date is not rewritten.
 
-Installers and native/npm updaters keep using the R2 channel manifests and
+Installers keep using the R2 channel manifests and
 versioned payload paths anonymously; they do not require per-beta GitHub release
 objects. Consumers of `/releases/download/v<beta>/...` must use the public R2
 versioned prefix for future beta builds, or `nightly` for its current payload.

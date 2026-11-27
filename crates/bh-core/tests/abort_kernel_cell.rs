@@ -11,8 +11,6 @@
 //! Verifier: an abort during a running kernel cell must settle the turn at once: Ctrl+C interrupts
 //! the cell, force-aborts the execution after the grace window, and returns the loop to ready. The
 //! cell writes `started` and `finished` markers around its sleep, so the abort lands mid-cell.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 
 use bh_agent::scripted::{tool_call_turn_steps, ScriptedProvider, ScriptedTurn};

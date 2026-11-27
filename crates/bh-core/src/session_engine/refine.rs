@@ -2087,7 +2087,6 @@ Reviewer instructions: record it"
     /// `save_harness_state` returned, so one store can carry two spellings
     /// (a symlinked dir — the macOS `$TMPDIR` shape — or a relative one),
     /// and the guard compares the real files, not the path strings.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_rollback_recorded_through_a_re_spelled_store_still_applies() {
         let dir = TempDir::new().unwrap();

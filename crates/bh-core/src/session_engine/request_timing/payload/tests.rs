@@ -152,7 +152,6 @@ fn the_capture_writes_the_exact_body_and_envelope() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn the_capture_writes_owner_only_modes_even_into_an_existing_dir() {
     use std::os::unix::fs::PermissionsExt;
@@ -181,7 +180,6 @@ fn the_capture_writes_owner_only_modes_even_into_an_existing_dir() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn symlinked_components_end_the_capture_before_any_write() {
     let _writer_lock = super::WRITER_TEST_LOCK.blocking_lock();

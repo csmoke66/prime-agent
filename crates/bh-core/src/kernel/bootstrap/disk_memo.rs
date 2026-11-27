@@ -187,7 +187,6 @@ mod tests {
         std::fs::create_dir(&path).unwrap();
         assert!(!disk_memo_hit(&path, "mine"));
         std::fs::remove_dir(&path).unwrap();
-        #[cfg(unix)]
         {
             let target = dir.path().join("target.json");
             disk_memo_write(&target, "mine");

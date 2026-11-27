@@ -14,8 +14,6 @@
 //! settings-declared stdio MCP server (the committed echo fixture) must
 //! appear in the daemon's roster and service cards, answered from local
 //! state (no kernel round-trip), and the headless TUI must render it.
-#![cfg(unix)]
-
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

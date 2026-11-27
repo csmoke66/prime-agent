@@ -21,7 +21,6 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
-#![cfg(unix)]
 // The SIGKILL tests are Linux-only, so their helpers are unused elsewhere.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 

@@ -83,7 +83,6 @@ use anyhow::Result;
 use std::io::{IsTerminal, Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 // The probe's answer channel is unix-only (see `spawn_terminal_probe`).
-#[cfg(unix)]
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -124,7 +123,6 @@ const STALE_LEVEL_DRAIN: usize = 3;
 const MODIFY_OTHER_KEYS_RESET: &[u8] = b"\x1b[>4;0m";
 /// TS `keyboardProtocolFallbackTimer`: the window the kitty answer gets
 /// before the modifyOtherKeys fallback fires.
-#[cfg(unix)]
 const KITTY_QUERY_FALLBACK: Duration = Duration::from_millis(150);
 
 static BRACKETED_PASTE_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -482,7 +480,6 @@ fn write_all(out: &mut Stdout, sequence: &[u8]) -> Result<()> {
 /// gone — a stray enable would leave the flags pushed over the next
 /// surface's own setup. Unix only: the kitty probe is the unix surface
 /// (see `spawn_terminal_probe`).
-#[cfg(unix)]
 fn enable_kitty(out: &mut Stdout) {
     // The capability is the durable truth: a later start re-applies the
     // flags from it even when this push stands down for the exit.
@@ -532,7 +529,6 @@ pub(crate) fn pop_stale_levels(out: &mut Stdout) {
 /// (the vendored crossterm exposes the raw-read check unix-only); the
 /// Windows console arm settles no-kitty below — the capability stays
 /// unresolved there, never armed.
-#[cfg(unix)]
 fn spawn_terminal_probe(keyboard: bool) {
     let probe = std::thread::Builder::new()
         .name("tui-terminal-probe".to_string())
@@ -616,21 +612,11 @@ fn spawn_terminal_probe(keyboard: bool) {
 }
 
 /// Close the probe window with its answer (`None`: no answer).
-#[cfg(unix)]
 fn settle_probe(answer: Option<crossterm::terminal::TerminalProbe>) {
     crate::program_status::detected(answer.and_then(|probe| probe.program_status));
     QUERY_IN_FLIGHT.store(false, Ordering::SeqCst);
 }
 
-/// Windows has no terminal probe (the vendored crossterm ships the raw-read
-/// check unix-only): the kitty capability settles as probed-but-unsupported —
-/// the same settle the no-answer probe path takes —, OSC 7501 settles
-/// unsupported, and the query window closes.
-#[cfg(not(unix))]
-fn spawn_terminal_probe(_keyboard: bool) {
-    crate::program_status::detected(None);
-    QUERY_IN_FLIGHT.store(false, Ordering::SeqCst);
-}
 
 #[cfg(test)]
 mod tests {
@@ -771,7 +757,6 @@ mod tests {
 
     // The late-answer standdown is the unix probe's answer path (kitty
     // protocol + raw modes do not exist on the non-unix targets).
-    #[cfg(unix)]
     #[test]
     fn release_for_exit_stands_a_late_probe_answer_down() {
         let _lock = lock_state();

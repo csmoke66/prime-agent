@@ -51,7 +51,6 @@ pub(super) struct SessionInfoGeneration {
 }
 
 impl SessionInfoGeneration {
-    #[cfg(unix)]
     pub(super) fn from_metadata(meta: &fs::Metadata) -> Self {
         use std::os::unix::fs::MetadataExt;
         Self {
@@ -65,18 +64,6 @@ impl SessionInfoGeneration {
         }
     }
 
-    #[cfg(not(unix))]
-    pub(super) fn from_metadata(meta: &fs::Metadata) -> Self {
-        Self {
-            len: meta.len(),
-            dev: 0,
-            ino: 0,
-            mtime: 0,
-            mtime_ns: 0,
-            ctime: 0,
-            ctime_ns: 0,
-        }
-    }
 }
 
 /// The cross-file memory budget on retained assistant usage records and
@@ -255,23 +242,16 @@ impl SessionScanState {
     // The unix arm reads `self.generation`; the not-unix arm carries no
     // dev/ino identity at all, so it always answers false (every grown
     // file rescans whole - see the arm's own comment).
-    #[cfg_attr(not(unix), allow(clippy::unused_self))]
     fn same_file_identity(
         &self,
         #[cfg_attr(not(unix), allow(unused_variables))] generation: &SessionInfoGeneration,
     ) -> bool {
-        #[cfg(unix)]
         {
             self.generation.dev == generation.dev && self.generation.ino == generation.ino
         }
         // No dev/ino from std on this platform: every grown file rescans
         // whole (TS always has dev/ino); an mtime identity would instead
         // certify an in-place rewrite as a resume.
-        #[cfg(not(unix))]
-        {
-            let _ = generation;
-            false
-        }
     }
 
     /// The consumed prefix's trailing window: a long line keeps only its
@@ -457,8 +437,7 @@ pub(crate) fn read_session_info_from(
     // A concurrent append/replacement must never certify stale metadata;
     // records without message timestamps never certify either.
     let modified_ms = state.acc.last_activity_ms.unwrap_or(0);
-    if cfg!(unix)
-        && modified_ms > 0
+    if modified_ms > 0
         && file
             .metadata()
             .is_ok_and(|meta| SessionInfoGeneration::from_metadata(&meta) == generation)

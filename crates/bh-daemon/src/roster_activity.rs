@@ -202,18 +202,12 @@ mod tests {
     // The socket-harness test below is the only user of these; the
     // import gates keep the portable tests above import-clean on
     // non-unix targets.
-    #[cfg(unix)]
     use crate::supervisor_link::SupervisorLink;
-    #[cfg(unix)]
     use crate::worker::SessionCore;
     use serde_json::json;
-    #[cfg(unix)]
     use serde_json::Value;
-    #[cfg(unix)]
     use std::sync::Mutex;
-    #[cfg(unix)]
     use std::time::Duration;
-    #[cfg(unix)]
     use tokio::io::AsyncWriteExt;
 
     fn session_event_frame(event: &serde_json::Value) -> OutboundFrame {
@@ -292,7 +286,6 @@ mod tests {
 
     /// One pending flag bounds the backlog: a burst behind a slow
     /// supervisor collapses into a couple of flushes with the latest state.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_burst_collapses_behind_a_slow_supervisor() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -387,7 +380,6 @@ mod tests {
     /// wedged supervisor holds one connection, and the requests that land
     /// meanwhile collapse into the pending flag — one follow-up flush once
     /// the first request is answered.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_wedged_supervisor_holds_one_in_flight_roster_push() {
         type StubArrival = (Value, tokio::net::unix::OwnedWriteHalf);

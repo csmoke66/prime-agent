@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 use bh_core::auth::{AuthCredential, AuthStorage, AuthStorageData, OAuthIntegration};
 
 const CHILD_ENV: &str = "PA_CROSS_PROCESS_REFRESH_CHILD_DIR";
-#[cfg(unix)]
 const PAUSED_CHILD_ENV: &str = "PA_CROSS_PROCESS_REFRESH_PAUSED_CHILD_DIR";
 const DEAD_CHILD_ENV: &str = "PA_CROSS_PROCESS_REFRESH_DEAD_CHILD_DIR";
 const HELD_CHILD_ENV: &str = "PA_CROSS_PROCESS_REFRESH_HELD_CHILD_DIR";
@@ -93,13 +92,11 @@ impl OAuthIntegration for CountingRefresh {
 /// Records the token-endpoint call and returns a fresh credential, pausing
 /// the caller (SIGSTOP) after the successful fetch and before the credential
 /// write when asked: the schedule a stale-lock steal needs a live holder in.
-#[cfg(unix)]
 struct PausingRefresh {
     dir: std::path::PathBuf,
     pause: bool,
 }
 
-#[cfg(unix)]
 impl OAuthIntegration for PausingRefresh {
     fn api_key_for(&self, _provider: &str, credential: &AuthCredential) -> Option<String> {
         match credential {
@@ -199,7 +196,6 @@ fn resolve_with(
 
 /// Resolve the expired credential through a [`PausingRefresh`]; `pause`
 /// selects the paused-holder child role.
-#[cfg(unix)]
 fn resolve_with_pausing_refresh(
     dir: &std::path::Path,
     /*pause*/ pause: bool,
@@ -225,7 +221,6 @@ fn child_resolver() {
 }
 
 /// Child role only (the paused-holder schedule).
-#[cfg(unix)]
 #[test]
 fn paused_child_resolver() {
     let Ok(dir) = std::env::var(PAUSED_CHILD_ENV) else {
@@ -301,7 +296,6 @@ fn two_processes_spend_one_refresh_token() {
 /// the same expiry must NOT reclaim the lock and spend the single-use
 /// refresh token a second time — it waits, the paused holder finishes
 /// its commit, and the peer serves the holder's fresh credential.
-#[cfg(unix)]
 #[test]
 fn a_stale_refresh_lock_is_not_stolen_from_a_live_paused_holder() {
     let dir = tempfile::TempDir::new().unwrap();

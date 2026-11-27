@@ -2,7 +2,6 @@
 //! resets on every agents-view round trip"): the re-mounted loader anchors at the LAST HUMAN
 //! PROMPT's time, never the re-attach instant (TS anchors at the mount — deliberate divergence).
 //! Each `run_plan` below is one leg of the round trip: the returning client is a fresh process.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

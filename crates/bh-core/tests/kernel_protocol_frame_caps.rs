@@ -13,8 +13,6 @@
 //! runtime streams 33 Mi of unterminated output for one request and answers
 //! every other request normally, so the repair's child serves the follow-up.
 
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 

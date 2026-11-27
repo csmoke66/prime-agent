@@ -14,8 +14,6 @@
 //! two-level spawn through the real supervisor (a root session's child
 //! that itself spawns a grandchild) must surface BOTH descendants on
 //! every count surface (TS `countRosterSubagentStatuses`).
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

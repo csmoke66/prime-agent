@@ -1518,16 +1518,10 @@ class _PythonProcess:
         return cls(proc, stdout, stderr)
 
     def _kill(self) -> None:
-        """Kill the call's whole process group (the process alone on Windows)."""
-        if os.name == "posix":
-            from .bash import _signal_group
+        """Kill the call's whole process group."""
+        from .bash import _signal_group
 
-            _signal_group(self.proc.pid, signal.SIGKILL)
-        else:
-            try:
-                self.proc.kill()
-            except ProcessLookupError:
-                pass  # already exited
+        _signal_group(self.proc.pid, signal.SIGKILL)
 
     async def stop(self) -> None:
         """Kill a running call, wait for it to exit, and release its files."""

@@ -2,8 +2,6 @@
 //! log, a never-ready worker reports the captured stderr tail in the create
 //! failure, and the spawn-time prune bounds retained logs (never-ready via
 //! a `TMPDIR` pointing at a plain file - the real bind path failing).
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 //! Verifier integration test: a protocol repair whose replacement fails the
 //! runtime bootstrap discards the kernel, and the next request reprovisions a
 //! fresh one. Every discard must get its own reprovision: a failed run must

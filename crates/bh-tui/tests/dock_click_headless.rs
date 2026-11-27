@@ -2,7 +2,6 @@
 //! directive 2026-09-29): a plain click on a dock group segment opens
 //! that group's view, and a click on the tray's `← manage` hint hands
 //! the pane to the agents view; hover motions ride the same path.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

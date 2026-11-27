@@ -2,7 +2,6 @@
 //! `getModelContextLabel`): the tray renders `model:effort` while the
 //! session's model supports reasoning, keeps the bare model id when not,
 //! and the label follows a session effort switch from `/settings` live.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

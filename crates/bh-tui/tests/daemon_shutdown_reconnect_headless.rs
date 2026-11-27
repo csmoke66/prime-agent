@@ -2,7 +2,6 @@
 //! the pane must arm the bounded shutdown recovery at the notice and
 //! reconnect when the daemon returns on the same socket path (TS
 //! `reconnectAfterShutdown`: same path, same durable session id).
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

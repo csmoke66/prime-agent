@@ -2,7 +2,6 @@
 //! providers: with the session on `test-provider/z-ai/glm-5.3` and the
 //! catalog listing the SAME id under openrouter too, the picker must
 //! resolve the session's OWN provider's entry, not the openrouter row.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

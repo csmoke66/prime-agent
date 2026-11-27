@@ -2,8 +2,6 @@
 //! engine runs the quality gates after every settled turn, injects the
 //! gate-failure continuation as a durable user row, and stops the run when the
 //! gates pass or a limit is reached.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

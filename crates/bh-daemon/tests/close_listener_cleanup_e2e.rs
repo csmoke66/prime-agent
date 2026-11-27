@@ -35,8 +35,6 @@
 //!
 //! On a tree WITHOUT the close-then-cleanup fix these oracles fail:
 //! the poisoned gate matches the successor's live file and unlinks it.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::{UnixListener, UnixStream};

@@ -207,8 +207,6 @@ async fn run_interactive_surface(
         mpsc::unbounded_channel::<crate::session_ui::PromptSubmitNote>();
     let (share_tx, mut share_rx) = mpsc::unbounded_channel::<crate::session_ui::ShareNote>();
     let (reload_tx, mut reload_rx) = mpsc::unbounded_channel::<crate::session_ui::ReloadNote>();
-    let (traces_upload_tx, mut traces_upload_rx) =
-        mpsc::unbounded_channel::<crate::session_ui::TracesUploadNote>();
     let (catalog_tx, mut catalog_rx) =
         mpsc::unbounded_channel::<crate::session_ui::ModelCatalogUpdate>();
     let (heartbeats_tx, mut heartbeats_rx) =
@@ -326,7 +324,6 @@ async fn run_interactive_surface(
         let prompt_tx = prompt_tx.clone();
         let share_tx = share_tx.clone();
         let reload_tx = reload_tx.clone();
-        let traces_upload_tx = traces_upload_tx.clone();
         let catalog_tx = catalog_tx.clone();
         let auth_panel_tx = auth_panel_tx.clone();
         let heartbeats_tx = heartbeats_tx.clone();
@@ -348,7 +345,6 @@ async fn run_interactive_surface(
                 let prompt_tx = prompt_tx.clone();
                 let share_tx = share_tx.clone();
                 let reload_tx = reload_tx.clone();
-                let traces_upload_tx = traces_upload_tx.clone();
                 let catalog_tx = catalog_tx.clone();
                 let auth_panel_tx = auth_panel_tx.clone();
                 let heartbeats_tx = heartbeats_tx.clone();
@@ -371,7 +367,6 @@ async fn run_interactive_surface(
                         prompt_tx,
                         share_tx,
                         reload_tx,
-                        traces_upload_tx,
                         catalog_tx,
                         auth_panel_tx,
                         crate::session_ui::ActivityUpdates {
@@ -1008,9 +1003,6 @@ async fn run_interactive_surface(
                         // continues here once the user foregrounds the process, where the cycle
                         // re-applies raw mode, the alt screen, and SGR mouse tracking. Headless
                         // runs keep no terminal renderer, so the request is observed and dropped.
-                        if session.pending_traces_login() {
-                            session.run_traces_login(&mut view);
-                        }
                         if session.take_suspend_request() && renderer.is_terminal_mut().is_some() {
                             match crate::suspend::suspend_cycle(
                                 &mut crate::suspend::ProcessSignals,
@@ -1131,9 +1123,6 @@ async fn run_interactive_surface(
                             session.error_row(&format!("{error:#}"), &mut view);
                             view.editor.set_text(&text);
                             session.dirty = true;
-                        }
-                        if session.pending_traces_login() {
-                            session.run_traces_login(&mut view);
                         }
                     }
                     UiInput::Timestamp(_) => unreachable!("timing marker handled above"),
@@ -1433,11 +1422,6 @@ async fn run_interactive_surface(
             maybe_reload = reload_rx.recv() => {
                 if let Some(outcome) = maybe_reload {
                     session.apply_reload_outcome(outcome, &mut view).await;
-                }
-            }
-            maybe_traces_upload = traces_upload_rx.recv() => {
-                if let Some(note) = maybe_traces_upload {
-                    session.apply_traces_upload_note(note, &mut view);
                 }
             }
             maybe_catalog = catalog_rx.recv() => {

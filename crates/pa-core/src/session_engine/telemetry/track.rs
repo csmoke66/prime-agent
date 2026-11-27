@@ -80,16 +80,6 @@ pub fn track_worker_adoption(
     client.track("daemon event", properties);
 }
 
-/// Track the live-catalog warm-up settle's `daemon event` (schema v1, kind
-/// `catalog_refresh`): how many models the resolved no-cold-start chain serves after the
-/// startup refresh. A count only, never model ids, credentials, or catalog payloads.
-pub fn track_catalog_refresh(client: &TelemetryClient, count: usize) {
-    let mut properties = base_properties("daemon");
-    properties.set("kind", Value::from("catalog_refresh"));
-    properties.set("count", Value::from(count));
-    client.track("daemon event", properties);
-}
-
 /// Track the abort supervision's terminal declaration (`daemon event`,
 /// schema v1, kind `compaction_abort_declared`): the supervisor declared
 /// a wedged worker's compaction aborted after its abort grace expired. A

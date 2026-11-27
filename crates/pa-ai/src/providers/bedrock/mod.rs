@@ -441,11 +441,10 @@ const BEDROCK_TRANSPORT_OWNED_HEADERS: [&str; 6] = [
     "accept",
 ];
 
-/// The caller/stream-option headers (the injected session identity among them) that travel on
-/// the Bedrock request. They join the signed header set on the `SigV4` path: AWS expects every
+/// The caller/stream-option headers that travel on the Bedrock request. They join the signed header set on the `SigV4` path: AWS expects every
 /// sent header to be signed.
 ///
-/// Case-variant duplicates (an `X-PI-Session-Id` beside an `x-pi-session-id`) collapse to one
+/// Case-variant duplicates (an `X-Custom` beside an `x-custom`) collapse to one
 /// canonical entry — a duplicated name in the signed set changes AWS's canonical request and the
 /// signature stops matching. The source is a `HashMap` whose iteration order is random, so
 /// "first wins" would be nondeterministic: the entry with the lexicographically smallest value
@@ -570,8 +569,7 @@ async fn run_stream(
     }
 
     // requestMetadata also travels as the X-Amzn-Bedrock-Request-Metadata header, and the
-    // caller headers ride along with it: without this merge, a session-scoped Bedrock request
-    // would never carry its session identity. On the SigV4 path the whole set is signed; on the
+    // caller headers ride along with it. On the SigV4 path the whole set is signed; on the
     // bearer path it passes through unsigned.
     let extra_signed_headers = bedrock_extra_signed_headers(&options);
 
@@ -1061,7 +1059,7 @@ mod tests {
         assert_eq!(bedrock_error_prefix("Unknown"), "Unknown");
     }
 
-    /// Caller headers (the injected session identity among them) travel on the Bedrock request;
+    /// Caller headers travel on the Bedrock request;
     /// transport-owned headers (credentials, `SigV4` bookkeeping, the fixed JSON body types) never
     /// come from options.
     #[test]
@@ -1278,7 +1276,6 @@ mod tests {
             featured: None,
             headers: None,
             compat: None,
-            serving: None,
         }
     }
 }

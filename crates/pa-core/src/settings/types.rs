@@ -275,12 +275,6 @@ pub struct WarningSettings {
     pub anthropic_extra_usage: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentTracesSettings {
-    pub enabled: Option<bool>,
-}
-
 /// `factory` (the agent factory's opt-in gate): `factory.enabled` is
 /// unset/false by default, and the `/factory on` client command persists
 /// it. Both the daemon's `factory_activity` lane advertisement and the
@@ -362,7 +356,6 @@ pub struct Settings {
     pub auto_refine: Option<AutoRefineSettings>,
     /// Master switch for harness creation and context loading; unset preserves enabled behavior.
     pub harness_refinements: Option<bool>,
-    pub agent_traces: Option<AgentTracesSettings>,
     pub factory: Option<FactorySettings>,
     pub agent_inbox: Option<AgentInboxSettings>,
     pub telemetry: Option<TelemetrySettings>,

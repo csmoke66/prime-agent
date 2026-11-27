@@ -1,11 +1,10 @@
 //! The `AuthStorage` unit battery: the candidate memo + staleness
-//! machinery, the resolution precedence, the OAuth refresh contract, and
-//! the Prime Inference credential + team writes (hermetic `ScriptedEnv`).
+//! machinery, the resolution precedence, and the OAuth refresh contract
+//! (hermetic `ScriptedEnv`).
 
 use super::*;
 
-/// Fixed environment credential source: hermetic against the ambient
-/// process env (e.g. this sandbox exports `PRIME_API_KEY` globally).
+/// Fixed environment credential source: hermetic against the ambient process env.
 struct ScriptedEnv(HashMap<String, String>);
 
 impl EnvCredentialSource for ScriptedEnv {
@@ -21,10 +20,6 @@ impl EnvCredentialSource for ScriptedEnv {
     fn api_key(&self, provider: &str) -> Option<String> {
         let first = self.key_names(provider)?.first()?.clone();
         self.0.get(&first).cloned().filter(|v| !v.is_empty())
-    }
-
-    fn prime_team_id(&self) -> Option<String> {
-        self.0.get("PRIME_TEAM_ID").cloned()
     }
 
     fn ambient_identity_material(&self, provider: &str) -> String {
@@ -43,8 +38,7 @@ fn storage_with_env(data: &serde_json::Value, env: ScriptedEnv) -> AuthStorage {
 
 #[test]
 fn runtime_override_wins() {
-    // Non-prime provider: runtime beats stored; stored outranks env,
-    // so ambient env cannot interfere.
+    // Runtime beats stored; stored outranks env, so ambient env cannot interfere.
     let mut auth = storage_with(&serde_json::json!({
         "anthropic": { "type": "api_key", "key": "stored-key" }
     }));
@@ -120,7 +114,6 @@ fn candidate_memos_supersede_exactly_when_material_changes() {
         "anthropic",
         AuthCredential::ApiKey {
             key: "sk-new".into(),
-            prime_team: None,
         },
     );
     assert!(
@@ -136,7 +129,6 @@ fn set_and_remove_credentials() {
         "anthropic",
         AuthCredential::ApiKey {
             key: "sk-ant".into(),
-            prime_team: None,
         },
     );
     assert!(auth.has("anthropic"));
@@ -203,340 +195,12 @@ fn a_command_keys_status_probe_never_runs_the_command() {
 }
 
 #[test]
-fn env_key_priority_for_prime_inference() {
-    let mut auth = storage_with_env(
-        &serde_json::json!({
-            "prime-inference": { "type": "api_key", "key": "stored-key" }
-        }),
-        ScriptedEnv(HashMap::from([(
-            "PRIME_API_KEY".to_string(),
-            "env-key".to_string(),
-        )])),
-    );
-    assert_eq!(
-        auth.get_api_key("prime-inference").as_deref(),
-        Some("env-key")
-    );
-}
-
-#[test]
 fn fallback_resolver_last_resort() {
     let mut auth = storage_with(&serde_json::json!({}));
     auth.set_fallback_resolver(Arc::new(|provider| {
         (provider == "custom").then(|| "fb-key".to_string())
     }));
     assert_eq!(auth.get_api_key("custom").as_deref(), Some("fb-key"));
-}
-
-#[test]
-fn provider_headers_team_selection() {
-    let auth = storage_with(&serde_json::json!({
-        "prime-inference": {
-            "type": "api_key",
-            "key": "pi-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-        }
-    }));
-    let headers = auth
-        .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-        .unwrap();
-    assert_eq!(
-        headers.get("X-Prime-Team-ID").map(String::as_str),
-        Some("team-1")
-    );
-    assert!(auth.get_provider_headers("anthropic").is_none());
-    // Key and team come from the same source: an ambient PRIME_API_KEY
-    // serves the key, so the stored login's team never rides with it.
-    let stored_team_login = serde_json::json!({
-        "prime-inference": {
-            "type": "api_key",
-            "key": "pi-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-        }
-    });
-    let mut auth = storage_with_env(
-        &stored_team_login,
-        ScriptedEnv(HashMap::from([(
-            "PRIME_API_KEY".to_string(),
-            "env-key".to_string(),
-        )])),
-    );
-    assert_eq!(
-        auth.get_api_key(PRIME_INFERENCE_PROVIDER_ID).as_deref(),
-        Some("env-key")
-    );
-    assert!(auth
-        .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-        .is_none());
-    // The env key with PRIME_TEAM_ID: the environment supplies both.
-    let auth = storage_with_env(
-        &stored_team_login,
-        ScriptedEnv(HashMap::from([
-            ("PRIME_API_KEY".to_string(), "env-key".to_string()),
-            ("PRIME_TEAM_ID".to_string(), "env-team".to_string()),
-        ])),
-    );
-    let headers = auth
-        .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-        .unwrap();
-    assert_eq!(
-        headers.get("X-Prime-Team-ID").map(String::as_str),
-        Some("env-team")
-    );
-    // A runtime API-key override serves the key: no stored team either.
-    let mut auth = storage_with(&stored_team_login);
-    auth.set_runtime_api_key(PRIME_INFERENCE_PROVIDER_ID, "runtime-key".to_string());
-    assert_eq!(
-        auth.get_api_key(PRIME_INFERENCE_PROVIDER_ID).as_deref(),
-        Some("runtime-key")
-    );
-    assert!(auth
-        .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-        .is_none());
-    // PRIME_TEAM_ID env wins over the stored selection.
-    let auth = storage_with_env(
-        &serde_json::json!({
-            "prime-inference": {
-                "type": "api_key",
-                "key": "pi-key",
-                "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-            }
-        }),
-        ScriptedEnv(HashMap::from([(
-            "PRIME_TEAM_ID".to_string(),
-            "env-team".to_string(),
-        )])),
-    );
-    let headers = auth
-        .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-        .unwrap();
-    assert_eq!(
-        headers.get("X-Prime-Team-ID").map(String::as_str),
-        Some("env-team")
-    );
-}
-
-fn team(id: &str, name: &str) -> PrimeTeamCredential {
-    PrimeTeamCredential {
-        team_id: id.to_string(),
-        name: name.to_string(),
-        slug: None,
-        role: None,
-        created_at: None,
-    }
-}
-
-#[test]
-fn prime_inference_key_writes_follow_the_ts_assignment_rules() {
-    let mut auth = storage_with(&serde_json::json!({}));
-    auth.set_prime_inference_api_key("sk-1", PrimeTeamAssignment::Team(team("1", "Team 1")));
-    assert_eq!(
-        auth.get_all().credential(PRIME_INFERENCE_PROVIDER_ID),
-        Some(AuthCredential::ApiKey {
-            key: "sk-1".to_string(),
-            prime_team: Some(team("1", "Team 1")),
-        })
-    );
-    // TS `undefined`: the same key preserves the stored team.
-    auth.set_prime_inference_api_key("sk-1", PrimeTeamAssignment::PreserveWhenKeyMatches);
-    assert_eq!(
-        auth.get_all().credential(PRIME_INFERENCE_PROVIDER_ID),
-        Some(AuthCredential::ApiKey {
-            key: "sk-1".to_string(),
-            prime_team: Some(team("1", "Team 1")),
-        })
-    );
-    // TS `undefined`: a different key drops the stored team.
-    auth.set_prime_inference_api_key("sk-2", PrimeTeamAssignment::PreserveWhenKeyMatches);
-    assert_eq!(
-        auth.get_all().credential(PRIME_INFERENCE_PROVIDER_ID),
-        Some(AuthCredential::ApiKey {
-            key: "sk-2".to_string(),
-            prime_team: None,
-        })
-    );
-    // TS `null`: the personal account, explicitly.
-    auth.set_prime_inference_api_key("sk-2", PrimeTeamAssignment::Team(team("2", "Team 2")));
-    auth.set_prime_inference_api_key("sk-2", PrimeTeamAssignment::PersonalAccount);
-    assert_eq!(
-        auth.get_all().credential(PRIME_INFERENCE_PROVIDER_ID),
-        Some(AuthCredential::ApiKey {
-            key: "sk-2".to_string(),
-            prime_team: None,
-        })
-    );
-    // The write clears a stale marking on the stored source.
-    assert!(auth.mark_auth_stale(PRIME_INFERENCE_PROVIDER_ID));
-    auth.set_prime_inference_api_key("sk-3", PrimeTeamAssignment::PersonalAccount);
-    assert_eq!(
-        auth.get_api_key(PRIME_INFERENCE_PROVIDER_ID).as_deref(),
-        Some("sk-3")
-    );
-    // The TS wire shape: the personal account persists `primeTeam:
-    // null`, never an omitted field.
-    let stored = auth.get_all();
-    let credential = stored
-        .get(PRIME_INFERENCE_PROVIDER_ID)
-        .unwrap()
-        .as_object()
-        .unwrap();
-    assert_eq!(credential.get("primeTeam"), Some(&serde_json::Value::Null));
-}
-
-#[test]
-fn prime_inference_team_selection_rebinds_only_the_stored_key() {
-    let mut auth = storage_with(&serde_json::json!({}));
-    auth.set_prime_inference_team_selection(Some(team("1", "Team 1")), None);
-    assert_eq!(auth.get_all().get(PRIME_INFERENCE_PROVIDER_ID), None);
-    auth.set_prime_inference_api_key("sk-1", PrimeTeamAssignment::PersonalAccount);
-    auth.set_prime_inference_team_selection(Some(team("1", "Team 1")), Some("sk-1"));
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("1", "Team 1"))
-    );
-    auth.set_prime_inference_team_selection(Some(team("2", "Team 2")), Some("wrong-key"));
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("1", "Team 1"))
-    );
-    auth.set_prime_inference_team_selection(Some(team("2", "Team 2")), None);
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("2", "Team 2"))
-    );
-    auth.set_prime_inference_team_selection(None, None);
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::PersonalAccount
-    );
-    let mut auth = storage_with(&serde_json::json!({
-        "prime-inference": {
-            "type": "oauth", "access": "a", "refresh": null, "expires": 1
-        }
-    }));
-    auth.set_prime_inference_team_selection(Some(team("1", "Team 1")), None);
-    assert_eq!(
-        auth.get_all().get(PRIME_INFERENCE_PROVIDER_ID).unwrap()["access"],
-        "a"
-    );
-}
-
-/// A backend that serves reads but fails every write.
-struct WriteFailingBackend(std::sync::Mutex<Option<String>>);
-
-impl AuthStorageBackend for WriteFailingBackend {
-    fn with_lock(
-        &self,
-        update: &mut dyn FnMut(Option<String>) -> anyhow::Result<((), Option<String>)>,
-    ) -> anyhow::Result<()> {
-        let current = self.0.lock().unwrap().clone();
-        let ((), next) = update(current)?;
-        match next {
-            Some(_) => Err(anyhow::anyhow!("the locked write failed")),
-            None => Ok(()),
-        }
-    }
-}
-
-#[test]
-fn a_failed_prime_inference_key_write_keeps_the_stale_marking() {
-    // TS: `setPrimeInferenceApiKey` throws before `clearStaleAuthSource`,
-    // so a failed replacement never re-enables the server-rejected credential.
-    let mut auth = AuthStorage::from_storage(
-        Arc::new(WriteFailingBackend(std::sync::Mutex::new(Some(
-            r#"{"prime-inference": {"type": "api_key", "key": "sk-rejected"}}"#.to_string(),
-        )))),
-        Arc::new(NoOAuth),
-    );
-    // The scripted empty env keeps the stored credential the active source
-    // (an ambient PRIME_API_KEY would outrank it).
-    auth.env_credentials = Arc::new(ScriptedEnv(HashMap::new()));
-    assert!(auth.mark_auth_stale(PRIME_INFERENCE_PROVIDER_ID));
-    auth.set_prime_inference_api_key("sk-new", PrimeTeamAssignment::PersonalAccount);
-    assert!(
-        !auth.drain_errors().is_empty(),
-        "the failed write surfaces its error"
-    );
-    assert_eq!(
-        auth.get_auth_status(PRIME_INFERENCE_PROVIDER_ID).source,
-        Some(AuthSource::Stale)
-    );
-    assert_eq!(auth.get_api_key(PRIME_INFERENCE_PROVIDER_ID), None);
-}
-
-#[test]
-fn prime_inference_team_selection_reads_follow_the_ts_tri_state() {
-    let auth = storage_with(&serde_json::json!({}));
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::NotSelected
-    );
-    let auth = storage_with(&serde_json::json!({
-        "prime-inference": {
-            "type": "api_key",
-            "key": "pi-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-        }
-    }));
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("team-1", "Team 1"))
-    );
-    let auth = storage_with(&serde_json::json!({
-        "prime-inference": {
-            "type": "api_key", "key": "pi-key", "primeTeam": null
-        }
-    }));
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::PersonalAccount
-    );
-    let auth = storage_with_env(
-        &serde_json::json!({
-            "prime-inference": {
-                "type": "api_key", "key": "pi-key", "primeTeam": null
-            }
-        }),
-        ScriptedEnv(HashMap::from([(
-            "PRIME_TEAM_ID".to_string(),
-            "env-team".to_string(),
-        )])),
-    );
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::NotSelected
-    );
-    // An environment key does NOT hide the stored selection.
-    let auth = storage_with_env(
-        &serde_json::json!({
-            "prime-inference": {
-                "type": "api_key",
-                "key": "pi-key",
-                "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-            }
-        }),
-        ScriptedEnv(HashMap::from([(
-            "PRIME_API_KEY".to_string(),
-            "env-key".to_string(),
-        )])),
-    );
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("team-1", "Team 1"))
-    );
-    // A runtime override does not hide it either.
-    let mut auth = storage_with(&serde_json::json!({
-        "prime-inference": {
-            "type": "api_key",
-            "key": "pi-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" }
-        }
-    }));
-    auth.set_runtime_api_key(PRIME_INFERENCE_PROVIDER_ID, "runtime-key".to_string());
-    assert_eq!(
-        auth.get_prime_inference_team_selection(),
-        StoredPrimeTeam::Team(team("team-1", "Team 1"))
-    );
 }
 
 /// A scripted OAuth integration for the refresh-flow tests: counts refresh calls,
@@ -1089,7 +753,6 @@ fn a_login_during_the_lock_wait_spends_no_refresh_token() {
         provider,
         &AuthCredential::ApiKey {
             key: "new-login-key".to_string(),
-            prime_team: None,
         },
     );
     let login_doc = serde_json::to_string_pretty(&login.0).unwrap();

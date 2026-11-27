@@ -83,13 +83,12 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: &Path) -> Da
         .arg(agent_dir)
         .env("PRIME_AGENT_KERNEL_PYTHON", kernel_python)
         .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
-        // The fetch lane is live in the supervisor (hourly refreshes of this very cache
-        // file): PI_OFFLINE keeps those off the network so a live fetch can never race
-        // the cache state arranged on disk.
-        .env("PI_OFFLINE", "1")
-        // The tests own catalog availability through the agent dir alone; a stray
-        // package dir's bundled snapshot must never leak in.
-        .env_remove("PI_PACKAGE_DIR")
+        // Every outbound request fails at a closed local proxy: token verification
+        // fails closed with the network category and never leaves the machine.
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .env(
@@ -190,54 +189,9 @@ impl Client {
 }
 
 /// TS parity (byte-exact, the daemon wire renders it on the card): the
-/// pinned-definition hint, gated on a provable catalog snapshot.
+/// pinned-definition hint.
 const PINNED_FROM_RECORD_HINT: &str =
     "This service's catalog source is unavailable; its connection keeps the pinned definition.";
-
-/// The REAL shipped catalog payload projected to the v2 client contract (the
-/// same fixture the pa-core parity tests parse).
-const REAL_CATALOG: &str = include_str!("../../pa-core/tests/fixtures/mcp/plugins-catalog.v2.json");
-
-/// One pasteable service whose endpoint cannot resolve (`invalid` TLD): the install's
-/// verification fails closed with the network category.
-fn seeded_catalog_document() -> Value {
-    let mut catalog: Value = serde_json::from_str(REAL_CATALOG).expect("fixture catalog parses");
-    catalog["entries"]
-        .as_array_mut()
-        .expect("entries array")
-        .push(json!({
-            "server": "paste-fixture", "service": "paste-fixture",
-            "label": "Paste Fixture", "url": "https://paste-fixture.invalid/mcp",
-            "aliases": [],
-            "transport": { "type": "http", "url": "https://paste-fixture.invalid/mcp" },
-            "auth": { "strategy": "api_key", "clientRegistration": "unknown" },
-            "setup": {
-                "status": "requires-setup",
-                "reason": "paste a fixture token",
-                "fields": [
-                    { "id": "FIXTURE_PAT_TOKEN", "label": "FIXTURE_PAT_TOKEN",
-                      "required": true, "kind": "bearer-token",
-                      "credentialSet": "fixture-pat" }
-                ]
-            },
-            "verification": { "status": "unverified" },
-            "legacyBuiltin": false, "provenance": [{ "source": "prime" }]
-        }));
-    catalog
-}
-
-/// The fetch lane's disk form: the catalog wrapped in the snapshot envelope
-/// `{url, scope, fetchedAt, payload}` the cache reader validates (a bare catalog
-/// document at the cache path never serves).
-fn snapshot_envelope(payload: &Value) -> String {
-    serde_json::to_string(&json!({
-        "url": pa_models::fetch::MCP_SERVICE_CATALOG_URL,
-        "scope": pa_models::cache::PUBLIC_SCOPE,
-        "fetchedAt": 1_790_082_036_135_u64,
-        "payload": payload,
-    }))
-    .expect("serialize snapshot")
-}
 
 #[test]
 fn catalog_surfaces_and_paste_installs_through_the_daemon() {
@@ -250,13 +204,6 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
     let sessions_dir = dir.path().join("sessions");
     std::fs::create_dir_all(&sessions_dir).expect("sessions dir");
-    // The validated disk cache: the fetch lane's snapshot envelope, read by the
-    // daemon's catalog resolution.
-    std::fs::write(
-        agent_dir.join("mcp-service-catalog.v2.json"),
-        snapshot_envelope(&seeded_catalog_document()),
-    )
-    .expect("write disk cache");
 
     let socket = dir.path().join("mcp.sock");
     let _daemon = spawn_supervisor(&socket, &agent_dir, &kernel_python);
@@ -294,10 +241,9 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     let services = roster["data"]["services"]
         .as_array()
         .unwrap_or_else(|| panic!("services array: {roster}"));
-    assert_eq!(
-        services.len(),
-        70,
-        "the resolved catalog surfaces: {services:?}"
+    assert!(
+        services.len() >= 69,
+        "the compiled-in catalog surfaces: {services:?}"
     );
     let linear = services
         .iter()
@@ -318,7 +264,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     );
     let paste = services
         .iter()
-        .find(|service| service["serviceId"] == "paste-fixture")
+        .find(|service| service["serviceId"] == "pagerduty")
         .expect("paste fixture row");
     assert_eq!(paste["connectionStatus"], "setup_required");
     assert_eq!(
@@ -356,7 +302,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
         &json!({
             "type": "set_mcp_static_token",
             "activeSessionId": session_id,
-            "server": "paste-fixture",
+            "server": "pagerduty",
             "token": "fixture-pasted-token",
         }),
     );
@@ -367,7 +313,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     );
     assert_eq!(
         installed["data"]["endpoint"],
-        "https://paste-fixture.invalid/mcp"
+        "https://mcp.pagerduty.com/mcp"
     );
     assert_eq!(
         installed["data"]["verified"], false,
@@ -383,20 +329,20 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
         &std::fs::read_to_string(agent_dir.join("auth.json")).expect("auth.json"),
     )
     .expect("auth json");
-    assert_eq!(auth["mcp:paste-fixture"]["type"], "mcp_static_token");
-    assert_eq!(auth["mcp:paste-fixture"]["bearer"], "fixture-pasted-token");
+    assert_eq!(auth["mcp:pagerduty"]["type"], "mcp_static_token");
+    assert_eq!(auth["mcp:pagerduty"]["bearer"], "fixture-pasted-token");
     assert_eq!(
-        auth["mcp:paste-fixture"]["endpoint"],
-        "https://paste-fixture.invalid/mcp"
+        auth["mcp:pagerduty"]["endpoint"],
+        "https://mcp.pagerduty.com/mcp"
     );
     let records: Value = serde_json::from_str(
         &std::fs::read_to_string(agent_dir.join("mcp-connections.json"))
             .expect("mcp-connections.json"),
     )
     .expect("records json");
-    let record = &records["connections"]["paste-fixture"];
-    assert_eq!(record["serviceId"], "paste-fixture");
-    assert_eq!(record["endpoint"], "https://paste-fixture.invalid/mcp");
+    let record = &records["connections"]["pagerduty"];
+    assert_eq!(record["serviceId"], "pagerduty");
+    assert_eq!(record["endpoint"], "https://mcp.pagerduty.com/mcp");
 
     client.send_command(
         "m2",
@@ -408,12 +354,12 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
         .unwrap_or_else(|| panic!("services array: {roster}"));
     let paste = services
         .iter()
-        .find(|service| service["serviceId"] == "paste-fixture")
+        .find(|service| service["serviceId"] == "pagerduty")
         .expect("paste fixture row after install");
     assert_eq!(paste["connectionStatus"], "pending", "pending: {paste}");
     assert_eq!(
         paste["connectionIds"],
-        json!(["paste-fixture"]),
+        json!(["pagerduty"]),
         "the account id joins the view"
     );
     let connections = roster["data"]["connections"]
@@ -422,7 +368,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     assert!(
         connections
             .iter()
-            .any(|connection| connection["server"] == "paste-fixture"),
+            .any(|connection| connection["server"] == "pagerduty"),
         "the roster lists the installed connection: {connections:?}"
     );
 
@@ -432,7 +378,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
         &json!({
             "type": "remove_mcp_connection",
             "activeSessionId": session_id,
-            "server": "paste-fixture",
+            "server": "pagerduty",
         }),
     );
     let removed = client.read_response("r1");
@@ -445,7 +391,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     )
     .expect("auth json");
     assert!(
-        auth.get("mcp:paste-fixture").is_none(),
+        auth.get("mcp:pagerduty").is_none(),
         "the credential is gone: {auth}"
     );
     client.send_command(
@@ -458,7 +404,7 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
         .unwrap_or_else(|| panic!("services array: {roster}"));
     let paste = services
         .iter()
-        .find(|service| service["serviceId"] == "paste-fixture")
+        .find(|service| service["serviceId"] == "pagerduty")
         .expect("paste fixture row after removal");
     assert_eq!(
         paste["connectionStatus"], "setup_required",
@@ -472,10 +418,10 @@ fn catalog_surfaces_and_paste_installs_through_the_daemon() {
     client.shutdown_daemon();
 }
 
-/// The pinned-definition hint gating (Kevin's dogfood report, TS parity): a record whose
-/// service left the catalog shows the hint ONLY when a validated snapshot proves it.
+/// The pinned-definition hint (TS parity): a record whose service is not in the catalog
+/// keeps its pinned definition and says so.
 #[test]
-fn pinned_hint_needs_a_snapshot_to_claim_the_source_unavailable() {
+fn a_record_outside_the_catalog_keeps_its_pinned_definition() {
     let Some(kernel_python) = kernel_python() else {
         return;
     };
@@ -483,25 +429,7 @@ fn pinned_hint_needs_a_snapshot_to_claim_the_source_unavailable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let agent_dir = dir.path().join("agent");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
-    // A fetched catalog that does NOT define the service, plus the durable record.
-    let cache = json!({
-        "version": 2,
-        "counts": {},
-        "entries": [{
-            "server": "cache-only", "service": "cache-only", "label": "Cache Only",
-            "url": "https://cache-only.example/mcp", "aliases": [],
-            "transport": { "type": "http", "url": "https://cache-only.example/mcp" },
-            "auth": { "strategy": "oauth", "clientRegistration": "dynamic" },
-            "setup": { "status": "ready" },
-            "verification": { "status": "unverified" },
-            "legacyBuiltin": false, "provenance": [{ "source": "prime" }]
-        }]
-    });
-    std::fs::write(
-        agent_dir.join("mcp-service-catalog.v2.json"),
-        snapshot_envelope(&cache),
-    )
-    .expect("write disk cache");
+    // The compiled-in catalog does not define the service; the durable record pins it.
     let record = json!({
         "version": 1,
         "connections": {
@@ -518,51 +446,25 @@ fn pinned_hint_needs_a_snapshot_to_claim_the_source_unavailable() {
     });
     std::fs::write(agent_dir.join("mcp-connections.json"), record.to_string())
         .expect("write records");
-    let cache_path = agent_dir.join("mcp-service-catalog.v2.json");
 
-    // Cache present: the snapshot proves the service is gone — the hint shows.
-    {
-        let socket = dir.path().join("cache-present.sock");
-        let _daemon = spawn_supervisor(&socket, &agent_dir, &kernel_python);
-        wait_socket_ready(&socket);
-        let (mut client, _hello) = Client::connect(&socket);
-        let view = pinned_service_view(&mut client, dir.path(), "present");
-        assert_eq!(
-            view["connectionStatus"], "not_connected",
-            "the pinned card: {view}"
-        );
-        assert_eq!(
-            view["connectable"], false,
-            "a pin is never one-click connectable: {view}"
-        );
-        assert_eq!(
-            view["setupHint"].as_str(),
-            Some(PINNED_FROM_RECORD_HINT),
-            "the proven-vanished row carries the byte-exact TS hint: {view}"
-        );
-        client.shutdown_daemon();
-    }
-
-    // Cache absent (and no packaged bundle): the row stays, the claim does not.
-    std::fs::remove_file(&cache_path).expect("remove the cache");
-    let socket = dir.path().join("cache-absent.sock");
+    let socket = dir.path().join("pinned.sock");
     let _daemon = spawn_supervisor(&socket, &agent_dir, &kernel_python);
     wait_socket_ready(&socket);
     let (mut client, _hello) = Client::connect(&socket);
-    let view = pinned_service_view(&mut client, dir.path(), "absent");
+    let view = pinned_service_view(&mut client, dir.path(), "pinned");
     client.shutdown_daemon();
     assert_eq!(
         view["connectionStatus"], "not_connected",
-        "the pinned row stays manageable: {view}"
+        "the pinned card: {view}"
     );
     assert_eq!(
         view["connectable"], false,
-        "still never one-click connectable: {view}"
+        "a pin is never one-click connectable: {view}"
     );
-    assert_ne!(
+    assert_eq!(
         view["setupHint"].as_str(),
         Some(PINNED_FROM_RECORD_HINT),
-        "no snapshot in hand means no source-unavailable claim: {view}"
+        "the vanished row carries the byte-exact TS hint: {view}"
     );
 }
 

@@ -12,14 +12,6 @@ pub trait OnboardingSink: Send + Sync {
     /// The completion marker, read fresh: the phase's one-shot gate — the agents-view flow
     /// re-runs the phase per session, so a completed flow never shows anything again.
     fn onboarding_shown(&self) -> bool;
-    /// Whether a trace-sharing choice was ever written: such homes never see the question.
-    fn agent_traces_choice_written(&self) -> bool;
-    /// Persist the trace-sharing answer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` when persisting the choice to the settings store fails.
-    fn set_agent_traces_enabled(&self, enabled: bool) -> anyhow::Result<()>;
     /// Mark the onboarding flow completed; an aborted flow leaves the flag unset.
     ///
     /// # Errors
@@ -38,16 +30,15 @@ pub trait OnboardingSink: Send + Sync {
 }
 
 /// The model-readiness probe: the composition root re-resolves the startup model chain, because the
-/// flow's own steps can change the answer (the Prime sign-in configures the startup model).
+/// flow's own steps can change the answer (a provider sign-in configures the startup model).
 pub type ModelReadiness = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
 
-/// The first-run flow before the session screen. An unconfigured home can connect
-/// Prime Inference now or skip straight to the trace-sharing choice and session.
+/// The first-run flow before the session screen. An unconfigured home can connect a provider
+/// now or skip straight to the session.
 #[derive(Clone)]
 pub struct OnboardingTask {
     pub sink: std::sync::Arc<dyn OnboardingSink>,
     pub model_ready: ModelReadiness,
-    pub current_model: Option<pa_types::ai::Model>,
     /// The provider auth flows the full branch signs in through; `None` skips its sign-in step.
     pub provider_auth: Option<crate::provider_auth::ProviderAuthCommandsHandle>,
 }
@@ -317,172 +308,45 @@ async fn run_onboarding_flow(
     view: &mut AgentView,
     drive: &mut PaneDrive<'_>,
 ) -> Result<bool> {
-    let login_screen = if (task.model_ready)() {
-        None
-    } else {
-        let (screen, outcome) = drive_onboarding_pane(
-            view,
-            &mut *drive,
-            crate::onboarding::OnboardingScreen::welcome(),
-            None,
-            &mut session.osc_sink,
-        )
-        .await?;
-        match outcome {
-            PaneOutcome::InputClosed => return Ok(false),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Begin) => Some(screen),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Cancelled) => None,
-            PaneOutcome::Decision(
-                crate::onboarding::OnboardingDecision::Selected(_)
-                | crate::onboarding::OnboardingDecision::Pick(_),
-            )
-            | PaneOutcome::Flow(_) => unreachable!("unexpected welcome screen outcome"),
-        }
-    };
-
-    let Some(mut screen) = login_screen else {
-        // No provider setup: keep a standing trace choice, even without a model.
-        if task.sink.agent_traces_choice_written() {
-            if let Err(error) = task.sink.mark_onboarding_complete() {
-                warn_onboarding_persist_failure(session, view, &error);
-            }
-            return Ok(false);
-        }
-        let screen = crate::onboarding::OnboardingScreen::new();
-        let (_screen, outcome) =
-            drive_onboarding_pane(view, &mut *drive, screen, None, &mut session.osc_sink).await?;
-        match outcome {
-            PaneOutcome::InputClosed => return Ok(false),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Selected(index)) => {
-                // `Share` opts in; `Not now` keeps traces off. A write that fails surfaces as a
-                // warning row: the flow still settled this run, but an unpersisted marker
-                // re-mounts it next launch — the user must know, the run never dies over it.
-                if let Err(error) = task.sink.set_agent_traces_enabled(index == 0) {
-                    warn_onboarding_persist_failure(session, view, &error);
-                }
-            }
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Cancelled) => {}
-            PaneOutcome::Decision(
-                crate::onboarding::OnboardingDecision::Begin
-                | crate::onboarding::OnboardingDecision::Pick(_),
-            )
-            | PaneOutcome::Flow(_) => {
-                unreachable!("the question panel yields Selected or Cancelled only")
-            }
-        }
+    // A home with a usable model has nothing to set up.
+    if (task.model_ready)() {
         if let Err(error) = task.sink.mark_onboarding_complete() {
             warn_onboarding_persist_failure(session, view, &error);
         }
         return Ok(false);
-    };
-
-    let Some(provider_auth) = task.provider_auth.clone() else {
-        return Ok(false);
-    };
-    let prime_row = provider_auth
-        .0
-        .login_options()
-        .await
-        .into_iter()
-        .find(|row| row.id == crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID);
-    let Some(prime_row) = prime_row else {
-        return Ok(false);
-    };
-    let prime_panel = session.auth_panel_handle();
-    let prime_cancel = prime_panel.cancel_signal();
-    // The panel mounts chrome-less — the splash's heading names the step — and the panel
-    // carries the flow's cancel signal (TS: the dialog's abort signal).
-    let mut prime_dialog =
-        crate::auth_panel::AuthPanel::onboarding(format!("Login to {}", prime_row.name));
-    prime_dialog.set_cancel_signal(prime_cancel.clone());
-    screen.mount_panel(crate::onboarding_flow::OnboardingPanel::Auth {
-        panel: std::boxed::Box::new(prime_dialog),
-        heading: Some(crate::onboarding_flow::PRIME_LOGIN_HEADING.to_string()),
-    });
-    let prime_row_for_flow = prime_row.clone();
-    let prime_auth = provider_auth.clone();
-    let prime_flow = OnboardingFlowTask::spawn(
-        async move {
-            prime_auth
-                .0
-                .login_on_panel(&prime_row_for_flow, prime_panel)
-                .await
-        },
-        prime_cancel,
-    );
+    }
     let (mut screen, outcome) = drive_onboarding_pane(
         view,
         &mut *drive,
-        screen,
-        Some(prime_flow),
+        crate::onboarding::OnboardingScreen::welcome(),
+        None,
         &mut session.osc_sink,
     )
     .await?;
-    let login = match outcome {
-        PaneOutcome::InputClosed => return Ok(false),
+    match outcome {
+        PaneOutcome::InputClosed
+        | PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Cancelled) => {
+            return Ok(false)
+        }
         PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
-        PaneOutcome::Flow(result) => result.unwrap_or_else(|_| {
-            crate::provider_auth::ProviderAuthOutcome::Error(
-                "the Prime Inference login task failed".to_string(),
-            )
-        }),
-        PaneOutcome::Decision(_) => {
-            unreachable!("the login dialog yields no decisions")
-        }
+        PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Begin) => {}
+        PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Pick(_))
+        | PaneOutcome::Flow(_) => unreachable!("unexpected welcome screen outcome"),
+    }
+    let Some(provider_auth) = task.provider_auth.clone() else {
+        return Ok(false);
     };
-    match login {
-        crate::provider_auth::ProviderAuthOutcome::Status(message) => {
-            session
-                .apply_auth_outcome(
-                    crate::provider_auth::ProviderAuthOutcome::Status(message),
-                    crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID,
-                    view,
-                )
-                .await;
-        }
-        outcome => {
-            session
-                .apply_auth_outcome(
-                    outcome,
-                    crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID,
-                    view,
-                )
-                .await;
-            return Ok(false);
-        }
-    }
-
-    // The default-model apply: only a home with no current model picks the Prime default. The
-    // daemon resolves the model against its own registry — read fresh at the switch, so the
-    // just-stored credential is what makes the default available (the client's startup snapshot
-    // predates the sign-in). A resolution failure surfaces as the switch's error row and the flow
-    // still completes. The picker below words its prompt and continue row from the same fact.
-    let prime_default = task.current_model.is_none();
-    if prime_default {
-        session
-            .apply_model_selection(
-                crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID,
-                crate::provider_auth::PRIME_INFERENCE_DEFAULT_MODEL_ID,
-                view,
-            )
-            .await;
-    }
 
     // The connect-more-providers picker: the picker stays mounted between logins so several
     // can connect in one pass, with fresh connected marks after each one.
     loop {
         let rows = provider_auth.0.login_options().await;
-        // One row per provider id, never the Prime row the flow just signed in and never a
-        // service (`mcp:` integrations are services, not model providers).
+        // One row per provider id, never a service (`mcp:` integrations are services, not
+        // model providers).
         let mut seen = std::collections::HashSet::new();
         let options: Vec<crate::onboarding_flow::ProviderPickerOption> = rows
             .iter()
-            .filter(|row| {
-                row.id != crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID
-                    && !row.id.starts_with("mcp:")
-            })
+            .filter(|row| !row.id.starts_with("mcp:"))
             .filter(|row| seen.insert(row.id.clone()))
             .map(|row| crate::onboarding_flow::ProviderPickerOption {
                 id: row.id.clone(),
@@ -497,7 +361,7 @@ async fn run_onboarding_flow(
             break;
         }
         screen.mount_panel(crate::onboarding_flow::OnboardingPanel::Providers(
-            crate::onboarding_flow::ProviderPicker::new(options, prime_default),
+            crate::onboarding_flow::ProviderPicker::new(options),
         ));
         let (picked_screen, outcome) =
             drive_onboarding_pane(view, &mut *drive, screen, None, &mut session.osc_sink).await?;
@@ -513,8 +377,7 @@ async fn run_onboarding_flow(
                 crate::onboarding_flow::ProviderPick::Provider(id),
             )) => id,
             PaneOutcome::Decision(
-                crate::onboarding::OnboardingDecision::Selected(_)
-                | crate::onboarding::OnboardingDecision::Cancelled
+                crate::onboarding::OnboardingDecision::Cancelled
                 | crate::onboarding::OnboardingDecision::Begin,
             )
             | PaneOutcome::Flow(_) => unreachable!("the picker yields Pick only"),
@@ -641,38 +504,6 @@ async fn run_onboarding_flow(
         }
     }
 
-    // The trace question, the flow's last step — the merged question surface. A home that
-    // already carries a standing choice skips it (the operator ruling: the choice stands)
-    // while the flow still completes below — an aborted retry (the model still not ready)
-    // leaves the marker unset, so the next launch runs the sign-in again without re-asking.
-    if !task.sink.agent_traces_choice_written() {
-        screen.mount_panel(crate::onboarding_flow::OnboardingPanel::Question(
-            crate::onboarding_choice::OnboardingChoice::new(
-                crate::onboarding::trace_question_options(),
-                None,
-                crate::onboarding::trace_question_config(),
-            ),
-        ));
-        let (_screen, outcome) =
-            drive_onboarding_pane(view, &mut *drive, screen, None, &mut session.osc_sink).await?;
-        match outcome {
-            PaneOutcome::InputClosed => return Ok(false),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Exit) => return Ok(true),
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Selected(index)) => {
-                if let Err(error) = task.sink.set_agent_traces_enabled(index == 0) {
-                    warn_onboarding_persist_failure(session, view, &error);
-                }
-            }
-            PaneOutcome::Decision(crate::onboarding::OnboardingDecision::Cancelled) => {}
-            PaneOutcome::Decision(
-                crate::onboarding::OnboardingDecision::Begin
-                | crate::onboarding::OnboardingDecision::Pick(_),
-            )
-            | PaneOutcome::Flow(_) => {
-                unreachable!("the question panel yields Selected or Cancelled only")
-            }
-        }
-    }
     // Only a completed flow whose model is ready marks onboarding seen — a flow whose
     // sign-in left the home without a usable model stays unset and retries next launch.
     if (task.model_ready)() {
@@ -752,7 +583,7 @@ mod tests {
             drive_onboarding_pane(
                 &mut view,
                 &mut drive,
-                crate::onboarding::OnboardingScreen::new(),
+                crate::onboarding::OnboardingScreen::welcome(),
                 Some(flow),
                 &mut osc_sink,
             ),

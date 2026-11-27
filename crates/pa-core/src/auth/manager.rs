@@ -7,17 +7,12 @@ use std::sync::Arc;
 
 use super::resolve_config_value::{resolve_config_value, resolve_config_value_uncached};
 use super::storage::{parse_storage_data, AuthStorageBackend};
-use super::types::{
-    AuthCredential, AuthSource, AuthSourceToken, AuthStatus, AuthStorageData, PrimeTeamAssignment,
-    PrimeTeamCredential, StoredPrimeTeam, PRIME_INFERENCE_PROVIDER_ID,
-};
+use super::types::{AuthCredential, AuthSource, AuthSourceToken, AuthStatus, AuthStorageData};
 
 #[cfg(test)]
 mod tests;
 
 mod lookup;
-
-mod prime_inference;
 
 fn fingerprint(source: AuthSource, material: &str) -> String {
     use sha2::{Digest, Sha256};
@@ -152,8 +147,6 @@ pub(crate) trait EnvCredentialSource: Send + Sync {
     /// would supply the provider's API key, if any.
     fn key_names(&self, provider: &str) -> Option<Vec<String>>;
     fn api_key(&self, provider: &str) -> Option<String>;
-    /// Raw `PRIME_TEAM_ID` value if set; the caller trims and rejects empty.
-    fn prime_team_id(&self) -> Option<String>;
     /// Identity material for ambient multi-variable credential sources
     /// (AWS profiles, container credentials, Google ADC projects).
     fn ambient_identity_material(&self, provider: &str) -> String;
@@ -174,10 +167,6 @@ impl EnvCredentialSource for NoEnvCredentials {
         None
     }
 
-    fn prime_team_id(&self) -> Option<String> {
-        None
-    }
-
     fn ambient_identity_material(&self, provider: &str) -> String {
         provider.to_string()
     }
@@ -190,10 +179,6 @@ impl EnvCredentialSource for ProcessEnvCredentials {
 
     fn api_key(&self, provider: &str) -> Option<String> {
         pa_ai::env_api_keys::get_env_api_key(provider)
-    }
-
-    fn prime_team_id(&self) -> Option<String> {
-        std::env::var("PRIME_TEAM_ID").ok()
     }
 
     fn ambient_identity_material(&self, provider: &str) -> String {
@@ -633,21 +618,12 @@ impl AuthStorage {
         let fallback = include_fallback
             .then(|| self.fallback_candidate(provider))
             .flatten();
-        if provider == PRIME_INFERENCE_PROVIDER_ID {
-            vec![
-                self.runtime_candidate(provider),
-                self.environment_candidate(provider),
-                self.stored_candidate(provider, /*resolved_command_value*/ None),
-                fallback,
-            ]
-        } else {
-            vec![
-                self.runtime_candidate(provider),
-                self.stored_candidate(provider, /*resolved_command_value*/ None),
-                self.environment_candidate(provider),
-                fallback,
-            ]
-        }
+        vec![
+            self.runtime_candidate(provider),
+            self.stored_candidate(provider, /*resolved_command_value*/ None),
+            self.environment_candidate(provider),
+            fallback,
+        ]
         .into_iter()
         .flatten()
         .collect()
@@ -816,40 +792,5 @@ impl AuthStorage {
         }
         // Reload from what we wrote.
         self.reload();
-    }
-
-    /// Provider-scoped request headers (prime-inference team header only).
-    pub fn get_provider_headers(
-        &self,
-        provider_id: &str,
-    ) -> Option<std::collections::HashMap<String, String>> {
-        if provider_id != PRIME_INFERENCE_PROVIDER_ID {
-            return None;
-        }
-        let team_id = self
-            .env_credentials
-            .prime_team_id()
-            .and_then(|value| {
-                let trimmed = value.trim().to_string();
-                (!trimmed.is_empty()).then_some(trimmed)
-            })
-            .or_else(|| {
-                // The stored primeTeam rides only with the stored key: a
-                // runtime or environment key never borrows the login's team.
-                if self.get_auth_status(provider_id).source != Some(AuthSource::Stored) {
-                    return None;
-                }
-                match self.data.credential(provider_id) {
-                    Some(AuthCredential::ApiKey { prime_team, .. }) => {
-                        prime_team.as_ref().map(|team| team.team_id.clone())
-                    }
-                    _ => None,
-                }
-            });
-        team_id.map(|team_id| {
-            let mut headers = std::collections::HashMap::new();
-            headers.insert("X-Prime-Team-ID".to_string(), team_id);
-            headers
-        })
     }
 }

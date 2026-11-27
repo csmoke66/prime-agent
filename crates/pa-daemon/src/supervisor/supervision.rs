@@ -931,12 +931,6 @@ impl Supervisor {
                             .fetch_add(1, Ordering::Relaxed);
                         let _ =
                             events.send((ClientRouting::Broadcast, std::sync::Arc::new(payload)));
-                    } else if outbound_type == "model_catalog_changed" {
-                        // A worker's background catalog refresh changed the served snapshot:
-                        // every client re-fetches (the pickers fold the fresh catalog
-                        // without flicker).
-                        let _ =
-                            events.send((ClientRouting::Broadcast, std::sync::Arc::new(payload)));
                     }
                 }
                 // The connection is gone: no reply can arrive on it any

@@ -26,7 +26,6 @@ const KNOWN_FIELDS: &[&str] = &[
     "compaction",
     "autoRefine",
     "harnessRefinements",
-    "agentTraces",
     "factory",
     "telemetry",
     "branchSummary",

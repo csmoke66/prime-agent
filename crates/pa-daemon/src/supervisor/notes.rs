@@ -62,17 +62,6 @@ impl Supervisor {
         }
     }
 
-    /// Emit the live-catalog warm-up settle's `daemon event` (schema v1,
-    /// kind `catalog_refresh`): the served model count, primitives only.
-    pub(super) fn note_catalog_refresh(&self, count: usize) {
-        if !self.telemetry_recording_on() {
-            return;
-        }
-        if let Some(client) = &*self.telemetry.lock().unwrap() {
-            pa_core::session_engine::telemetry::track_catalog_refresh(client, count);
-        }
-    }
-
     /// Emit the deleted-child usage capture's `daemon event` (kind
     /// `deleted_child_usage_captured`): source + count, primitives only.
     pub(crate) fn note_deleted_child_usage_captured(&self, source: &str, count: usize) {

@@ -8,8 +8,7 @@ mod render;
 use std::collections::{HashMap, HashSet};
 
 use pa_types::ai::{
-    clamp_thinking_level, get_supported_thinking_levels, Model, ModelServing, ModelThinkingLevel,
-    PRIME_INFERENCE_PROVIDER_ID,
+    clamp_thinking_level, get_supported_thinking_levels, Model, ModelThinkingLevel,
 };
 
 use crate::keybindings::KeybindingsManager;
@@ -423,14 +422,6 @@ impl ModelPicker {
             (false, true) => return Ordering::Less,
             _ => {}
         }
-        // Signed-in Prime Inference pinned above the rest.
-        let pinned =
-            |model: &Model| model.provider == PRIME_INFERENCE_PROVIDER_ID && configured(model);
-        match (pinned(b), pinned(a)) {
-            (true, false) => return Ordering::Greater,
-            (false, true) => return Ordering::Less,
-            _ => {}
-        }
         // The current model leads.
         let is_current = |model: &Model| self.is_current(model);
         match (is_current(a), is_current(b)) {
@@ -465,7 +456,7 @@ impl ModelPicker {
     }
 
     /// Rebuild the filtered view: a non-empty query scores every model and orders the matches by
-    /// configured provider, pin, match quality, score, version descending, currency, recent rank,
+    /// configured provider, match quality, score, version descending, currency, recent rank,
     /// and key. The selection resets to the top only when the query changed.
     fn filter_models(&mut self, query: &str) {
         let query_changed = query != self.last_query;
@@ -481,18 +472,11 @@ impl ModelPicker {
                 })
                 .collect();
             let configured = |model: &Model| self.configured_providers.contains(&model.provider);
-            let pinned =
-                |model: &Model| model.provider == PRIME_INFERENCE_PROVIDER_ID && configured(model);
             matches.sort_by(|(a_index, a_match), (b_index, b_match)| {
                 use std::cmp::Ordering;
                 let a = &self.all_models[*a_index];
                 let b = &self.all_models[*b_index];
                 match (configured(b), configured(a)) {
-                    (true, false) => return Ordering::Greater,
-                    (false, true) => return Ordering::Less,
-                    _ => {}
-                }
-                match (pinned(b), pinned(a)) {
                     (true, false) => return Ordering::Greater,
                     (false, true) => return Ordering::Less,
                     _ => {}
@@ -791,7 +775,7 @@ impl ModelPicker {
             } else {
                 "require sign in"
             }),
-            MenuSegment::muted(provider_label(model)),
+            MenuSegment::muted(model.provider.as_str()),
             MenuSegment::themed(
                 crate::chrome::DAYBREAK_BLUE_COLOR,
                 if daybreak_blue {
@@ -801,17 +785,6 @@ impl ModelPicker {
                 },
             ),
         ]
-    }
-}
-
-/// The provider a row displays (and search matches): Prime Inference routes
-/// split into their serving class (the live catalog labels each route hosted
-/// or gateway); unlabeled routes and every other provider show the provider id.
-fn provider_label(model: &Model) -> &str {
-    match (model.provider.as_str(), model.serving) {
-        (PRIME_INFERENCE_PROVIDER_ID, Some(ModelServing::Hosted)) => "prime-hosted",
-        (PRIME_INFERENCE_PROVIDER_ID, Some(ModelServing::Gateway)) => "prime-gateway",
-        _ => model.provider.as_str(),
     }
 }
 

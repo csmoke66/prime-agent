@@ -1,13 +1,12 @@
 //! The render surface: the per-surface chrome, the progress block, the URL block with the
-//! OSC 8 wrap, the paste field, the team picker rows, and the auth-actions row the provider
+//! OSC 8 wrap, the paste field, and the auth-actions row the provider
 //! selector's API-key prompt reuses.
 
 use super::{
-    hint_row, key_hint, login_field_row, menu_row, no_match_row, osc8_open, scroll_row,
-    scrub_controls, search_field_lines, search_field_plain_row, AuthPanel, CopyStatus,
-    KeybindingsManager, Line, MenuSegment, Modifier, PanelInput, PanelSurface, PastePromptTone,
-    PasteStyle, PickerSegment, Span, Theme, ThemeColor, BROWSER_DEFAULT_INSTRUCTIONS, OSC8_CLOSE,
-    PASTE_PLACEHOLDER, PREFERRED_VISIBLE_TEAMS, TEAM_SEARCH_PLACEHOLDER, TOKEN_PLACEHOLDER,
+    hint_row, key_hint, login_field_row, osc8_open, scrub_controls, search_field_plain_row,
+    AuthPanel, CopyStatus, KeybindingsManager, Line, Modifier, PanelInput, PanelSurface,
+    PastePromptTone, PasteStyle, Span, Theme, ThemeColor, BROWSER_DEFAULT_INSTRUCTIONS, OSC8_CLOSE,
+    PASTE_PLACEHOLDER, TOKEN_PLACEHOLDER,
 };
 
 impl AuthPanel {
@@ -25,53 +24,6 @@ impl AuthPanel {
             if let Some(subtitle) = &self.subtitle {
                 lines.push(content_row(theme, width, ThemeColor::Muted, subtitle));
             }
-        }
-        // The team picker is its own panel: the rule, the title, the subtitle, the bordered
-        // field, the rows (no leading content blank, no auth-actions row, no nav hint).
-        if let PanelInput::Teams { picker, .. } = &mut self.input {
-            lines.append(&mut search_field_lines(
-                theme,
-                width,
-                picker.search.value(),
-                picker.search.cursor(),
-                false,
-                TEAM_SEARCH_PLACEHOLDER,
-            ));
-            let count = picker.filtered.len();
-            let visible = PREFERRED_VISIBLE_TEAMS.min(count.max(1));
-            let start = if count > visible {
-                picker
-                    .selected
-                    .saturating_sub(visible / 2)
-                    .min(count - visible)
-            } else {
-                0
-            };
-            let end = (start + visible).min(count);
-            for index in start..end {
-                let Some(row) = picker.filtered.get(index) else {
-                    continue;
-                };
-                let selected = index == picker.selected;
-                let (primary, trailing) = picker.row_parts(*row);
-                let segments: Vec<MenuSegment> = trailing
-                    .iter()
-                    .map(|segment| match segment {
-                        PickerSegment::Muted(text) => MenuSegment::muted(text),
-                        PickerSegment::Current => {
-                            MenuSegment::themed(ThemeColor::Success, "current")
-                        }
-                    })
-                    .collect();
-                lines.push(menu_row(theme, width, primary, &segments, selected));
-            }
-            if start > 0 || end < count {
-                lines.push(scroll_row(theme, width, picker.selected + 1, count));
-            }
-            if count == 0 {
-                lines.push(no_match_row(theme, width, "No matching teams"));
-            }
-            return lines;
         }
         if !self.content_open() {
             // The empty dialog renders zero rows: only the surface's chrome shows.
@@ -223,7 +175,6 @@ impl AuthPanel {
                     lines.push(hint_row(theme, width, &hints));
                 }
             }
-            PanelInput::Teams { .. } => unreachable!("the team picker returned above"),
         }
         // The waiting line joins above the actions row in the accent colour; its blank rides
         // only under already-rendered content.

@@ -342,9 +342,6 @@ impl SessionUi {
             ..Default::default()
         };
         values.speed_display = self.speed_display_enabled;
-        if let Some(traces) = &self.traces {
-            values.trace_sharing = Some(traces.0.enabled().await);
-        }
         // A missing settings seam keeps the TS defaults.
         if let Some(settings) = &settings {
             values.factory_enabled = Some(settings.factory_enabled());
@@ -678,12 +675,6 @@ impl SessionUi {
                         &format!("Cannot save provider-rejection delivery: {error:#}"),
                         view,
                     );
-                }
-            }
-            "trace-sharing" => {
-                view.settings_menu = None;
-                if let Err(err) = self.set_trace_sharing(value == "true", view).await {
-                    self.error_row(&format!("{err:#}"), view);
                 }
             }
             "factory" | "telemetry" => {

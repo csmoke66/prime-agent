@@ -296,29 +296,6 @@ impl Supervisor {
                 pa_core::session_engine::telemetry::build_client(&settings, &self.options.agent_dir)
             });
         }
-        // Live model catalog (both fetch layers): the supervisor keeps the disk caches warm
-        // for every worker it spawns — startup refresh plus the hourly loop, fire-and-forget.
-        let _ = pa_core::models::startup_refresh(&self.options.agent_dir);
-        pa_core::models::spawn_hourly_refresh(&self.options.agent_dir);
-        // The plugins service catalog's keep-warm (the `/mcp` view's remote catalog): same
-        // cadence — startup refresh plus the hourly loop, failures keep the last-good cache.
-        pa_core::mcp::startup_plugins_refresh(&self.options.agent_dir);
-        pa_core::mcp::spawn_hourly_plugins_refresh(&self.options.agent_dir);
-        // Adoption telemetry: one `daemon event` (kind `catalog_refresh`) when the startup
-        // refresh settles — the served model count, primitives only.
-        {
-            let supervisor = Arc::clone(&self);
-            tokio::spawn(async move {
-                let agent_dir = &supervisor.options.agent_dir;
-                let catalog = pa_core::models::catalog_for(Some(&agent_dir.join("models.json")));
-                let credentials = pa_core::models::prime_credentials_for_dir(agent_dir);
-                catalog
-                    .refresh_with_credentials(false, credentials.as_ref())
-                    .await;
-                let count = catalog.resolve(credentials.as_ref()).len();
-                supervisor.note_catalog_refresh(count);
-            });
-        }
         // The first open's family walk reads the spawn ledger: replay it
         // while that open's worker launches, not on its reply path.
         {

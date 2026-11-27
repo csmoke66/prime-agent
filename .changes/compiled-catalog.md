@@ -1,0 +1,1 @@
+- The model and MCP catalogs are compiled into the binary and never fetched. Prime Inference login, team billing, and `/traces` uploads are removed; first-run onboarding goes straight to the provider picker.

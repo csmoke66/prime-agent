@@ -3,31 +3,20 @@
 //! and the panel hosting that mounts each step's surface inside the splash
 //! (the flow never nests its panels, so one slot covers the sequence).
 
-use crate::auth_panel::PrimeTeamPick;
 use crate::keybindings::KeybindingsManager;
 use crate::menu_panel::search_field_plain_row;
 use crate::onboarding::{highlight_wash, wrap_words, OnboardingDecision};
-use crate::onboarding_choice::OnboardingChoice;
 use crate::search_input::SearchInput;
 use crate::theme::{Theme, ThemeColor};
 use crate::{Line, Span};
 use ratatui::style::Modifier;
-use tokio::sync::oneshot;
 
-// The picker's prompt and continue row when the flow made Prime Inference the default model.
-pub(crate) const PRIME_DEFAULT_PROMPT: &str =
-    "Prime Inference is your default. Connect other providers, or continue.";
-pub(crate) const PRIME_DEFAULT_CONTINUE_LABEL: &str = "Continue with Prime Inference (default)";
-// The picker's prompt and continue row when the session keeps the model it started with.
-pub(crate) const CURRENT_MODEL_PROMPT: &str =
-    "Signed in to Prime Inference. Connect other providers, or continue.";
-pub(crate) const CURRENT_MODEL_CONTINUE_LABEL: &str = "Continue with your current model";
+// The picker's prompt and continue row.
+pub(crate) const PROVIDERS_PROMPT: &str = "Connect a model provider, or continue.";
+pub(crate) const CONTINUE_LABEL: &str = "Continue";
 pub(crate) const PROVIDERS_SEARCH_PLACEHOLDER: &str = "Search providers";
 pub(crate) const PROVIDERS_NOTE: &str = "You can add providers anytime with /login.";
-pub(crate) const LOGIN_ACTION_LABEL: &str = "Log in with Prime Intellect";
-/// The Prime Inference login's heading: the panel that owns the block names itself in place of the
-/// brand line.
-pub(crate) const PRIME_LOGIN_HEADING: &str = "Login with Prime Intellect";
+pub(crate) const LOGIN_ACTION_LABEL: &str = "Connect a model provider";
 pub(crate) const API_KEY_PROMPT: &str = "Enter API key:";
 
 const WELCOME_DESCRIPTION_PARAGRAPHS: [&str; 2] = [
@@ -76,8 +65,6 @@ pub enum ProviderPick {
 #[derive(Debug)]
 pub struct ProviderPicker {
     options: Vec<ProviderPickerOption>,
-    /// Whether the flow made Prime Inference the default model (no startup model was set).
-    prime_default: bool,
     search: SearchInput,
     /// The selected row: 0 is the continue action, 1.. the visible rows.
     selected: usize,
@@ -86,10 +73,9 @@ pub struct ProviderPicker {
 
 impl ProviderPicker {
     #[must_use]
-    pub fn new(options: Vec<ProviderPickerOption>, prime_default: bool) -> Self {
+    pub fn new(options: Vec<ProviderPickerOption>) -> Self {
         ProviderPicker {
             options,
-            prime_default,
             search: SearchInput::new(),
             selected: 0,
             scroll_top: 0,
@@ -181,7 +167,7 @@ impl ProviderPicker {
         let scroll_top = self.scroll_top.min(max_scroll);
         let row_width = self.row_width(width);
         let mut lines: Vec<Line> = vec![padded(width)];
-        lines.push(indented(theme, width, self.prompt(), ThemeColor::Text));
+        lines.push(indented(theme, width, PROVIDERS_PROMPT, ThemeColor::Text));
         lines.push(padded(width));
         lines.push(search_field_plain_row(
             theme,
@@ -196,7 +182,7 @@ impl ProviderPicker {
             theme,
             width,
             row_width,
-            self.continue_label(),
+            CONTINUE_LABEL,
             RowMarks {
                 connected: false,
                 selected: self.selected == 0,
@@ -293,22 +279,6 @@ impl ProviderPicker {
         pad_to(line, width)
     }
 
-    fn prompt(&self) -> &'static str {
-        if self.prime_default {
-            PRIME_DEFAULT_PROMPT
-        } else {
-            CURRENT_MODEL_PROMPT
-        }
-    }
-
-    fn continue_label(&self) -> &'static str {
-        if self.prime_default {
-            PRIME_DEFAULT_CONTINUE_LABEL
-        } else {
-            CURRENT_MODEL_CONTINUE_LABEL
-        }
-    }
-
     /// The longest label (the continue row's, or a provider's plus its check) under the width
     /// budget, floored at the minimum.
     fn row_width(&self, width: usize) -> usize {
@@ -318,7 +288,7 @@ impl ProviderPicker {
             .map(|option| {
                 crate::width::str_width(&option.name) + if option.connected { 3 } else { 0 }
             })
-            .chain([crate::width::str_width(self.continue_label())])
+            .chain([crate::width::str_width(CONTINUE_LABEL)])
             .max()
             .unwrap_or(0);
         (MARKER_WIDTH + longest + ROW_TRAILING)
@@ -335,17 +305,8 @@ pub enum OnboardingPanel {
         panel: std::boxed::Box<crate::auth_panel::AuthPanel>,
         heading: Option<String>,
     },
-    /// The connect-more-providers picker.
+    /// The connect-providers picker.
     Providers(ProviderPicker),
-    /// The trace question (TS `askOnboardingTraceOptIn`'s choice).
-    Question(OnboardingChoice),
-    /// The Prime team question (no heading, so the brand line returns). The pick answers the flow's
-    /// `SelectTeam` request directly: the login flow settles through its own future.
-    TeamQuestion {
-        choice: OnboardingChoice,
-        teams: Vec<crate::auth_panel::PrimeTeamOption>,
-        reply: Option<oneshot::Sender<PrimeTeamPick>>,
-    },
 }
 
 impl OnboardingPanel {
@@ -354,7 +315,7 @@ impl OnboardingPanel {
     pub fn heading(&self) -> Option<&str> {
         match self {
             OnboardingPanel::Auth { heading, .. } => heading.as_deref(),
-            _ => None,
+            OnboardingPanel::Providers(_) => None,
         }
     }
 
@@ -369,9 +330,6 @@ impl OnboardingPanel {
         match self {
             OnboardingPanel::Auth { panel, .. } => panel.render(theme, width, kb),
             OnboardingPanel::Providers(picker) => picker.render(theme, width),
-            OnboardingPanel::Question(choice) | OnboardingPanel::TeamQuestion { choice, .. } => {
-                choice.render(theme, width)
-            }
         }
     }
 
@@ -393,74 +351,15 @@ impl OnboardingPanel {
             OnboardingPanel::Providers(picker) => {
                 picker.handle_key(key, kb).map(OnboardingDecision::Pick)
             }
-            OnboardingPanel::Question(choice) => {
-                if kb.matches(key, "tui.select.cancel") {
-                    return Some(OnboardingDecision::Cancelled);
-                }
-                if kb.matches(key, "tui.select.up") {
-                    choice.move_selection(-1);
-                    return None;
-                }
-                if kb.matches(key, "tui.select.down") {
-                    choice.move_selection(1);
-                    return None;
-                }
-                if kb.matches(key, "tui.select.confirm") {
-                    return Some(OnboardingDecision::Selected(choice.selected()));
-                }
-                None
-            }
-            // The choice answers its own oneshot (index 0 the personal account, 1.. the teams; a
-            // cancel keeps the stored selection).
-            OnboardingPanel::TeamQuestion {
-                choice,
-                teams,
-                reply,
-            } => {
-                if kb.matches(key, "tui.select.cancel") {
-                    if let Some(reply) = reply.take() {
-                        let _ = reply.send(PrimeTeamPick::Cancelled);
-                    }
-                    return None;
-                }
-                if kb.matches(key, "tui.select.up") {
-                    choice.move_selection(-1);
-                    return None;
-                }
-                if kb.matches(key, "tui.select.down") {
-                    choice.move_selection(1);
-                    return None;
-                }
-                if kb.matches(key, "tui.select.confirm") {
-                    if let Some(reply) = reply.take() {
-                        let _ = reply.send(Self::choice_pick(choice.selected(), teams));
-                    }
-                }
-                None
-            }
         }
     }
 
-    /// One paste payload: the login dialog's field, or the picker's search —
-    /// the questions have no input.
+    /// One paste payload: the login dialog's field, or the picker's search.
     pub fn handle_paste(&mut self, text: &str) {
         match self {
             OnboardingPanel::Auth { panel, .. } => panel.handle_paste(text),
             OnboardingPanel::Providers(picker) => picker.handle_paste(text),
-            OnboardingPanel::Question(_) | OnboardingPanel::TeamQuestion { .. } => {}
         }
-    }
-
-    /// The team question's answer: index 0 the personal account, 1.. the team
-    /// row — a row past the list answers the personal account.
-    fn choice_pick(selected: usize, teams: &[crate::auth_panel::PrimeTeamOption]) -> PrimeTeamPick {
-        if selected == 0 {
-            return PrimeTeamPick::PersonalAccount;
-        }
-        teams
-            .get(selected - 1)
-            .cloned()
-            .map_or(PrimeTeamPick::PersonalAccount, PrimeTeamPick::Team)
     }
 }
 
@@ -483,7 +382,7 @@ pub(crate) fn welcome_rows(theme: &Theme, width: usize) -> Vec<Line> {
     lines
 }
 
-/// The welcome screen's primary action: the bold `> Log in with Prime Intellect` row washed
+/// The welcome screen's primary action: the bold `> Connect a model provider` row washed
 /// across its highlight band.
 pub(crate) fn welcome_action_row(theme: &Theme, width: usize) -> Line {
     let band = MIN_HIGHLIGHT_WIDTH
@@ -549,8 +448,7 @@ mod tests {
 
     #[test]
     fn the_welcome_action_row_matches_the_ts_band() {
-        // The band is the TS label width (26) + marker + trailing = 34; the row pads the rest of
-        // the pane.
+        // The band is the label width + marker + trailing; the row pads the rest of the pane.
         let row = welcome_action_row(&theme(), 80);
         let text = row_text(&row);
         assert!(
@@ -577,28 +475,24 @@ mod tests {
 
     #[test]
     fn the_picker_pins_the_continue_row_and_marks_connected() {
-        let picker = ProviderPicker::new(
-            vec![
-                ProviderPickerOption {
-                    id: "one".to_string(),
-                    name: "One".to_string(),
-                    connected: true,
-                    available: true,
-                },
-                ProviderPickerOption {
-                    id: "two".to_string(),
-                    name: "Two".to_string(),
-                    connected: false,
-                    available: true,
-                },
-            ],
-            true,
-        );
+        let picker = ProviderPicker::new(vec![
+            ProviderPickerOption {
+                id: "one".to_string(),
+                name: "One".to_string(),
+                connected: true,
+                available: true,
+            },
+            ProviderPickerOption {
+                id: "two".to_string(),
+                name: "Two".to_string(),
+                connected: false,
+                available: true,
+            },
+        ]);
         let rows = picker.render(&theme(), 60);
         let text: Vec<String> = rows.iter().map(row_text).collect();
         assert!(
-            text.iter()
-                .any(|row| row.contains(PRIME_DEFAULT_CONTINUE_LABEL)),
+            text.iter().any(|row| row.contains(CONTINUE_LABEL)),
             "the continue row: {text:?}"
         );
         assert!(
@@ -612,15 +506,12 @@ mod tests {
     /// Enter is inert — no after-selection error wall.
     #[test]
     fn the_picker_marks_unavailable_rows_inert() {
-        let mut picker = ProviderPicker::new(
-            vec![ProviderPickerOption {
-                id: "anthropic".to_string(),
-                name: "Anthropic".to_string(),
-                connected: false,
-                available: false,
-            }],
-            true,
-        );
+        let mut picker = ProviderPicker::new(vec![ProviderPickerOption {
+            id: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            connected: false,
+            available: false,
+        }]);
         let rows = picker.render(&theme(), 60);
         let text: Vec<String> = rows.iter().map(row_text).collect();
         assert!(
@@ -638,7 +529,7 @@ mod tests {
 
     #[test]
     fn the_picker_answers_the_three_row_kinds() {
-        let mut picker = ProviderPicker::new(options(1), true);
+        let mut picker = ProviderPicker::new(options(1));
         let kb = kb();
         // Enter on the pinned continue row.
         assert_eq!(
@@ -660,7 +551,7 @@ mod tests {
 
     #[test]
     fn a_typed_query_filters_the_rows_and_resets_the_scroll() {
-        let mut picker = ProviderPicker::new(options(10), true);
+        let mut picker = ProviderPicker::new(options(10));
         let kb = kb();
         // Scroll down past the viewport, then type a matching query: the filter
         // re-clamps the selection and resets the scroll to the top.

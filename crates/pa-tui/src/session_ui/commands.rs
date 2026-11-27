@@ -394,9 +394,6 @@ impl SessionUi {
                 };
                 self.open_import_confirm(&command_text, view);
             }
-            "traces" => {
-                self.handle_traces_command(resolved, view).await?;
-            }
             // The auth flows run in the client process; other management subcommands
             // surface through the `mcp` CLI command instead of the TUI.
             "mcp" => self.handle_mcp_command(resolved, view).await?,

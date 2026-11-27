@@ -136,10 +136,11 @@ launch path must keep that test red-first.
   direction) and classify the change: internals, new `pub` surface, or a new
   dependency/cross-crate re-export. The latter two are architectural changes — an innocent-looking
   `pub use` is a very simple way to break encapsulation.
-- The compiled fallback model catalog `crates/pa-ai/src/models_generated.rs` is
-  hand-maintained Rust — edit it by hand (there is no generator). The catalog fixture
-  `crates/pa-models/tests/fixtures/catalog.v1.json` refreshes with
-  `scripts/generate-catalog-fixture.py`. Bulk data files are exempt from the size guidance.
+- The model catalog `crates/pa-models/catalog/models.json` and the MCP service catalog
+  `crates/pa-models/catalog/mcp-services.json` are hand-maintained data compiled into the
+  binary; edit them by hand. The compiled fallback model list
+  `crates/pa-ai/src/models_generated.rs` is hand-maintained Rust (there is no generator).
+  Bulk data files are exempt from the size guidance.
 
 ## Adoption telemetry
 

@@ -29,7 +29,6 @@ const TAB_LAYOUT: &[TabLayout] = &[
             "tool-output-reminder",
             "telemetry",
             "telemetry-status",
-            "trace-sharing",
             "autonomous",
         ],
     },

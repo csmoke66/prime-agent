@@ -474,7 +474,6 @@ mod tests {
             "anthropic",
             pa_core::auth::AuthCredential::ApiKey {
                 key: "sk-stale".to_string(),
-                prime_team: None,
             },
         );
         assert!(

@@ -198,7 +198,6 @@ fn chat_options(socket: PathBuf, cwd: PathBuf, active: String) -> InteractiveOpt
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),

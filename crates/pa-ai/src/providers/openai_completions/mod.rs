@@ -128,8 +128,6 @@ pub fn detect_compat(model: &Model) -> ResolvedCompat {
         provider == "cloudflare-workers-ai" || base_url.contains("api.cloudflare.com");
     let is_cloudflare_ai_gateway =
         provider == "cloudflare-ai-gateway" || base_url.contains("gateway.ai.cloudflare.com");
-    let is_prime_inference =
-        provider == "prime-inference" || base_url.contains("api.pinference.ai");
 
     let is_non_standard = provider == "cerebras"
         || base_url.contains("cerebras.ai")
@@ -142,23 +140,18 @@ pub fn detect_compat(model: &Model) -> ResolvedCompat {
         || provider == "opencode"
         || base_url.contains("opencode.ai")
         || is_cloudflare_workers_ai
-        || is_cloudflare_ai_gateway
-        || is_prime_inference;
+        || is_cloudflare_ai_gateway;
 
-    let use_max_tokens = base_url.contains("chutes.ai")
-        || is_moonshot
-        || is_cloudflare_ai_gateway
-        || is_prime_inference;
+    let use_max_tokens = base_url.contains("chutes.ai") || is_moonshot || is_cloudflare_ai_gateway;
 
     let is_grok = provider == "xai" || base_url.contains("api.x.ai");
     let is_deep_seek = provider == "deepseek" || base_url.contains("deepseek.com");
     let is_anthropic_model = model.id.starts_with("anthropic/");
-    let cache_control_format =
-        if is_anthropic_model && (provider == "openrouter" || is_prime_inference) {
-            Some(crate::types::CacheControlFormat::Anthropic)
-        } else {
-            None
-        };
+    let cache_control_format = if is_anthropic_model && provider == "openrouter" {
+        Some(crate::types::CacheControlFormat::Anthropic)
+    } else {
+        None
+    };
 
     ResolvedCompat {
         supports_store: !is_non_standard,
@@ -186,7 +179,7 @@ pub fn detect_compat(model: &Model) -> ResolvedCompat {
         open_router_routing: None,
         vercel_gateway_routing: None,
         zai_tool_stream: false,
-        supports_strict_mode: !is_moonshot && !is_cloudflare_ai_gateway && !is_prime_inference,
+        supports_strict_mode: !is_moonshot && !is_cloudflare_ai_gateway,
         cache_control_format,
         send_session_affinity_headers: false,
         supports_long_cache_retention: !(is_cloudflare_workers_ai || is_cloudflare_ai_gateway),

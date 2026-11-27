@@ -6,17 +6,14 @@
 use ratatui::style::Modifier;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::fuzzy::fuzzy_filter;
 use crate::hyperlinks::{osc8_open, OSC8_CLOSE};
 use crate::keybindings::KeybindingsManager;
 use crate::menu_panel::{
-    hint_row, key_hint, login_field_row, menu_row, no_match_row, scroll_row, scrub_controls,
-    search_field_lines, search_field_plain_row, MenuSegment,
+    hint_row, key_hint, login_field_row, scrub_controls, search_field_plain_row,
 };
 use crate::provider_auth::ProviderAuthOutcome;
 use crate::search_input::SearchInput;
 use crate::theme::{Theme, ThemeColor};
-use crate::traces::TraceLoginOutcome;
 use crate::{Line, Span};
 
 mod render;
@@ -24,30 +21,6 @@ mod render;
 pub(crate) use render::auth_actions_row;
 #[cfg(test)]
 use render::verification_code;
-
-mod picker;
-
-use picker::{PickerSegment, PrimeTeamPicker};
-
-/// One Prime team option (TS `PrimeTeam` as the selector renders it). `created_at` is
-/// carry-through metadata the flow stores; the picker never renders it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrimeTeamOption {
-    pub team_id: String,
-    pub name: String,
-    pub slug: Option<String>,
-    pub role: Option<String>,
-    pub created_at: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PrimeTeamPick {
-    Team(PrimeTeamOption),
-    /// The personal account.
-    PersonalAccount,
-    /// The stored selection stays untouched.
-    Cancelled,
-}
 
 /// How the paste field renders its value: bullets for the token paste panel, the typed key for the
 /// login dialog.
@@ -77,7 +50,7 @@ enum PanelSurface {
 }
 
 /// One request a login flow sends to the inline auth panel: fire-and-forget requests render;
-/// prompts and pickers await their oneshot replies; settled requests close the panel.
+/// prompts await their oneshot replies; settled requests close the panel.
 pub enum AuthPanelRequest {
     /// A muted progress line joins the panel. `chatter` marks the flow's step chatter (TS
     /// `onProgress`), which the onboarding surface drops.
@@ -101,14 +74,6 @@ pub enum AuthPanelRequest {
         allow_empty: bool,
         reply: oneshot::Sender<Option<String>>,
     },
-    /// The team picker mounts over the panel: Esc cancels the selection (the stored selection
-    /// stays).
-    SelectTeam {
-        teams: Vec<PrimeTeamOption>,
-        /// The stored selection's team id; `None` marks the personal account current.
-        current: Option<String>,
-        reply: oneshot::Sender<PrimeTeamPick>,
-    },
     /// A provider login settled: the outcome row applies and the panel unmounts. `provider` is the
     /// row's provider id (the model-picker sign-in route keys its parked retry on it).
     ProviderSettled {
@@ -117,12 +82,6 @@ pub enum AuthPanelRequest {
     },
     /// A `/mcp` view auth command settled: its status line applies.
     McpSettled { note: String },
-    /// The `/traces` login settled: the login's outcome applies. `gen` is matched against the
-    /// run loop's counter so a superseded run's late settle cannot clear a newer login.
-    TracesSettled {
-        outcome: TraceLoginOutcome,
-        gen: u64,
-    },
 }
 
 /// A login flow's cooperative cancel signal: the flag the blocking body polls before its
@@ -298,29 +257,6 @@ impl AuthPanelHandle {
         }
     }
 
-    /// The team picker; a cancel answers `PrimeTeamPick::Cancelled` (the stored selection stays).
-    pub async fn select_team(
-        &self,
-        teams: Vec<PrimeTeamOption>,
-        current: Option<&str>,
-    ) -> PrimeTeamPick {
-        // An exited pane can never answer the picker: a cancelled flow returns the cancelled
-        // pick.
-        if self.cancelled() {
-            return PrimeTeamPick::Cancelled;
-        }
-        let (reply, answer) = oneshot::channel();
-        self.send(AuthPanelRequest::SelectTeam {
-            teams,
-            current: current.map(str::to_string),
-            reply,
-        });
-        tokio::select! {
-            picked = answer => picked.unwrap_or(PrimeTeamPick::Cancelled),
-            () = self.cancelled_wait() => PrimeTeamPick::Cancelled,
-        }
-    }
-
     async fn cancelled_wait(&self) {
         self.cancel.wait().await;
     }
@@ -332,15 +268,7 @@ impl std::fmt::Debug for AuthPanelHandle {
     }
 }
 
-const PREFERRED_VISIBLE_TEAMS: usize = 8;
-
 const TOKEN_PLACEHOLDER: &str = "Paste token";
-
-const TEAM_PANEL_TITLE: &str = "Select a Prime Team:";
-
-const TEAM_PANEL_SUBTITLE: &str = "Choose which account pays for Prime Inference usage.";
-
-const TEAM_SEARCH_PLACEHOLDER: &str = "Search teams";
 
 /// The login dialog's paste field placeholder (the session's API-key prompt uses the same field).
 pub(crate) const PASTE_PLACEHOLDER: &str = "Paste value";
@@ -365,12 +293,12 @@ fn is_printable_key(key: &str) -> bool {
 }
 
 /// The mounted panel: the flow's progress lines, the browser URL block, and the one active input
-/// (a paste prompt or the team picker).
+/// (a paste prompt).
 #[derive(Debug)]
 pub struct AuthPanel {
     title: String,
     surface: PanelSurface,
-    /// The panel subtitle; the team picker sets its own.
+    /// The panel subtitle.
     subtitle: Option<String>,
     /// Progress lines, in arrival order.
     progress: Vec<String>,
@@ -403,10 +331,6 @@ enum PanelInput {
         allow_empty: bool,
         field: SearchInput,
         reply: Option<oneshot::Sender<Option<String>>>,
-    },
-    Teams {
-        picker: PrimeTeamPicker,
-        reply: Option<oneshot::Sender<PrimeTeamPick>>,
     },
 }
 
@@ -441,13 +365,6 @@ impl AuthPanel {
     /// just a mounted input.
     pub fn set_cancel_signal(&mut self, cancel: FlowCancel) {
         self.flow_cancel = Some(cancel);
-    }
-
-    /// Whether the team picker owns the panel: its Esc answers the picker and keeps the dialog
-    /// mounted (a session cancel unmounts every other state only).
-    #[must_use]
-    pub fn team_picker_mounted(&self) -> bool {
-        matches!(self.input, PanelInput::Teams { .. })
     }
 
     /// The first line lands under the section title (rendered only while the panel was empty).
@@ -506,39 +423,6 @@ impl AuthPanel {
         };
         self.notice = None;
         self.copy_status = None;
-    }
-
-    /// The picker mounts as its own panel (fresh title, subtitle, and rows; the login dialog's
-    /// progress lines go with it).
-    pub fn mount_teams(
-        &mut self,
-        teams: Vec<PrimeTeamOption>,
-        current: Option<String>,
-        reply: oneshot::Sender<PrimeTeamPick>,
-    ) {
-        self.title = TEAM_PANEL_TITLE.to_string();
-        self.subtitle = Some(TEAM_PANEL_SUBTITLE.to_string());
-        self.progress.clear();
-        // The picker is its own panel: the dialog's whole content state goes with it — a stale
-        // title or copy status must never bleed into the frame the pick leaves behind.
-        self.progress_open = false;
-        self.copy_status = None;
-        self.auth_url = None;
-        self.auth_instructions = None;
-        self.copy_status = None;
-        self.notice = None;
-        let mut picker = PrimeTeamPicker {
-            teams,
-            current,
-            search: SearchInput::new(),
-            filtered: Vec::new(),
-            selected: 0,
-        };
-        picker.refilter();
-        self.input = PanelInput::Teams {
-            picker,
-            reply: Some(reply),
-        };
     }
 
     /// One key press while the panel owns the frame: the arms answer the mounted input through
@@ -605,29 +489,6 @@ impl AuthPanel {
                     field.handle_key(key, kb);
                 }
             }
-            PanelInput::Teams { picker, reply } => {
-                if kb.matches(key, "tui.select.cancel") {
-                    if let Some(reply) = reply.take() {
-                        let _ = reply.send(PrimeTeamPick::Cancelled);
-                    }
-                    answered = true;
-                } else if kb.matches(key, "tui.select.up") && !picker.filtered.is_empty() {
-                    picker.selected = picker.selected.saturating_sub(1);
-                } else if kb.matches(key, "tui.select.down") && !picker.filtered.is_empty() {
-                    picker.selected = (picker.selected + 1).min(picker.filtered.len() - 1);
-                } else if kb.matches(key, "tui.select.confirm") {
-                    if let (Some(pick), Some(reply)) = (picker.pick(), reply.take()) {
-                        let _ = reply.send(pick);
-                        answered = true;
-                    }
-                } else {
-                    let previous = picker.search.value().to_string();
-                    picker.search.handle_key(key, kb);
-                    if picker.search.value() != previous {
-                        picker.refilter();
-                    }
-                }
-            }
         }
         if answered {
             self.input = PanelInput::Working;
@@ -649,16 +510,12 @@ impl AuthPanel {
         };
     }
 
-    /// The payload lands in the mounted input — the paste field or the picker's search — never
+    /// The payload lands in the mounted input — the paste field — never
     /// in the hidden editor behind the panel.
     pub fn handle_paste(&mut self, text: &str) {
         match &mut self.input {
             PanelInput::Working => {}
             PanelInput::Paste { field, .. } => field.paste(text),
-            PanelInput::Teams { picker, .. } => {
-                picker.search.paste(text);
-                picker.refilter();
-            }
         }
     }
 

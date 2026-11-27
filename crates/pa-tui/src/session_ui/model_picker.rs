@@ -329,26 +329,6 @@ impl SessionUi {
         }
     }
 
-    /// The onboarding default-model apply through the same `try_set_model` path. A refusal after
-    /// the just-completed sign-in keeps the flow moving (never a second sign-in route).
-    pub(crate) async fn apply_model_selection(
-        &mut self,
-        provider: &str,
-        model_id: &str,
-        view: &mut AgentView,
-    ) {
-        match self.try_set_model(provider, model_id, view).await {
-            // The switch recorded its own row; failures already rendered theirs.
-            SetModelOutcome::Switched | SetModelOutcome::Failed => {}
-            SetModelOutcome::NeedsSignIn => {
-                self.error_row(
-                    &format!("Authentication completed, but {provider} is still unavailable."),
-                    view,
-                );
-            }
-        }
-    }
-
     /// Cycle within the session's scoped list when one is set, else the available catalog. A `null`
     /// answer means "no other model"; the status names the provider (`Model: provider/id`, unlike
     /// the picker's `Model: <id>`).

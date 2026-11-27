@@ -7,7 +7,6 @@ mod catalog_schema;
 mod catalog_status_views;
 mod catalog_views;
 mod connection_store;
-mod fetch_lane;
 mod local_catalog;
 mod login;
 mod manager_catalog;
@@ -24,7 +23,6 @@ pub use catalog_plugin_views::{McpCredentialView, API_KEY_CREDENTIALS};
 pub use catalog_views::{
     mcp_credential_field_prompt_label, mcp_paste_credential, McpPasteCredential,
 };
-pub use fetch_lane::{spawn_hourly_plugins_refresh, startup_plugins_refresh};
 pub use login::{wire_begin_login, McpLoginContext, McpOAuth};
 pub use manager_catalog::{
     install_static_token, remove_mcp_connection, McpConnectionHandles, PasteInstallInputs,
@@ -344,9 +342,8 @@ impl McpManager {
             None => connection_store::McpConnectionStore::in_memory(),
         }));
         let remote_source = options.remote_source.or_else(|| {
-            agent_dir.as_ref().map(|dir| {
-                let dir = dir.clone();
-                Box::new(move || remote_source::remote_plugins_snapshot(&dir))
+            agent_dir.as_ref().map(|_| {
+                Box::new(remote_source::compiled_plugins_catalog)
                     as manager_catalog::RemoteCatalogSourceFn
             })
         });

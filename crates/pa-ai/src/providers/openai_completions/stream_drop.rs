@@ -38,7 +38,7 @@ async fn stream_events(body: String) -> (Vec<&'static str>, AssistantMessageEven
     let addr = serve_sse(body).await;
     let model: Model = serde_json::from_value(json!({
         "id": "glm-test", "name": "GLM test", "api": "openai-completions",
-        "provider": "prime-inference", "baseUrl": format!("http://{addr}"),
+        "provider": "test-provider", "baseUrl": format!("http://{addr}"),
         "reasoning": true, "input": ["text"],
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
         "contextWindow": 131_072, "maxTokens": 8192,
@@ -251,7 +251,7 @@ async fn the_done_marker_ends_a_stream_whose_body_stays_open() {
     let addr = serve_sse_hold_open(body).await;
     let model: Model = serde_json::from_value(json!({
         "id": "glm-test", "name": "GLM test", "api": "openai-completions",
-        "provider": "prime-inference", "baseUrl": format!("http://{addr}"),
+        "provider": "test-provider", "baseUrl": format!("http://{addr}"),
         "reasoning": true, "input": ["text"],
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
         "contextWindow": 131_072, "maxTokens": 8192,

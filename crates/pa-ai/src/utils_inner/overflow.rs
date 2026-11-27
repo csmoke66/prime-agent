@@ -25,7 +25,7 @@ fn overflow_patterns() -> &'static Vec<Regex> {
             r"(?i)exceeded model token limit", // Kimi For Coding
             r"(?i)too large for model with \d+ maximum context length", // Mistral
             r"(?i)model_context_window_exceeded", // z.ai non-standard finish_reason surfaced as error text
-            r"(?i)combined input and output tokens", // Prime Inference-style combined ceilings
+            r"(?i)combined input and output tokens", // combined input+output ceilings
             r"(?i)accepts at most \d+ combined",  // "accepts at most 1048576 combined tokens"
             r"(?i)reduce the input length or requested output length", // combined-limit remedy text
             r"(?i)prompt too long; exceeded (?:max )?context length", // Ollama explicit overflow error
@@ -45,7 +45,7 @@ fn overflow_patterns() -> &'static Vec<Regex> {
             // "413 Request Entity Too Large" (nginx), "request entity too large"
             // (express/body-parser), "request body too large" (Go MaxBytesReader).
             r"(?i)request[_ ](?:body|entity)[_ ](?:is[_ ])?too[_ ]large",
-            r"(?i)exceeds the body size limit", // Prime Inference 413 wording
+            r"(?i)exceeds the body size limit", // a gateway 413 wording
             r"(?i)payload too large",           // the HTTP 413 reason phrase
         ]
         .iter()
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn detects_combined_input_output_limit_overflow() {
-        // The live Prime Inference 400: input + requested output over a combined ceiling — no
+        // A gateway 400: input + requested output over a combined ceiling — no
         // single-part wording matches any older pattern.
         let m = message(
             StopReason::Error,
@@ -267,7 +267,7 @@ mod tests {
         assert!(!is_context_overflow(&m, Some(100_000)));
     }
 
-    /// The live Prime Inference 413 (captured against the gateway, 2026-11):
+    /// A gateway 413 (captured 2026-11):
     /// `{"error":{"message":"Hosted decision request exceeds the body size
     /// limit.","type":"invalid_request_error",...}}` on a >=16 MiB request body,
     /// SDK-composed to `"413 <message>"`. The `invalid_request_error` body type

@@ -146,9 +146,9 @@ pub(crate) async fn cycle_model(state: &Arc<RpcState>) -> Result<ResponseData, S
 }
 
 /// `get_available_models`: the refreshed available catalog.
-pub(crate) async fn get_available_models(state: &Arc<RpcState>) -> Result<ResponseData, String> {
+pub(crate) fn get_available_models(state: &Arc<RpcState>) -> Result<ResponseData, String> {
     let mut registry = registry(state);
-    let models = registry.refresh_available_models().await;
+    let models = registry.refresh_available_models();
     Ok(ResponseData::Present(json!({ "models": models })))
 }
 

@@ -46,8 +46,8 @@ pub(crate) use prompt::SubmitBehavior;
 use sessions_fork::{create_session, terminal_columns};
 use settings::PendingConfirm;
 pub(crate) use settings::ReloadNote;
-pub(crate) use share::{ShareNote, TracesUploadNote};
-use share::{ShareRun, TraceUploadAllRun, TracesLoginIntent};
+pub(crate) use share::ShareNote;
+use share::ShareRun;
 use stream::already_running_warning;
 pub(crate) use stream::resume_hint_from_stats;
 use stream::streaming_tray_hint;
@@ -219,15 +219,6 @@ pub(crate) struct SessionUi {
     share_notes: mpsc::UnboundedSender<ShareNote>,
     reload: Option<tokio::task::JoinHandle<()>>,
     reload_notes: mpsc::UnboundedSender<ReloadNote>,
-    trace_upload: Option<TraceUploadAllRun>,
-    traces_upload_notes: mpsc::UnboundedSender<crate::traces::TraceUploadAllNote>,
-    pending_traces_login: Option<TracesLoginIntent>,
-    /// The in-flight traces login's enable intent: taken from the park
-    /// when the flow spawns, consumed by the settle.
-    traces_login_run: Option<TracesLoginIntent>,
-    /// The generation of the in-flight traces login: a late settle from a
-    /// superseded run never clears the newer login's panel.
-    traces_login_gen: u64,
     catalog_updates: mpsc::UnboundedSender<ModelCatalogUpdate>,
     heartbeat_updates: mpsc::UnboundedSender<HeartbeatsUpdate>,
     pending_snapshot: Option<Vec<ChatEntry>>,
@@ -279,7 +270,6 @@ pub(crate) struct SessionUi {
     pub(crate) last_assistant_text: Option<String>,
     pub(crate) osc_sink: crate::clipboard::OscSink,
     pending_confirm: Option<PendingConfirm>,
-    traces: Option<crate::traces::TracesCommandsHandle>,
     provider_auth: Option<crate::provider_auth::ProviderAuthCommandsHandle>,
     /// A model selection parked on the provider's sign-in: the picker applied a model whose
     /// provider is not signed in, and a successful login retries the switch automatically.

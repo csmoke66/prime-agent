@@ -88,9 +88,7 @@ pub(super) struct HeadlessSettle {
     pub(super) dirty: bool,
     pub(super) share_pending: bool,
     pub(super) reload_pending: bool,
-    pub(super) traces_upload_pending: bool,
     pub(super) auth_panel_open: bool,
-    pub(super) traces_login_pending: bool,
     pub(super) mcp_auth_pending: bool,
     pub(super) harness_pending: bool,
     /// The Anthropic subscription warning's `mark_anthropic_warning_shown`
@@ -118,9 +116,7 @@ impl HeadlessSettle {
             dirty: session.dirty,
             share_pending: session.share_pending(),
             reload_pending: session.reload_pending(),
-            traces_upload_pending: session.traces_upload_pending(),
             auth_panel_open: view.auth_panel.is_some(),
-            traces_login_pending: session.pending_traces_login(),
             mcp_auth_pending: session.pending_mcp_auth(),
             harness_pending: session.harness_work.has_pending_job(),
             anthropic_warning_mark_pending: session.anthropic_warning_mark_pending(),
@@ -165,14 +161,8 @@ impl HeadlessSettle {
         if self.reload_pending {
             blockers.push("a reload in flight".to_string());
         }
-        if self.traces_upload_pending {
-            blockers.push("a traces upload in flight".to_string());
-        }
         if self.auth_panel_open {
             blockers.push("the inline auth panel open".to_string());
-        }
-        if self.traces_login_pending {
-            blockers.push("a pending traces login".to_string());
         }
         if self.mcp_auth_pending {
             blockers.push("a pending MCP auth flow".to_string());

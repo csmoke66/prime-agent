@@ -238,7 +238,6 @@ fn tui_options(socket: &Path, session_dir: &Path, script: &Path) -> InteractiveO
         onboarding: None,
         telemetry_disabled: Some(true),
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),

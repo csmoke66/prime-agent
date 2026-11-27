@@ -583,13 +583,12 @@ mod tests {
             featured: None,
             headers: None,
             compat: None,
-            serving: None,
         }
     }
 
     #[test]
     fn reasoning_only_turn_survives_replay() {
-        let model = model("prime-inference", 0.0, 0.0);
+        let model = model("test-provider", 0.0, 0.0);
         for field in crate::providers::openai_completions::REASONING_FIELDS {
             let mut output = crate::event_stream::initial_assistant_message(
                 &model.api,

@@ -170,26 +170,30 @@ mod tests {
     fn the_session_fallback_keeps_the_merged_headers() {
         let (dir, context) = context_with_settings(&serde_json::json!({}));
         std::fs::write(
-            dir.path().join("auth.json"),
+            dir.path().join("models.json"),
             serde_json::json!({
-                "prime-inference": {
-                    "type": "api_key",
-                    "key": "test-key",
-                    "primeTeam": { "teamId": "team-1", "name": "Test Team" }
+                "providers": {
+                    "headered": {
+                        "baseUrl": "http://localhost:9",
+                        "apiKey": "headered-key",
+                        "api": "openai-completions",
+                        "headers": { "X-Route": "route-1" },
+                        "models": [ { "id": "session-model", "name": "Session" } ]
+                    }
                 }
             })
             .to_string(),
         )
         .unwrap();
-        let session = model("session-model", "prime-inference", 8_000);
+        let session = model("session-model", "headered", 8_000);
         let routed = session_fallback_with_headers(&context, &session, Some("override".into()));
         assert_eq!(routed.model.id, "session-model");
         assert_eq!(routed.api_key.as_deref(), Some("override"));
         let headers = routed.headers.expect("the fallback keeps merged headers");
         assert_eq!(
-            headers.get("X-Prime-Team-ID").map(String::as_str),
-            Some("team-1"),
-            "the stored team ships on the fallback summarizer call"
+            headers.get("X-Route").map(String::as_str),
+            Some("route-1"),
+            "the provider headers ship on the fallback summarizer call"
         );
     }
 

@@ -74,7 +74,6 @@ impl StartupModelProbe {
             ),
             Some(AuthSource::Runtime) => "runtime_api_key".to_string(),
             Some(AuthSource::Environment) => "environment".to_string(),
-            Some(AuthSource::PrimeCli) => "prime_cli".to_string(),
             Some(AuthSource::ModelsJsonKey | AuthSource::ModelsJsonCommand) => {
                 "models_json".to_string()
             }
@@ -178,16 +177,6 @@ impl pa_tui::interactive::OnboardingSink for SettingsOnboardingSink {
             .get_onboarding_shown()
     }
 
-    fn agent_traces_choice_written(&self) -> bool {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .agent_traces_choice_written()
-    }
-
-    fn set_agent_traces_enabled(&self, enabled: bool) -> Result<()> {
-        let mut settings = pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir);
-        settings.set_agent_traces_enabled(enabled)
-    }
-
     fn mark_onboarding_complete(&self) -> Result<()> {
         let mut settings = pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir);
         settings.set_onboarding_shown(true)?;
@@ -285,7 +274,7 @@ pub(super) fn onboarding_task(
             || options.session.fork.is_some(),
         api_key: config.api_key.clone(),
     };
-    let (current_model, model_ready_now) = probe.resolve();
+    let (_, model_ready_now) = probe.resolve();
     let readiness_probe = probe.clone();
     let onboarding_id = uuid::Uuid::new_v4().to_string();
     // `onboarding stage` (v2): the flow's REAL stages only — `entry` when the
@@ -329,7 +318,6 @@ pub(super) fn onboarding_task(
             probe,
         }),
         model_ready: std::sync::Arc::new(move || readiness_probe.resolve().1),
-        current_model,
         provider_auth,
     };
     (Some(task), pending_stages)

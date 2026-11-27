@@ -1,5 +1,5 @@
-//! `ModelRegistry`: composes built-in, custom (models.json), and Prime Inference
-//! catalogs; resolves request auth per provider/model.
+//! `ModelRegistry`: composes the built-in and custom (models.json) catalogs;
+//! resolves request auth per provider/model.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use pa_types::ai::{
 };
 
 use crate::auth::manager::AuthStorage;
-use crate::auth::types::{AuthCredential, PRIME_INFERENCE_PROVIDER_ID};
+use crate::auth::types::AuthCredential;
 
 use super::catalog_chain;
 use super::custom::{apply_model_override, load_custom_models, merge_compat, CustomModelsResult};
@@ -92,9 +92,8 @@ pub struct ModelRegistry {
     /// against this map, so it follows the credential that serves the
     /// call, not the credential the load saw.
     xai_model_sources: HashMap<String, Model>,
-    /// The process-shared live catalog chain (`catalog_chain::catalog_for`);
-    /// `resolve()` sources built-ins from it.
-    catalog: std::sync::Arc<pa_models::ModelCatalog>,
+    /// The process-shared model catalog (`catalog_chain::catalog`); built-ins come from it.
+    catalog: &'static pa_models::ModelCatalog,
 }
 
 /// Under a stored xAI subscription the provider's models switch onto the
@@ -169,7 +168,7 @@ impl ModelRegistry {
     }
 
     fn new(auth: AuthStorage, models_json_path: Option<PathBuf>) -> Self {
-        let catalog = catalog_chain::catalog_for(models_json_path.as_deref());
+        let catalog = catalog_chain::catalog();
         let mut registry = Self {
             auth,
             models_json_path,
@@ -184,17 +183,6 @@ impl ModelRegistry {
         registry
     }
 
-    /// The Prime Inference credentials for the credentialed catalog layer
-    /// (Bearer + team headers, as the TS refresh sends).
-    fn prime_credentials(&mut self) -> Option<pa_models::PrimeCredentials> {
-        let api_key = self.auth.get_api_key(PRIME_INFERENCE_PROVIDER_ID)?;
-        let team_id = self
-            .auth
-            .get_provider_headers(PRIME_INFERENCE_PROVIDER_ID)
-            .and_then(|headers| headers.get("X-Prime-Team-ID").cloned());
-        Some(pa_models::PrimeCredentials { api_key, team_id })
-    }
-
     pub fn get_error(&self) -> Option<&str> {
         self.load_error.as_deref()
     }
@@ -204,10 +192,8 @@ impl ModelRegistry {
         &self.models
     }
 
-    /// Models whose provider has configured auth. Private Prime Inference
-    /// models need no extra gate: only the account's scoped snapshot and
-    /// models.json list them. The per-model auth probe is answered once per
-    /// provider: each probe rebuilds the auth-source candidates.
+    /// Models whose provider has configured auth. The per-model auth probe is
+    /// answered once per provider: each probe rebuilds the auth-source candidates.
     pub fn get_available(&self) -> Vec<&Model> {
         let mut auth_by_provider: HashMap<&str, bool> = HashMap::new();
         self.models
@@ -273,9 +259,7 @@ impl ModelRegistry {
             return Ok(model);
         }
         // A model can exist while its provider is not signed in — the
-        // picker's discovery path. No credential at all is the sign-in refusal;
-        // the unauthorized private Prime Inference model keeps the not-found
-        // refusal — never a switch to an unentitled model.
+        // picker's discovery path. No credential at all is the sign-in refusal.
         let Some(model) = self.get_all().iter().find(|model| matches(model)) else {
             return Err(SetModelSelectionError::NotFound {
                 provider: provider.to_string(),
@@ -327,8 +311,7 @@ impl ModelRegistry {
         if let Some(error) = &result.error {
             self.load_error = Some(error.clone());
         }
-        let credentials = self.prime_credentials();
-        let built_in = self.load_built_in_models(&result, credentials.as_ref());
+        let built_in = self.load_built_in_models(&result);
         self.models = Self::merge_custom_models(built_in, result.models);
         self.apply_subscription_model_adaptations();
     }
@@ -473,28 +456,17 @@ impl ModelRegistry {
         }
     }
 
-    /// Built-ins through the no-cold-start chain (validated disk snapshot |
-    /// bundled asset | compiled fallback), merged with the credentialed
-    /// live Prime Inference snapshot for `credentials`.
-    fn load_built_in_models(
-        &self,
-        custom: &CustomModelsResult,
-        credentials: Option<&pa_models::PrimeCredentials>,
-    ) -> Vec<Model> {
+    /// Built-ins from the compiled-in catalog, with the custom provider and
+    /// model overrides applied.
+    fn load_built_in_models(&self, custom: &CustomModelsResult) -> Vec<Model> {
         self.catalog
-            .resolve(credentials)
-            .into_iter()
+            .models()
+            .iter()
+            .cloned()
             .map(|mut model| {
                 if let Some(provider_override) = custom.provider_overrides.get(&model.provider) {
                     if let Some(base_url) = &provider_override.base_url {
                         model.base_url = base_url.clone();
-                        // The live catalog's serving class labels the
-                        // official endpoint; a user-replaced endpoint voids
-                        // it (the label must not claim a serving path the
-                        // route no longer uses).
-                        if model.provider == PRIME_INFERENCE_PROVIDER_ID {
-                            model.serving = None;
-                        }
                     }
                     if provider_override.compat.is_some() {
                         model.compat =
@@ -526,33 +498,9 @@ impl ModelRegistry {
         built_in
     }
 
-    /// Reload local state and refresh the live catalog (the provider catalog
-    /// and the account's scoped Prime Inference snapshot, which carries its
-    /// private routes). Both fetches are awaited, so the resolved catalog
-    /// reflects them when the call returns.
-    pub async fn refresh_available_models(&mut self) -> Vec<Model> {
-        self.refresh_available_models_forced(false).await
-    }
-
-    /// [`ModelRegistry::refresh_available_models`] with the refresh trigger's
-    /// gating: forced triggers (startup, auth change) skip the hourly catalog
-    /// gate, picker-open keeps it.
-    pub async fn refresh_available_models_with_trigger(
-        &mut self,
-        trigger: pa_models::RefreshTrigger,
-    ) -> Vec<Model> {
-        self.refresh_available_models_forced(trigger.forced()).await
-    }
-
-    /// The awaited refresh body: reload, the gated-or-forced chain fetch,
-    /// then the auth-filtered catalog.
-    async fn refresh_available_models_forced(&mut self, force: bool) -> Vec<Model> {
+    /// Reload local state and return the auth-filtered catalog.
+    pub fn refresh_available_models(&mut self) -> Vec<Model> {
         self.refresh();
-        let credentials = self.prime_credentials();
-        self.catalog
-            .refresh_with_credentials(force, credentials.as_ref())
-            .await;
-        self.load_models();
         self.get_available().into_iter().cloned().collect()
     }
 
@@ -626,16 +574,12 @@ impl ModelRegistry {
         let provider_headers = provider_config
             .as_ref()
             .and_then(|config| config.headers.clone());
-        let auth_storage_headers = self.auth.get_provider_headers(&model.provider);
         let model_request_key = format!("{}:{}", model.provider, model.id);
         let model_request_headers = self.model_request_headers.get(&model_request_key).cloned();
 
         let mut headers: BTreeMap<String, String> = BTreeMap::new();
         if let Some(model_headers) = &model.headers {
             headers.extend(model_headers.clone());
-        }
-        if let Some(auth_storage_headers) = auth_storage_headers {
-            headers.extend(auth_storage_headers);
         }
         if let Some(provider_headers) = provider_headers {
             headers.extend(provider_headers);

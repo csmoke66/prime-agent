@@ -185,13 +185,7 @@ impl TerminalMcpAuth {
             .filter(|line| !line.is_empty())
             .ok_or_else(|| anyhow!("Paste cancelled"))?;
         let mut auth = AuthStorage::create(&self.agent_dir);
-        auth.set(
-            credential,
-            AuthCredential::ApiKey {
-                key,
-                prime_team: None,
-            },
-        );
+        auth.set(credential, AuthCredential::ApiKey { key });
         if let Some(error) = auth.drain_errors().pop() {
             return Err(anyhow!(error)).context("could not save the API key");
         }

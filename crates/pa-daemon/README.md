@@ -51,10 +51,8 @@ tools section and custom-tool pre-render through the
 `SessionEngine::export_tools`/`export_rendered_tools` seams, built
 lazily when an export precedes the first turn - the TS state exists from
 create), the `get_model_catalog` command (the TS `refreshModelCatalog`:
-registry refresh — live Prime Inference catalog fetch, disk cache at
-`<agent-dir>/prime-inference-models-cache.json`, bundled fallback — then
-the full catalog minus unauthorized private models plus the configured
-providers; the worker create path fires the same refresh at startup), the
+registry refresh from the compiled catalog, then the full catalog plus the
+configured providers), the
 agent-roster arms
 (`roster_subscribe`/`roster_unsubscribe` with the full snapshot, live
 `roster_update` pushes keyed by the TS roster `agentId` = session id, and

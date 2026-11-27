@@ -10,8 +10,8 @@
 )]
 
 //! End-to-end verifier for the clipboard/auth/update command group: a scripted
-//! daemon session driven headlessly — `/copy`, `/import`, `/settings` and
-//! `/traces` for trace sharing, `/login`, `/logout`, and `/update` through their
+//! daemon session driven headlessly — `/copy`, `/import`, `/settings`,
+//! `/login`, `/logout`, and `/update` through their
 //! composition-root hooks.
 #![cfg(unix)]
 
@@ -209,162 +209,13 @@ use std::sync::{Arc, Mutex};
 use pa_tui::provider_auth::{
     AuthFlow, AuthStatusIndicator, AuthStatusStyle, AuthType, ProviderAuthCommands,
     ProviderAuthFuture, ProviderAuthOutcome, ProviderRow, ProviderRowsFuture,
-    ProviderWarningFuture, PRIME_INFERENCE_PROVIDER_ID,
+    ProviderWarningFuture,
 };
-use pa_tui::traces::{
-    TraceLoginOutcome, TracePreviewInfo, TracePreviewOutcome, TraceUploadAllNote,
-    TraceUploadAllNoteSender, TraceUploadAllReport, TraceUploadCancel, TraceUploadStatus,
-    TracesCommands, TracesCommandsHandle, TracesFuture,
-};
-
-struct ScriptedTraces {
-    credential: Mutex<Option<String>>,
-    enabled: Mutex<Vec<bool>>,
-    set_calls: Mutex<Vec<bool>>,
-    logins: Mutex<std::collections::VecDeque<TraceLoginOutcome>>,
-    uploads: Mutex<std::collections::VecDeque<pa_tui::traces::TraceUploadReport>>,
-}
-
-impl ScriptedTraces {
-    fn new(credential: Option<String>) -> Self {
-        ScriptedTraces {
-            credential: Mutex::new(credential),
-            enabled: Mutex::new(vec![false]),
-            set_calls: Mutex::new(Vec::new()),
-            logins: Mutex::new(std::collections::VecDeque::default()),
-            uploads: Mutex::new(std::collections::VecDeque::default()),
-        }
-    }
-
-    fn handle(self: &Arc<Self>) -> TracesCommandsHandle {
-        TracesCommandsHandle(Arc::clone(self) as Arc<dyn TracesCommands>)
-    }
-}
-
-impl TracesCommands for ScriptedTraces {
-    fn enabled(&self) -> TracesFuture<bool> {
-        let last = self
-            .enabled
-            .lock()
-            .unwrap()
-            .last()
-            .copied()
-            .unwrap_or(false);
-        Box::pin(async move { last })
-    }
-
-    fn set_enabled(&self, enabled: bool) -> TracesFuture<anyhow::Result<()>> {
-        self.enabled.lock().unwrap().push(enabled);
-        self.set_calls.lock().unwrap().push(enabled);
-        Box::pin(async move { Ok(()) })
-    }
-
-    fn credential(&self) -> TracesFuture<Option<String>> {
-        let credential = self.credential.lock().unwrap().clone();
-        Box::pin(async move { credential })
-    }
-
-    fn preview(&self, session_file: Option<&str>) -> TracesFuture<TracePreviewOutcome> {
-        // The scripted preview: a session file renders the ready block header.
-        let outcome = match session_file {
-            Some(file) => TracePreviewOutcome::Ready(Box::new(TracePreviewInfo {
-                session_file: file.to_string(),
-                size: 64,
-                max_bytes: 20 * 1024 * 1024,
-                uploadable: true,
-                endpoint: "https://api.primeintellect.ai/api/v1/agent-traces/sessions/s"
-                    .to_string(),
-                session_id: "s".to_string(),
-                trace_id: "s".to_string(),
-                parent_session_id: None,
-                git_repo: None,
-                git_commit: None,
-                content_preview: "{\"type\":\"session\"}".to_string(),
-                truncated: false,
-            })),
-            None => TracePreviewOutcome::NoSessionFile,
-        };
-        Box::pin(async move { outcome })
-    }
-
-    fn upload_current(
-        &self,
-        _session_file: Option<&str>,
-    ) -> TracesFuture<pa_tui::traces::TraceUploadReport> {
-        // The scripted one-shot upload: the queued reports answer in order.
-        let report =
-            self.uploads
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or(pa_tui::traces::TraceUploadReport {
-                    status: TraceUploadStatus::Uploaded,
-                    text: "Trace uploaded (64 bytes).".to_string(),
-                });
-        Box::pin(async move { report })
-    }
-
-    fn upload_all(
-        &self,
-        _session_dir: Option<&str>,
-        progress: TraceUploadAllNoteSender,
-        cancel: TraceUploadCancel,
-    ) -> TracesFuture<TraceUploadAllReport> {
-        // The scripted sweep: two files upload with a live counter; the hold
-        // keeps the run in flight across a second submit.
-        Box::pin(async move {
-            let _ = cancel;
-            let _ = progress.send(TraceUploadAllNote::Progress {
-                completed: 0,
-                total: 2,
-            });
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            let _ = progress.send(TraceUploadAllNote::Progress {
-                completed: 2,
-                total: 2,
-            });
-            TraceUploadAllReport {
-                total: 2,
-                uploaded: 2,
-                failed: 0,
-                skipped: 0,
-                bytes_stored: 128,
-                log_path: "/agent/logs/agent-traces.log".to_string(),
-            }
-        })
-    }
-
-    fn login(
-        &self,
-        _panel: pa_tui::auth_panel::AuthPanelHandle,
-    ) -> TracesFuture<TraceLoginOutcome> {
-        // The scripted login flow: the queued outcomes answer in order.
-        let outcome = self.logins.lock().unwrap().pop_front().unwrap_or_else(|| {
-            if self.credential.lock().unwrap().is_some() {
-                TraceLoginOutcome::Status(
-                    "Saved API key for Prime Agent Traces. Credentials saved to /agent/auth.json."
-                        .to_string(),
-                )
-            } else {
-                TraceLoginOutcome::Cancelled
-            }
-        });
-        if matches!(&outcome, TraceLoginOutcome::Status(_)) {
-            self.credential
-                .lock()
-                .unwrap()
-                .replace("Prime Agent Traces credential".to_string());
-        }
-        Box::pin(async move { outcome })
-    }
-}
 
 /// The login/logout flows the scripted hook serves (one API-key provider).
 struct ScriptedProviderAuth {
     stored_keys: Mutex<std::collections::HashMap<String, String>>,
     calls: Mutex<Vec<String>>,
-    /// Whether the login catalog carries the Prime Inference row (team picker test).
-    prime_row: bool,
 }
 
 impl ScriptedProviderAuth {
@@ -372,14 +223,6 @@ impl ScriptedProviderAuth {
         ScriptedProviderAuth {
             stored_keys: Mutex::new(std::collections::HashMap::default()),
             calls: Mutex::new(Vec::new()),
-            prime_row: false,
-        }
-    }
-
-    fn with_prime_row() -> Self {
-        ScriptedProviderAuth {
-            prime_row: true,
-            ..ScriptedProviderAuth::new()
         }
     }
 
@@ -402,34 +245,12 @@ impl ScriptedProviderAuth {
             available: true,
         }
     }
-
-    /// The Prime Inference row (the team picker test drives it).
-    fn prime_row() -> ProviderRow {
-        ProviderRow {
-            id: PRIME_INFERENCE_PROVIDER_ID.to_string(),
-            name: "Prime Inference".to_string(),
-            auth_type: AuthType::ApiKey,
-            status: Some(AuthStatusIndicator {
-                style: AuthStatusStyle::Success,
-                label: "configured".to_string(),
-            }),
-            flow: AuthFlow::TerminalFlow,
-            configured: true,
-            available: true,
-        }
-    }
 }
 
 impl ProviderAuthCommands for ScriptedProviderAuth {
     fn login_options(&self) -> ProviderRowsFuture {
         let row = self.openai_row("OpenAI", AuthType::ApiKey);
-        // TS sorts prime-inference first among the configured rows.
-        let rows = if self.prime_row {
-            vec![Self::prime_row(), row]
-        } else {
-            vec![row]
-        };
-        Box::pin(async move { rows })
+        Box::pin(async move { vec![row] })
     }
 
     fn logout_options(&self) -> ProviderRowsFuture {
@@ -472,6 +293,14 @@ impl ProviderAuthCommands for ScriptedProviderAuth {
         })
     }
 
+    fn login_on_panel(
+        &self,
+        _provider: &ProviderRow,
+        _panel: pa_tui::auth_panel::AuthPanelHandle,
+    ) -> ProviderAuthFuture {
+        Box::pin(async move { ProviderAuthOutcome::Cancelled })
+    }
+
     fn logout(&self, provider: &ProviderRow) -> ProviderAuthFuture {
         let (id, name) = (provider.id.clone(), provider.name.clone());
         self.stored_keys.lock().unwrap().remove(&id);
@@ -487,47 +316,6 @@ impl ProviderAuthCommands for ScriptedProviderAuth {
         // The clipboard e2e drives no Anthropic subscription auth.
         Box::pin(async move { None })
     }
-
-    /// The panel-driven flow: one progress line, then the team picker (TS status).
-    fn login_on_panel(
-        &self,
-        provider: &ProviderRow,
-        panel: pa_tui::auth_panel::AuthPanelHandle,
-    ) -> ProviderAuthFuture {
-        let name = provider.name.clone();
-        self.calls
-            .lock()
-            .unwrap()
-            .push("login_on_panel".to_string());
-        Box::pin(async move {
-            panel.progress("Loading Prime teams...");
-            let teams = vec![
-                pa_tui::auth_panel::PrimeTeamOption {
-                    team_id: "team-acme".to_string(),
-                    name: "Acme Corp".to_string(),
-                    slug: Some("acme".to_string()),
-                    role: Some("Owner".to_string()),
-                    created_at: None,
-                },
-                pa_tui::auth_panel::PrimeTeamOption {
-                    team_id: "team-beta".to_string(),
-                    name: "Beta Team".to_string(),
-                    slug: None,
-                    role: None,
-                    created_at: None,
-                },
-            ];
-            match panel.select_team(teams, None).await {
-                pa_tui::auth_panel::PrimeTeamPick::Team(team) => ProviderAuthOutcome::Status(
-                    format!("Saved API key for {name}. Using team \"{}\".", team.name),
-                ),
-                pa_tui::auth_panel::PrimeTeamPick::PersonalAccount
-                | pa_tui::auth_panel::PrimeTeamPick::Cancelled => ProviderAuthOutcome::Status(
-                    format!("Saved API key for {name}. Using personal account."),
-                ),
-            }
-        })
-    }
 }
 
 /// The interactive options over one attached scripted session, hooks injected.
@@ -538,7 +326,6 @@ fn command_options(
     session_dir: &Path,
     script_path: &Path,
     session_id: &str,
-    traces: Option<TracesCommandsHandle>,
     provider_auth: Option<pa_tui::provider_auth::ProviderAuthCommandsHandle>,
 ) -> pa_tui::interactive::InteractiveOptions {
     pa_tui::interactive::InteractiveOptions {
@@ -566,7 +353,6 @@ fn command_options(
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces,
         provider_auth,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -670,7 +456,6 @@ async fn tui_copy_emits_the_ts_osc52_sequence() {
         &script_path,
         &session_id,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -748,7 +533,6 @@ async fn tui_copy_toast_coalesces_consecutive_copies_and_auto_dismisses() {
         &script_path,
         &session_id,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -824,210 +608,6 @@ async fn tui_copy_toast_coalesces_consecutive_copies_and_auto_dismisses() {
     );
 }
 
-// /login Prime Inference: the inline team picker
-
-/// One raw key step (the arrows and Esc the typed-text path cannot express).
-fn key(code: crossterm::event::KeyCode) -> pa_tui::interactive::HeadlessStep {
-    pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-        code,
-        crossterm::event::KeyModifiers::NONE,
-    ))
-}
-
-#[tokio::test]
-async fn tui_prime_login_renders_the_inline_team_picker() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let auth = Arc::new(ScriptedProviderAuth::with_prime_row());
-    let auth_view = Arc::clone(&auth);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        None,
-        Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
-            Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
-        )),
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/login".to_string()),
-            enter(),
-            // The team rows exist only once the picker loaded its teams.
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "slug: acme".to_string(),
-                timeout_ms: 10_000,
-            },
-            // Personal rides first (TS order): down selects Acme Corp.
-            key(crossterm::event::KeyCode::Down),
-            enter(),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "Using team \"Acme Corp\".".to_string(),
-                timeout_ms: 10_000,
-            },
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        rendered.contains("Login to Prime Inference"),
-        "the auth panel mounts with the TS dialog title:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Loading Prime teams..."),
-        "the panel renders the flow's progress:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Select a Prime Team:"),
-        "the team picker mounts with the TS panel title:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Choose which account pays for Prime Inference usage."),
-        "the team picker renders the TS subtitle:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Search teams"),
-        "the team picker renders the TS search field:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Personal"),
-        "the personal-account row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("personal account · current"),
-        "the personal row carries its meta and the current marker:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Acme Corp"),
-        "the team row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("slug: acme, role: owner"),
-        "the team row carries the TS slug/role meta (the role lowercased):\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Beta Team"),
-        "the second team row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Saved API key for Prime Inference. Using team \"Acme Corp\"."),
-        "the team pick settles the TS status:\n{rendered}"
-    );
-    assert_eq!(
-        auth_view.calls.lock().unwrap().clone(),
-        vec!["login_on_panel".to_string()],
-        "the panel flow ran"
-    );
-    // No terminal takeover: the flow never clears the screen (the alt-screen leave is gone).
-    assert!(
-        !rendered.contains("\u{1b}[2J"),
-        "no clear-screen escape in any frame:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("\u{1b}[?1049l"),
-        "no alternate-screen leave in any frame:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Enter a team number"),
-        "the numbered stdin prompt is gone:\n{rendered}"
-    );
-}
-
-/// Esc on the team picker cancels the SELECTION (TS `onCancel`): the login still completes.
-#[tokio::test]
-async fn tui_prime_login_escape_keeps_the_default_team_status() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let auth = Arc::new(ScriptedProviderAuth::with_prime_row());
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        None,
-        Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
-            Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
-        )),
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/login".to_string()),
-            enter(),
-            // The team rows exist only once the picker loaded its teams.
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "slug: acme".to_string(),
-                timeout_ms: 10_000,
-            },
-            key(crossterm::event::KeyCode::Esc),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "Using personal account.".to_string(),
-                timeout_ms: 10_000,
-            },
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        rendered.contains("Select a Prime Team:"),
-        "the team picker mounted:\n{rendered}"
-    );
-    // TS `onCancel` resolves the default team status: the login succeeded (key stored first).
-    assert!(
-        rendered.contains("Saved API key for Prime Inference. Using personal account."),
-        "the cancelled pick settles the default team status:\n{rendered}"
-    );
-    let last = outcome.frames.last().expect("a final frame");
-    assert!(
-        !last.contains("Select a Prime Team:"),
-        "the panel unmounts after the settle:\n{last}"
-    );
-}
-
 // /import
 
 #[tokio::test]
@@ -1056,7 +636,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         None,
     );
     // The fixture: the exported branch, plus a copy whose header cwd points at a gone directory.
@@ -1128,7 +707,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &script_path,
         &fresh_id,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![
@@ -1192,7 +770,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
         &script_path,
         &fresh_id,
         None,
-        None,
     );
     let plan = pa_tui::interactive::HeadlessPlan {
         steps: vec![pa_tui::interactive::HeadlessStep::Submit(
@@ -1208,361 +785,6 @@ async fn tui_import_replaces_the_session_from_a_fixture() {
     assert!(
         rendered_frames(&outcome).contains("Usage: /import <path.jsonl>"),
         "the usage error renders"
-    );
-}
-
-// /settings > General > Trace sharing, and /traces
-
-#[tokio::test]
-async fn tui_traces_renders_status_and_toggles_the_setting() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let traces = Arc::new(ScriptedTraces::new(Some("PRIME_API_KEY".to_string())));
-    let traces_view = Arc::clone(&traces);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        Some(traces.handle()),
-        None,
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/traces".to_string()),
-            key(crossterm::event::KeyCode::Esc),
-            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
-            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
-            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces sideways".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces preview".to_string()),
-            key(crossterm::event::KeyCode::Esc),
-            pa_tui::interactive::HeadlessStep::Submit("/traces upload".to_string()),
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        rendered.contains("Trace Sharing"),
-        "the status block renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Automatic uploads: Disabled"),
-        "the flag row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Credential: PRIME_API_KEY"),
-        "the credential row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Endpoint: https://api.primeintellect.ai"),
-        "the endpoint row renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Session file: "),
-        "the session file row renders:\n{rendered}"
-    );
-    // The enable arm: the setting write, then the upload's message on the status row.
-    assert!(
-        rendered.contains("Trace sharing enabled. Trace uploaded (64 bytes)."),
-        "the enable status renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Trace sharing disabled."),
-        "the disable status renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains(
-            "Usage: /traces [status|preview|upload|upload-current|upload-all|login]"
-        ),
-        "the usage warning renders:\n{rendered}"
-    );
-    // The preview arm renders the TS block over the scripted engine result.
-    assert!(
-        rendered.contains("Trace Preview"),
-        "the preview block renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Nothing has been uploaded by this command."),
-        "the preview disclaimer renders:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Uploadable: Yes"),
-        "the preview uploadable row renders:\n{rendered}"
-    );
-    // The one-shot upload arm: the same formatted row, as a status row.
-    assert!(
-        rendered.contains("Trace uploaded (64 bytes)."),
-        "the upload row renders:\n{rendered}"
-    );
-    assert_eq!(
-        *traces_view.set_calls.lock().unwrap(),
-        vec![true, false],
-        "the on/off writes reached the hook in order"
-    );
-}
-
-#[tokio::test]
-async fn tui_traces_upload_all_sweeps_with_live_progress() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let traces = Arc::new(ScriptedTraces::new(Some("PRIME_API_KEY".to_string())));
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        Some(traces.handle()),
-        None,
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/traces upload-all".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces upload-all".to_string()),
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    // The live counter (the clear-key hint follows the run loop's binding).
-    assert!(
-        rendered.contains("Uploading traces: 2/2 (Ctrl+C to cancel)"),
-        "the progress row renders:\n{rendered}"
-    );
-    // The settled summary (TS's parts joined with `; `).
-    assert!(
-        rendered.contains("Uploaded 2 of 2 traces; 128 bytes stored."),
-        "the summary row renders:\n{rendered}"
-    );
-    // The one-sweep guard: a second submit while the first runs shows a status
-    // row the later progress rewrites in place.
-    assert_eq!(
-        rendered.matches("Uploading traces: 0/2").count(),
-        1,
-        "exactly one sweep started:\n{rendered}"
-    );
-}
-
-#[tokio::test]
-async fn tui_traces_without_a_credential_runs_the_login_flow() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let traces = Arc::new(ScriptedTraces::new(None));
-    traces
-        .logins
-        .lock()
-        .unwrap()
-        .push_back(TraceLoginOutcome::Error(
-            "Failed to login to Prime Agent Traces: no browser and no pasted key.".to_string(),
-        ));
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        Some(traces.handle()),
-        None,
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
-            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "Failed to login to Prime Agent Traces".to_string(),
-                timeout_ms: 30_000,
-            },
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        rendered.contains("Failed to login to Prime Agent Traces: no browser and no pasted key."),
-        "the login flow's error row renders:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Trace sharing enabled"),
-        "the enable stops after the failed login:\n{rendered}"
-    );
-
-    // A cancelled login stays silent; the upload arms answer their TS rows.
-    let traces = Arc::new(ScriptedTraces::new(None));
-    let traces_view = Arc::clone(&traces);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        Some(traces.handle()),
-        None,
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
-            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitMs(400),
-            pa_tui::interactive::HeadlessStep::Submit("/traces upload-current".to_string()),
-            pa_tui::interactive::HeadlessStep::Submit("/traces upload-all".to_string()),
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    assert!(
-        !rendered.contains("Trace sharing enabled"),
-        "the enable stops after the cancelled login:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Trace sharing needs a Prime API key. Run /traces login."),
-        "the upload error renders:\n{rendered}"
-    );
-    assert!(
-        traces_view.set_calls.lock().unwrap().is_empty(),
-        "no setting write happened without a credential"
-    );
-}
-
-#[tokio::test]
-async fn tui_traces_login_enables_and_uploads() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-    let script = serde_json::json!({ "engine": "faux", "responses": [
-        { "text": "ok" },
-    ] });
-    let script_path = dir.path().join("script.json");
-    std::fs::write(&script_path, script.to_string()).expect("write script");
-    let session_id = create_session_via_daemon(
-        &supervisor.socket,
-        &script_path,
-        &script,
-        dir.path(),
-        &session_dir,
-    )
-    .await;
-    let traces = Arc::new(ScriptedTraces::new(None));
-    // The login succeeds and the credential resolves afterwards (TS re-reads it).
-    traces
-        .logins
-        .lock()
-        .unwrap()
-        .push_back(TraceLoginOutcome::Status(
-            "Saved API key for Prime Agent Traces. Credentials saved to /agent/auth.json."
-                .to_string(),
-        ));
-    let traces_view = Arc::clone(&traces);
-    let options = command_options(
-        &supervisor.socket,
-        dir.path(),
-        &session_dir,
-        &script_path,
-        &session_id,
-        Some(traces.handle()),
-        None,
-    );
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("/settings".to_string()),
-            pa_tui::interactive::HeadlessStep::Type("trace\n".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitRender {
-                needle: "Trace sharing enabled. Trace uploaded".to_string(),
-                timeout_ms: 30_000,
-            },
-        ],
-        width: 120,
-        height: 36,
-    };
-    let outcome =
-        pa_tui::interactive::run_interactive(options, pa_tui::interactive::UiMode::Headless(plan))
-            .await
-            .expect("interactive run");
-    let rendered = rendered_frames(&outcome);
-    // TS `showStatus` rewrites back-to-back status rows in place: the login's row
-    // is superseded by the enable row; the enable write proves the flow completed.
-    assert!(
-        rendered.contains("Trace sharing enabled. Trace uploaded (64 bytes)."),
-        "the enable continues after the login:\n{rendered}"
-    );
-    assert!(
-        traces_view.logins.lock().unwrap().is_empty(),
-        "enabling without a credential ran the scripted login"
-    );
-    assert_eq!(
-        *traces_view.set_calls.lock().unwrap(),
-        vec![true],
-        "the enable write reached the hook"
     );
 }
 
@@ -1596,7 +818,6 @@ async fn tui_login_and_logout_run_the_provider_flows() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
@@ -1659,7 +880,6 @@ async fn tui_login_and_logout_run_the_provider_flows() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
             Arc::clone(&auth) as Arc<dyn ProviderAuthCommands>,
         )),
@@ -1713,7 +933,6 @@ async fn tui_logout_with_no_stored_credentials_reports_the_ts_status() {
         &session_dir,
         &script_path,
         &session_id,
-        None,
         Some(ScriptedProviderAuth::new().handle()),
     );
     let plan = pa_tui::interactive::HeadlessPlan {

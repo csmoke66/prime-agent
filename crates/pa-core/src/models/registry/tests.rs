@@ -1,4 +1,4 @@
-//! The registry unit battery: catalog, auth filters, cache merges, headers.
+//! The registry unit battery: catalog, auth filters, headers.
 use super::*;
 use crate::auth::manager::{AuthStorage, NoOAuth};
 use crate::auth::types::AuthStorageData;
@@ -9,9 +9,8 @@ fn auth_with(data: &serde_json::Value) -> AuthStorage {
     AuthStorage::in_memory(&data, Arc::new(NoOAuth))
 }
 
-/// Like [`auth_with`] but with ambient `PRIME_API_KEY`/`PRIME_TEAM_ID`
-/// ignored: the stored credential is the only source, so credential
-/// tests are hermetic on boxes that carry Prime Inference env vars.
+/// Like [`auth_with`] but with ambient provider env vars ignored: the stored
+/// credential is the only source, so credential tests are hermetic.
 fn auth_without_env(data: &serde_json::Value) -> AuthStorage {
     let data = AuthStorageData(data.as_object().cloned().unwrap_or_default());
     AuthStorage::in_memory_without_env(&data, Arc::new(NoOAuth))
@@ -302,131 +301,6 @@ fn header_precedence_model_over_provider() {
 }
 
 #[test]
-fn live_scope_keyed_cache_merges_over_the_compiled_prime_inference_models() {
-    let dir = tempfile::tempdir().unwrap();
-    let models_path = dir.path().join("models.json");
-    std::fs::write(
-        &models_path,
-        r#"{ "providers": { "custom": {
-            "baseUrl": "https://custom.example", "apiKey": "custom-key",
-            "api": "openai-completions", "authHeader": true,
-            "models": [ { "id": "my-model" } ]
-        } } }"#,
-    )
-    .unwrap();
-    // A live-catalog snapshot scoped to these credentials: one compiled
-    // model repriced, one new entry, well past the coverage floor so
-    // the build accepts it. The scope-keyed cache serves this scope's
-    // snapshot only; another credential never sees it.
-    let auth = auth_without_env(&serde_json::json!({
-        "prime-inference": { "type": "api_key", "key": "live-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" } }
-    }));
-    let compiled = pa_models::transports::prime_inference_offline_entries();
-    let repriced = &compiled[0];
-    let mut entries = Vec::new();
-    for model in &compiled {
-        entries.push(serde_json::json!({
-            "id": model.id,
-            "display_name": model.name,
-            "pricing": {
-                "input_usd_per_mtok": if model.id == repriced.id { 7.0 } else { model.cost.input.as_f64() },
-                "output_usd_per_mtok": model.cost.output.as_f64(),
-            },
-            "specs": {
-                "context_window": model.context_window,
-                "max_output_tokens": model.max_tokens,
-                "supports_reasoning": model.reasoning,
-                "modalities": { "input": ["text"], "output": ["text"] },
-            },
-        }));
-    }
-    entries.push(serde_json::json!({
-        "id": "anthropic/live-only-model",
-        "display_name": "Live Only Model",
-        "pricing": { "input_usd_per_mtok": 1.0, "output_usd_per_mtok": 2.0 },
-        "specs": {
-            "context_window": 64000, "max_output_tokens": 8192,
-            "supports_reasoning": false,
-            "modalities": { "input": ["text"], "output": ["text"] },
-        },
-    }));
-    let scope = pa_models::prime_inference::scope_key("live-key", "team-1");
-    let snapshot = serde_json::json!({
-        "url": format!("{}/models", super::super::prime_inference::PRIME_INFERENCE_BASE_URL),
-        "scope": scope,
-        "fetchedAt": 1,
-        "payload": { "data": entries },
-    });
-    std::fs::create_dir_all(dir.path().join("models")).unwrap();
-    std::fs::write(
-        dir.path().join("models/prime-inference-models-cache.json"),
-        serde_json::to_vec(&snapshot).unwrap(),
-    )
-    .unwrap();
-    let mut registry = ModelRegistry::create(auth, &models_path);
-    let all = registry.get_all().to_vec();
-    // The live repriced model replaced its compiled template (other
-    // providers may serve the same id; match the provider too).
-    let repriced_model = all
-        .iter()
-        .find(|model| model.id == repriced.id && model.provider == "prime-inference")
-        .expect("repriced model");
-    assert_eq!(repriced_model.cost.input.as_f64(), 7.0);
-    assert_eq!(
-        repriced_model.base_url,
-        super::super::prime_inference::PRIME_INFERENCE_BASE_URL
-    );
-    assert!(all
-        .iter()
-        .any(|model| model.id == "anthropic/live-only-model"));
-    assert!(all.iter().any(|model| model.id == "my-model"));
-    assert!(all
-        .iter()
-        .any(|model| model.provider == "anthropic" && model.id != repriced.id));
-    let other_auth = auth_without_env(&serde_json::json!({
-        "prime-inference": { "type": "api_key", "key": "other-key",
-            "primeTeam": { "teamId": "team-2", "name": "Team 2" } }
-    }));
-    registry.auth = other_auth;
-    registry.refresh();
-    let all = registry.get_all().to_vec();
-    let compiled_price = compiled
-        .iter()
-        .find(|model| model.id == repriced.id)
-        .unwrap();
-    let still_compiled = all
-        .iter()
-        .find(|model| model.id == repriced.id && model.provider == "prime-inference")
-        .expect("compiled fallback for the other scope");
-    assert_eq!(
-        still_compiled.cost.input.as_f64(),
-        compiled_price.cost.input.as_f64()
-    );
-    assert!(!all
-        .iter()
-        .any(|model| model.id == "anthropic/live-only-model"));
-}
-
-#[test]
-fn a_missing_or_corrupt_cache_falls_back_to_the_bundled_catalog() {
-    let dir = tempfile::tempdir().unwrap();
-    let models_path = dir.path().join("models.json");
-    std::fs::write(&models_path, "{ not json").unwrap();
-    std::fs::write(
-        dir.path().join("prime-inference-models-cache.json"),
-        "{ not json",
-    )
-    .unwrap();
-    let registry = ModelRegistry::create(auth_with(&serde_json::json!({})), &models_path);
-    assert!(registry
-        .get_all()
-        .iter()
-        .any(|model| model.provider == "prime-inference"));
-    assert!(registry.get_error().is_some());
-}
-
-#[test]
 fn a_stored_copilot_credential_rewrites_its_models_base_url() {
     // TS `githubCopilotOAuthProvider.modifyModels`: the token's
     // proxy endpoint wins.
@@ -598,101 +472,4 @@ fn without_a_stored_xai_subscription_the_models_stay_on_completions() {
     assert_eq!(grok.api, "openai-completions");
     assert!(grok.thinking_level_map.is_none());
     assert!(grok.compat.is_none());
-}
-
-#[tokio::test]
-async fn scope_readiness_timeout_keeps_models_available_before_refresh() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let auth = auth_without_env(&serde_json::json!({
-        "prime-inference": {
-            "type": "api_key", "key": "fixture-key",
-            "primeTeam": {"teamId": "team-1", "name": "Fixture"}
-        }
-    }));
-    let mut registry = ModelRegistry::in_memory(auth);
-    registry.catalog = Arc::new(pa_models::ModelCatalog::with_urls(None, None, &url, &url));
-    let existing = model("internal/existing", "prime-inference");
-    registry.models = vec![existing.clone()];
-    let patterns = vec![
-        "prime-inference/internal/existing".to_string(),
-        "prime-inference/internal/missing".to_string(),
-    ];
-    let resolved = super::super::session_restore::resolve_model_scope_from_models_with_readiness(
-        &mut registry,
-        &patterns,
-        Some(("prime-inference", "internal/missing")),
-        false,
-        0,
-    )
-    .await;
-    assert!(
-        !registry.get_all().contains(&existing),
-        "refresh started before timing out"
-    );
-    assert_eq!(
-        resolved
-            .into_iter()
-            .map(|entry| entry.model)
-            .collect::<Vec<_>>(),
-        vec![existing]
-    );
-}
-
-#[test]
-fn a_prime_base_url_override_voids_the_live_serving_label() {
-    let dir = tempfile::tempdir().unwrap();
-    let auth = auth_without_env(&serde_json::json!({
-        "prime-inference": { "type": "api_key", "key": "live-key",
-            "primeTeam": { "teamId": "team-1", "name": "Team 1" } }
-    }));
-    // Every compiled route labeled hosted, so the snapshot passes the coverage gate.
-    let compiled = pa_models::transports::prime_inference_offline_entries();
-    let entries: Vec<_> = compiled
-        .iter()
-        .map(|model| {
-            serde_json::json!({
-                "id": model.id,
-                "serving": "hosted",
-                "pricing": { "input_usd_per_mtok": 1.0, "output_usd_per_mtok": 1.0 },
-            })
-        })
-        .collect();
-    let snapshot = serde_json::json!({
-        "url": format!("{}/models", super::super::prime_inference::PRIME_INFERENCE_BASE_URL),
-        "scope": pa_models::prime_inference::scope_key("live-key", "team-1"),
-        "fetchedAt": 1,
-        "payload": { "data": entries },
-    });
-    std::fs::create_dir_all(dir.path().join("models")).unwrap();
-    std::fs::write(
-        dir.path().join("models/prime-inference-models-cache.json"),
-        serde_json::to_vec(&snapshot).unwrap(),
-    )
-    .unwrap();
-    let models_path = dir.path().join("models.json");
-    std::fs::write(&models_path, "{}").unwrap();
-    let mut registry = ModelRegistry::create(auth, &models_path);
-    let probe = |registry: &ModelRegistry| {
-        registry
-            .get_all()
-            .iter()
-            .find(|model| model.id == compiled[0].id && model.provider == "prime-inference")
-            .cloned()
-            .unwrap()
-    };
-    assert_eq!(
-        probe(&registry).serving,
-        Some(pa_types::ai::ModelServing::Hosted)
-    );
-
-    std::fs::write(
-        &models_path,
-        r#"{ "providers": { "prime-inference": { "baseUrl": "https://my-gateway.example/v1" } } }"#,
-    )
-    .unwrap();
-    registry.refresh();
-    let overridden = probe(&registry);
-    assert_eq!(overridden.base_url, "https://my-gateway.example/v1");
-    assert_eq!(overridden.serving, None);
 }

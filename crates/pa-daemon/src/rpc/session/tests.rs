@@ -66,7 +66,6 @@ async fn engine_handle(
             max_tokens: 100,
             max_tokens_explicit: false,
             featured: None,
-            serving: None,
             headers: None,
             compat: None,
         },

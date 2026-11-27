@@ -384,7 +384,6 @@ impl SessionFile {
                     }
                     full.set_leaf(self.leaf_id.clone());
                     full.lease.clone_from(&self.lease);
-                    full.trace_upload.clone_from(&self.trace_upload);
                     full.child_usage_recovery
                         .clone_from(&self.child_usage_recovery);
                     full.anthropic_warning_shown = self.anthropic_warning_shown;
@@ -427,9 +426,6 @@ impl SessionFile {
                     "attribution confirmation file changed"
                 );
                 self.child_usage_recovery.pending = None;
-                if let Some(traces) = &self.trace_upload {
-                    traces.persisted(&self.path);
-                }
                 // Retain Created until its own report receives acknowledgment.
             }
             Ok(())

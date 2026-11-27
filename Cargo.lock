@@ -1607,7 +1607,6 @@ dependencies = [
  "pa-types",
  "proptest",
  "reqwest",
- "rsa",
  "serde",
  "serde_json",
  "sha2",
@@ -1655,19 +1654,10 @@ dependencies = [
 name = "pa-models"
 version = "0.10.5"
 dependencies = [
- "hex",
- "hmac",
  "pa-ai",
  "pa-types",
- "rcgen",
- "reqwest",
  "serde",
  "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-rustls",
  "tracing",
 ]
 
@@ -1744,7 +1734,6 @@ dependencies = [
  "serde_json",
  "socket2",
  "tempfile",
- "thiserror",
  "tokio",
 ]
 

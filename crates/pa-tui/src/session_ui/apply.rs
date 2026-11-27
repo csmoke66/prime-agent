@@ -374,11 +374,6 @@ impl SessionUi {
             DaemonClientEvent::HeartbeatsChanged => {
                 self.spawn_heartbeat_refresh();
             }
-            // A background daemon-side catalog refresh changed the served snapshot (Rust-only
-            // no-stall picker-open extension): clients re-fetch instantly from the warm caches.
-            DaemonClientEvent::ModelCatalogChanged => {
-                self.spawn_model_catalog_refresh();
-            }
             // A worker replacement superseded the id this client holds: the loop
             // re-attaches to the session's current id (silent rebind, no banner).
             DaemonClientEvent::SessionBinding {
@@ -794,10 +789,6 @@ impl SessionUi {
     /// compaction run, a streaming turn aborts through `abort_and_send_queued`, and a running user
     /// bash aborts alongside. The side-question abort stays at the call sites.
     pub(super) fn interrupt_running_work(&self, view: &AgentView) {
-        // Abort the trace upload sweep first.
-        if let Some(run) = &self.trace_upload {
-            run.cancel.cancel();
-        }
         if view.compaction.is_some() {
             // The interrupt cancels the compaction run only — the agent is not
             // streaming, so no turn abort goes out.

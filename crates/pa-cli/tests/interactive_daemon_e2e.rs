@@ -20,7 +20,6 @@ use std::fmt::Write as _;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use pa_types::daemon::DaemonCommand;
@@ -542,7 +541,6 @@ async fn tui_attaches_prompts_streams_lists_and_switches() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -651,766 +649,6 @@ async fn tui_attaches_prompts_streams_lists_and_switches() {
     drop(supervisor);
 }
 
-/// The product's settings-backed onboarding persistence (`SettingsOnboardingSink` glue).
-struct FreshHomeOnboardingSink {
-    cwd: PathBuf,
-    agent_dir: PathBuf,
-}
-
-impl pa_tui::interactive::OnboardingSink for FreshHomeOnboardingSink {
-    fn onboarding_shown(&self) -> bool {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .get_onboarding_shown()
-    }
-
-    fn agent_traces_choice_written(&self) -> bool {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .agent_traces_choice_written()
-    }
-
-    fn set_agent_traces_enabled(&self, enabled: bool) -> anyhow::Result<()> {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .set_agent_traces_enabled(enabled)
-    }
-
-    fn mark_onboarding_complete(&self) -> anyhow::Result<()> {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .set_onboarding_shown(true)
-    }
-
-    fn onboarding_incomplete(
-        &self,
-        _outcome: &'static str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
-        Box::pin(std::future::ready(()))
-    }
-}
-
-/// The product sink whose completion write always fails: reads stay real, the write errors.
-struct FailingMarkOnboardingSink {
-    cwd: PathBuf,
-    agent_dir: PathBuf,
-}
-
-impl pa_tui::interactive::OnboardingSink for FailingMarkOnboardingSink {
-    fn onboarding_shown(&self) -> bool {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .get_onboarding_shown()
-    }
-
-    fn agent_traces_choice_written(&self) -> bool {
-        pa_core::settings::SettingsManager::create(&self.cwd, &self.agent_dir)
-            .agent_traces_choice_written()
-    }
-
-    fn set_agent_traces_enabled(&self, _enabled: bool) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn mark_onboarding_complete(&self) -> anyhow::Result<()> {
-        Err(anyhow::anyhow!("settings disk full"))
-    }
-
-    fn onboarding_incomplete(
-        &self,
-        _outcome: &'static str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
-        Box::pin(std::future::ready(()))
-    }
-}
-
-/// A fresh install asks the trace question exactly once; TS asks unconditionally (divergence).
-#[tokio::test]
-async fn fresh_home_asks_the_trace_question_once_and_completes() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-
-    let script = serde_json::json!({ "responses": [
-        { "text": "hello fresh home", "delayMs": 20 },
-    ] });
-    std::fs::write(
-        dir.path().join("script.json"),
-        serde_json::to_string(&script).expect("script json"),
-    )
-    .expect("script.json");
-
-    // The task mounts exactly as the product's model-ready gate builds it.
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    options.onboarding = Some(pa_tui::interactive::OnboardingTask {
-        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready: std::sync::Arc::new(|| true),
-        current_model: None,
-        provider_auth: None,
-    });
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Enter,
-                crossterm::event::KeyModifiers::NONE,
-            )),
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let outcome = run_headless_bounded(options, plan)
-        .await
-        .expect("interactive run");
-
-    let rendered = outcome.frames.join("\n");
-    assert!(
-        rendered.contains("Share agent traces"),
-        "the onboarding question rendered once for the fresh home:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("hello fresh home"),
-        "the answered dialog released the pane and the first turn ran:\n{rendered}"
-    );
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        settings.get_onboarding_shown(),
-        "the answered flow marked onboarding shown"
-    );
-    assert!(
-        settings.get_agent_traces_enabled(),
-        "the pre-selected Share answer persisted"
-    );
-    drop(supervisor);
-}
-
-/// A provisioned home (sharing explicitly opted out) never sees the question
-/// (TS #2368 asks it; the operator's existing-user ruling removes it here).
-#[tokio::test]
-async fn provisioned_opt_out_home_completes_silently_without_the_question() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    std::fs::write(
-        agent_dir.join("settings.json"),
-        r#"{ "agentTraces": { "enabled": false } }"#,
-    )
-    .expect("provisioned settings");
-    let supervisor = spawn_supervisor(dir.path());
-
-    let script = serde_json::json!({ "responses": [
-        { "text": "hello provisioned home", "delayMs": 20 },
-    ] });
-    std::fs::write(
-        dir.path().join("script.json"),
-        serde_json::to_string(&script).expect("script json"),
-    )
-    .expect("script.json");
-
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    options.onboarding = Some(pa_tui::interactive::OnboardingTask {
-        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready: std::sync::Arc::new(|| true),
-        current_model: None,
-        provider_auth: None,
-    });
-    // No key step answers anything: the flow must complete before the submission runs.
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let outcome = run_headless_bounded(options, plan)
-        .await
-        .expect("interactive run");
-
-    let rendered = outcome.frames.join("\n");
-    assert!(
-        rendered.contains("hello provisioned home"),
-        "the session started directly and completed its first turn:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Share agent traces"),
-        "the question never owned a session frame:\n{rendered}"
-    );
-
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        !settings.get_agent_traces_enabled(),
-        "the standing opt-out survived the silent completion"
-    );
-    assert!(
-        settings.get_onboarding_shown(),
-        "the silent flow marked onboarding shown"
-    );
-    drop(supervisor);
-}
-
-/// The scripted provider-auth surface the full-flow verifier drives: the
-/// Prime Inference row, one api-key provider row, one `mcp:` service row.
-struct FullFlowProviderAuth {
-    agent_dir: PathBuf,
-    login_started: AtomicBool,
-}
-
-impl FullFlowProviderAuth {
-    fn stored(&self, provider: &str) -> bool {
-        pa_core::auth::AuthStorage::create(&self.agent_dir)
-            .get_all()
-            .credential(provider)
-            .is_some()
-    }
-}
-
-impl pa_tui::provider_auth::ProviderAuthCommands for FullFlowProviderAuth {
-    fn login_options(&self) -> pa_tui::provider_auth::ProviderRowsFuture {
-        let rows = vec![
-            pa_tui::provider_auth::ProviderRow {
-                id: pa_tui::provider_auth::PRIME_INFERENCE_PROVIDER_ID.to_string(),
-                name: "Prime Inference".to_string(),
-                auth_type: pa_tui::provider_auth::AuthType::ApiKey,
-                status: Some(pa_tui::provider_auth::AuthStatusIndicator {
-                    style: pa_tui::provider_auth::AuthStatusStyle::Success,
-                    label: "configured".to_string(),
-                }),
-                flow: pa_tui::provider_auth::AuthFlow::TerminalFlow,
-                configured: self.stored(pa_tui::provider_auth::PRIME_INFERENCE_PROVIDER_ID),
-                available: true,
-            },
-            pa_tui::provider_auth::ProviderRow {
-                id: "faux-key".to_string(),
-                name: "Faux Key".to_string(),
-                auth_type: pa_tui::provider_auth::AuthType::ApiKey,
-                status: None,
-                flow: pa_tui::provider_auth::AuthFlow::ApiKeyPrompt,
-                configured: self.stored("faux-key"),
-                available: true,
-            },
-            pa_tui::provider_auth::ProviderRow {
-                id: "mcp:faux".to_string(),
-                name: "Faux MCP".to_string(),
-                auth_type: pa_tui::provider_auth::AuthType::Oauth,
-                status: None,
-                flow: pa_tui::provider_auth::AuthFlow::TerminalFlow,
-                configured: false,
-                available: true,
-            },
-        ];
-        Box::pin(async move { rows })
-    }
-
-    fn logout_options(&self) -> pa_tui::provider_auth::ProviderRowsFuture {
-        Box::pin(async move { Vec::new() })
-    }
-
-    fn login(
-        &self,
-        provider: &pa_tui::provider_auth::ProviderRow,
-        api_key: Option<&str>,
-    ) -> pa_tui::provider_auth::ProviderAuthFuture {
-        self.login_started.store(true, Ordering::Relaxed);
-        let agent_dir = self.agent_dir.clone();
-        let provider_id = provider.id.clone();
-        let provider_name = provider.name.clone();
-        let key = api_key.map(str::to_string);
-        Box::pin(async move {
-            let mut auth = pa_core::auth::AuthStorage::create(&agent_dir);
-            auth.set(
-                &provider_id,
-                pa_core::auth::AuthCredential::ApiKey {
-                    key: key.unwrap_or_default(),
-                    prime_team: None,
-                },
-            );
-            if auth.drain_errors().pop().is_some() {
-                return pa_tui::provider_auth::ProviderAuthOutcome::Error(format!(
-                    "Failed to save API key for {provider_name}"
-                ));
-            }
-            pa_tui::provider_auth::ProviderAuthOutcome::Status(format!(
-                "Saved API key for {provider_name}"
-            ))
-        })
-    }
-
-    fn login_on_panel(
-        &self,
-        provider: &pa_tui::provider_auth::ProviderRow,
-        panel: pa_tui::auth_panel::AuthPanelHandle,
-    ) -> pa_tui::provider_auth::ProviderAuthFuture {
-        self.login_started.store(true, Ordering::Relaxed);
-        let agent_dir = self.agent_dir.clone();
-        let provider_id = provider.id.clone();
-        let provider_name = provider.name.clone();
-        Box::pin(async move {
-            // Only the Prime row runs here; anything else cancels.
-            if provider_id != pa_tui::provider_auth::PRIME_INFERENCE_PROVIDER_ID {
-                return pa_tui::provider_auth::ProviderAuthOutcome::Cancelled;
-            }
-            panel.progress("Checking Prime Inference access...");
-            let Some(api_key) = panel
-                .paste_prompt(
-                    "Paste a Prime API key below:",
-                    pa_tui::auth_panel::PastePromptTone::Muted,
-                    pa_tui::auth_panel::PasteStyle::Visible,
-                )
-                .await
-            else {
-                return pa_tui::provider_auth::ProviderAuthOutcome::Cancelled;
-            };
-            let mut auth = pa_core::auth::AuthStorage::create(&agent_dir);
-            auth.set(
-                &provider_id,
-                pa_core::auth::AuthCredential::ApiKey {
-                    key: api_key,
-                    prime_team: None,
-                },
-            );
-            if auth.drain_errors().pop().is_some() {
-                return pa_tui::provider_auth::ProviderAuthOutcome::Error(format!(
-                    "Failed to login to {provider_name}"
-                ));
-            }
-            pa_tui::provider_auth::ProviderAuthOutcome::Status(format!(
-                "Saved API key for {provider_name}. Credentials saved to {}.",
-                agent_dir.join("auth.json").display()
-            ))
-        })
-    }
-
-    fn logout(
-        &self,
-        _provider: &pa_tui::provider_auth::ProviderRow,
-    ) -> pa_tui::provider_auth::ProviderAuthFuture {
-        Box::pin(async move { pa_tui::provider_auth::ProviderAuthOutcome::Cancelled })
-    }
-
-    fn anthropic_subscription_warning(&self) -> pa_tui::provider_auth::ProviderWarningFuture {
-        // The faux full-flow drives no Anthropic subscription auth.
-        Box::pin(async move { None })
-    }
-}
-
-#[tokio::test]
-async fn fresh_home_skips_login_and_asks_for_trace_choice() {
-    assert_fresh_home_skips_login(None).await;
-}
-
-#[tokio::test]
-async fn fresh_home_skips_login_and_keeps_standing_trace_choice() {
-    assert_fresh_home_skips_login(Some(false)).await;
-}
-
-async fn assert_fresh_home_skips_login(standing_trace_choice: Option<bool>) {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use pa_tui::interactive::{HeadlessPlan, HeadlessStep, OnboardingTask};
-    use pa_tui::provider_auth::ProviderAuthCommandsHandle;
-
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    if let Some(enabled) = standing_trace_choice {
-        pa_core::settings::SettingsManager::create(dir.path(), &agent_dir)
-            .set_agent_traces_enabled(enabled)
-            .expect("provision trace choice");
-    }
-    let supervisor = spawn_supervisor(dir.path());
-    // The daemon's scripted engine proves the session is usable without making
-    // a provider model available to onboarding.
-    std::fs::write(
-        dir.path().join("script.json"),
-        r#"{ "responses": [{ "text": "hello after skipping login" }] }"#,
-    )
-    .expect("write script");
-
-    let auth = std::sync::Arc::new(FullFlowProviderAuth {
-        agent_dir: agent_dir.clone(),
-        login_started: AtomicBool::new(false),
-    });
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    options.onboarding = Some(OnboardingTask {
-        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready: std::sync::Arc::new(|| false),
-        current_model: None,
-        provider_auth: Some(ProviderAuthCommandsHandle(auth.clone())),
-    });
-    let trace_question = "Share agent traces";
-    let mut steps = vec![HeadlessStep::Key(KeyEvent::new(
-        KeyCode::Esc,
-        KeyModifiers::NONE,
-    ))];
-    if standing_trace_choice.is_none() {
-        steps.extend([
-            HeadlessStep::WaitRender {
-                needle: trace_question.to_string(),
-                timeout_ms: 5_000,
-            },
-            HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        ]);
-    }
-    steps.extend([
-        HeadlessStep::Submit("hi".to_string()),
-        HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-    ]);
-    let outcome = run_headless_bounded(
-        options,
-        HeadlessPlan {
-            steps,
-            width: 100,
-            height: 30,
-        },
-    )
-    .await
-    .expect("interactive run");
-
-    assert!(
-        !auth.login_started.load(Ordering::Relaxed),
-        "skipping did not start any provider login"
-    );
-    let rendered = outcome.frames.join("\n");
-    assert!(
-        rendered.contains("Log in with Prime Intellect"),
-        "the unconfigured home reached the welcome screen:\n{rendered}"
-    );
-    assert_eq!(
-        rendered.contains(trace_question),
-        standing_trace_choice.is_none(),
-        "skipping asked for a trace choice only when none was written:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("hello after skipping login"),
-        "skipping released the pane and the first session turn ran:\n{rendered}"
-    );
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        settings.get_onboarding_shown(),
-        "skipping marked onboarding complete even with no model"
-    );
-    assert!(settings.agent_traces_choice_written());
-    assert_eq!(
-        settings.get_agent_traces_enabled(),
-        standing_trace_choice.unwrap_or(true),
-        "the standing opt-out or selected Share answer persisted"
-    );
-}
-
-/// The full first-run flow with no usable model (TS `runOnboardingFlow`'s
-/// not-ready branch): every answer, both credentials, and the flag persist.
-#[tokio::test]
-async fn fresh_home_runs_the_full_sign_in_flow_to_completion() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-
-    let script = serde_json::json!({ "responses": [
-        { "text": "hello full flow", "delayMs": 20 },
-    ] });
-    std::fs::write(
-        dir.path().join("script.json"),
-        serde_json::to_string(&script).expect("script json"),
-    )
-    .expect("script.json");
-
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    // The readiness probe mirrors the flow's contract: not ready until the
-    // sign-in stores its credential (the model-ready gate at flow end).
-    let probe_agent_dir = agent_dir.clone();
-    let model_ready = std::sync::Arc::new(move || {
-        pa_core::auth::AuthStorage::create(&probe_agent_dir)
-            .get_all()
-            .credential(pa_tui::provider_auth::PRIME_INFERENCE_PROVIDER_ID)
-            .is_some()
-    });
-    options.onboarding = Some(pa_tui::interactive::OnboardingTask {
-        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready,
-        current_model: None,
-        provider_auth: Some(pa_tui::provider_auth::ProviderAuthCommandsHandle(
-            std::sync::Arc::new(FullFlowProviderAuth {
-                agent_dir: agent_dir.clone(),
-                login_started: AtomicBool::new(false),
-            }),
-        )),
-    });
-    let enter = || {
-        pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        ))
-    };
-    let down = || {
-        pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Down,
-            crossterm::event::KeyModifiers::NONE,
-        ))
-    };
-    // The plan waits on observable readiness, not fixed sleeps: each barrier
-    // holds the queued batch until a rendered frame contains the condition.
-    let wait_render = |needle: &str| pa_tui::interactive::HeadlessStep::WaitRender {
-        needle: needle.to_string(),
-        timeout_ms: 5_000,
-    };
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            enter(),
-            wait_render("Paste a Prime API key below:"),
-            pa_tui::interactive::HeadlessStep::Type("faux-prime-key".to_string()),
-            enter(),
-            wait_render("Prime Inference is your default. Connect other providers, or continue."),
-            down(),
-            enter(),
-            wait_render("Enter API key"),
-            pa_tui::interactive::HeadlessStep::Type("faux-key".to_string()),
-            enter(),
-            wait_render("\u{2713}"),
-            enter(),
-            wait_render("Share agent traces"),
-            enter(),
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let outcome = run_headless_bounded(options, plan)
-        .await
-        .expect("interactive run");
-
-    let rendered = outcome.frames.join("\n");
-    assert!(
-        rendered.contains("Log in with Prime Intellect"),
-        "the welcome screen's action rendered:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Login with Prime Intellect"),
-        "the login dialog's heading replaced the brand line:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Paste a Prime API key below:"),
-        "the paste prompt mounted inside the pane:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Prime Inference is your default. Connect other providers, or continue."),
-        "the providers picker rendered:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Share agent traces"),
-        "the trace question ended the flow:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("hello full flow"),
-        "the completed flow released the pane and the first turn ran:\n{rendered}"
-    );
-    // The scripted engine refuses live model switches by design, so the
-    // refusal row is the proof the apply REQUEST reached it.
-    assert!(
-        rendered.contains("This session does not support model switching"),
-        "the apply round-tripped and the scripted engine's refusal surfaced:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Saved API key for Faux Key"),
-        "the provider login's status row applied:\n{rendered}"
-    );
-
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        settings.get_onboarding_shown(),
-        "the completed flow marked onboarding shown"
-    );
-    assert!(
-        settings.get_agent_traces_enabled(),
-        "the Share answer persisted"
-    );
-    let auth = pa_core::auth::AuthStorage::create(&agent_dir);
-    assert!(
-        auth.get_all()
-            .credential(pa_tui::provider_auth::PRIME_INFERENCE_PROVIDER_ID)
-            .is_some(),
-        "the Prime sign-in stored its credential"
-    );
-    assert!(
-        auth.get_all().credential("faux-key").is_some(),
-        "the provider login stored its key"
-    );
-    drop(supervisor);
-}
-
-#[tokio::test]
-async fn a_failed_completion_write_surfaces_a_warning_and_never_kills_the_run() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    std::fs::write(
-        agent_dir.join("settings.json"),
-        r#"{ "agentTraces": { "enabled": false } }"#,
-    )
-    .expect("provisioned settings");
-    let supervisor = spawn_supervisor(dir.path());
-
-    let script = serde_json::json!({ "responses": [
-        { "text": "hello despite the write failure", "delayMs": 20 },
-    ] });
-    std::fs::write(
-        dir.path().join("script.json"),
-        serde_json::to_string(&script).expect("script json"),
-    )
-    .expect("script.json");
-
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    options.onboarding = Some(pa_tui::interactive::OnboardingTask {
-        sink: std::sync::Arc::new(FailingMarkOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready: std::sync::Arc::new(|| true),
-        current_model: None,
-        provider_auth: None,
-    });
-    let plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let outcome = run_headless_bounded(options, plan)
-        .await
-        .expect("the run survives the failed write");
-
-    let rendered = outcome.frames.join("\n");
-    assert!(
-        rendered.contains("hello despite the write failure"),
-        "the session ran its first turn despite the failed write:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Share agent traces"),
-        "the standing choice never re-opened the question:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("could not be saved"),
-        "the failed persistence surfaced as a warning row:\n{rendered}"
-    );
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        !settings.get_onboarding_shown(),
-        "the failed write left the marker unset"
-    );
-    drop(supervisor);
-}
-
-/// The re-show regression: the agents-view flow re-runs the onboarding phase
-/// per session open, so the phase gates on the persisted marker itself.
-#[tokio::test]
-async fn a_completed_flow_never_reopens_the_question_for_a_later_session() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let agent_dir = dir.path().join("agent");
-    let session_dir = agent_dir.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
-    let supervisor = spawn_supervisor(dir.path());
-
-    // The faux queue spans one session (each created session replays from the top).
-    let script = serde_json::json!({ "responses": [
-        { "text": "hello each session", "delayMs": 20 },
-    ] });
-    std::fs::write(
-        dir.path().join("script.json"),
-        serde_json::to_string(&script).expect("script json"),
-    )
-    .expect("script.json");
-
-    // The SAME options object backs both session runs, as the agents-view flow clones `base`.
-    let mut options = base_options(&supervisor, dir.path(), &session_dir);
-    options.onboarding = Some(pa_tui::interactive::OnboardingTask {
-        sink: std::sync::Arc::new(FreshHomeOnboardingSink {
-            cwd: dir.path().to_path_buf(),
-            agent_dir: agent_dir.clone(),
-        }),
-        model_ready: std::sync::Arc::new(|| true),
-        current_model: None,
-        provider_auth: None,
-    });
-    // Down + Enter answers `Not now` (the answer that used to re-show), then the turn runs.
-    let first_plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Down,
-                crossterm::event::KeyModifiers::NONE,
-            )),
-            pa_tui::interactive::HeadlessStep::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Enter,
-                crossterm::event::KeyModifiers::NONE,
-            )),
-            pa_tui::interactive::HeadlessStep::Submit("hi".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let first = run_headless_bounded(options.clone(), first_plan)
-        .await
-        .expect("first interactive run");
-    let first_rendered = first.frames.join("\n");
-    assert!(
-        first_rendered.contains("Share agent traces"),
-        "the fresh home was asked once:\n{first_rendered}"
-    );
-    assert!(
-        first_rendered.contains("hello each session"),
-        "the answered dialog released the pane and the first turn ran:\n{first_rendered}"
-    );
-    let settings = pa_core::settings::SettingsManager::create(dir.path(), &agent_dir);
-    assert!(
-        !settings.get_agent_traces_enabled(),
-        "the Not-now answer persisted (the opt-out)"
-    );
-    assert!(
-        settings.get_onboarding_shown(),
-        "the completion flag persisted with the answer"
-    );
-
-    // The second session, same task: no key answers anything; the marker must gate itself.
-    let second_plan = pa_tui::interactive::HeadlessPlan {
-        steps: vec![
-            pa_tui::interactive::HeadlessStep::Submit("again".to_string()),
-            pa_tui::interactive::HeadlessStep::WaitIdle { timeout_ms: 30_000 },
-        ],
-        width: 100,
-        height: 30,
-    };
-    let second = run_headless_bounded(options, second_plan)
-        .await
-        .expect("second interactive run");
-    let second_rendered = second.frames.join("\n");
-    assert!(
-        second_rendered.contains("hello each session"),
-        "the second session started directly and completed its turn:\n{second_rendered}"
-    );
-    assert!(
-        !second_rendered.contains("Share agent traces"),
-        "the completed flow never reopened the question:\n{second_rendered}"
-    );
-    drop(supervisor);
-}
-
 #[tokio::test]
 async fn ensure_daemon_running_spawns_supervisor_and_tui_attaches() {
     let dir = tempfile::TempDir::new().expect("temp dir");
@@ -1458,7 +696,6 @@ async fn ensure_daemon_running_spawns_supervisor_and_tui_attaches() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -1539,7 +776,6 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -1749,7 +985,6 @@ async fn tui_model_picker_applies_and_effort_reports() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -1923,7 +1158,6 @@ async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_fla
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2034,7 +1268,6 @@ async fn tui_compact_on_a_short_session_warns_nothing_to_compact() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2152,7 +1385,6 @@ async fn tui_compact_shows_the_loader_then_the_summary_and_rebuilds() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2322,7 +1554,6 @@ async fn tui_session_tree_navigates_forks_and_clones() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2494,7 +1725,6 @@ async fn tui_big_streamed_turns_render_at_the_producer_rate() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2610,7 +1840,6 @@ async fn tui_renders_and_fires_user_keybindings_from_settings() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         // The exact load path the CLI uses: the fixture overrides the default set.
@@ -2764,7 +1993,6 @@ async fn tui_prompts_queued_behind_a_turn_render_the_queue_strip() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2840,7 +2068,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
     // auth-scoped catalog is empty but the bundled catalog carries the model.
     let glm: pa_types::ai::Model = serde_json::from_value(serde_json::json!({
         "id": "z-ai/glm-5.3", "name": "GLM 5.3", "api": "openai-completions",
-        "provider": "prime-inference", "baseUrl": "https://inference.example/v1",
+        "provider": "openrouter", "baseUrl": "https://openrouter.ai/api/v1",
         "reasoning": true, "input": ["text"],
         "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
         "contextWindow": 128_000, "maxTokens": 8192
@@ -2853,7 +2081,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
         session_dir: Some(session_dir.clone()),
         script_path: None,
         model_selection: pa_tui::interactive::ModelSelection {
-            provider: Some("prime-inference".to_string()),
+            provider: Some("openrouter".to_string()),
             model: Some("z-ai/glm-5.3".to_string()),
             ..Default::default()
         },
@@ -2875,7 +2103,6 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -2901,7 +2128,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
         .expect("interactive run");
     let rendered = outcome.frames.join("\n");
     assert!(
-        rendered.contains("must be configured externally") && rendered.contains("prime-inference"),
+        rendered.contains("must be configured externally") && rendered.contains("openrouter"),
         "the pick against the empty auth-scoped catalog routes the sign-in flow (no provider-auth hook in this composition, so the TS external-config error):\n{rendered}"
     );
     assert!(
@@ -2909,7 +2136,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
         "the not-signed-in pick never surfaces the dead-end refusal (the typed sign-in class):\n{rendered}"
     );
     assert!(
-        rendered.contains("No API key found for prime-inference"),
+        rendered.contains("No API key found for openrouter"),
         "the turn resolves the flagged model from the full catalog and fails at the run-start auth validation with the TS message:\n{rendered}"
     );
     assert!(
@@ -3001,7 +2228,6 @@ async fn tui_model_pick_refreshes_the_label_and_the_next_turn_resolves() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -3168,7 +2394,6 @@ fn base_options(
         restore_dock_focus: false,
         client_settings: None,
         provider_auth: None,
-        traces: None,
     }
 }
 
@@ -3713,7 +2938,6 @@ async fn tui_prompt_stash_round_trips_across_in_place_switch() {
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -3845,7 +3069,6 @@ async fn tui_prompt_stash_survives_the_agents_view_handoff() {
     let make_options = || pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -4005,7 +3228,6 @@ async fn tui_prompt_stash_restores_a_pasted_image_with_the_draft() {
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -4129,7 +3351,6 @@ async fn tui_ctrl_s_stashes_and_restores_the_prompt_draft() {
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -4287,7 +3508,6 @@ async fn tui_ctrl_s_stash_keeps_a_held_draft_and_reports_the_empty_editor() {
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -4430,7 +3650,6 @@ async fn tui_ctrl_s_stash_is_remappable_via_keybindings_json() {
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -4574,7 +3793,6 @@ async fn tui_ctrl_s_during_queue_browse_stashes_the_draft_and_keeps_the_parked_m
     let options = pa_tui::interactive::InteractiveOptions {
         models: None,
         provider_auth: None,
-        traces: None,
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
@@ -5304,7 +4522,6 @@ async fn tui_two_back_to_back_submits_reach_the_daemon_in_order() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -5424,7 +4641,6 @@ async fn tui_submit_outlived_by_switch_stays_silent_on_the_new_session() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -5536,7 +4752,6 @@ async fn tui_headless_done_with_a_turn_settling_parks_the_closed_input_channel()
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -5654,7 +4869,6 @@ async fn tui_refused_submit_restores_the_draft_after_the_round_trip() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -5776,7 +4990,6 @@ async fn tui_accepted_then_killed_turn_renders_closed_error() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
@@ -5928,7 +5141,6 @@ async fn assert_close_reason_survives_late_turn_status(reason: &str, explanation
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),

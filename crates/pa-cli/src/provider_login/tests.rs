@@ -7,7 +7,6 @@ use super::*;
 fn the_status_indicator_maps_the_ts_labels() {
     let stored_api_key = AuthCredential::ApiKey {
         key: "k".to_string(),
-        prime_team: None,
     };
     // A matching stored credential is configured.
     assert_eq!(
@@ -99,7 +98,6 @@ fn the_status_indicator_maps_the_ts_labels() {
 fn the_display_names_match_the_ts_map() {
     assert_eq!(display_name("openai"), "OpenAI");
     assert_eq!(display_name("google"), "Google Gemini");
-    assert_eq!(display_name("prime-inference"), "Prime Inference");
     assert_eq!(display_name("a-custom-provider"), "a-custom-provider");
 }
 
@@ -148,13 +146,6 @@ async fn login_options_list_providers_only() {
     // credential) never appear; the /mcp view owns MCP logins.
     assert!(!rows.iter().any(|row| row.id == "serper"));
     assert!(!rows.iter().any(|row| row.id.starts_with("mcp:")));
-    // Prime Inference sorts first among the api-key rows (TS rule).
-    assert!(
-        rows.iter()
-            .position(|row| row.id == PRIME_INFERENCE_PROVIDER_ID)
-            < rows.iter().position(|row| row.id == "anthropic"),
-        "prime-inference sorts before the other api-key rows"
-    );
 }
 
 /// Port of the TS #2645 warning detection: the ban-risk warning is
@@ -178,7 +169,6 @@ async fn the_anthropic_subscription_warning_matches_the_active_credential() {
         "anthropic",
         AuthCredential::ApiKey {
             key: "sk-ant-api03-plain".to_string(),
-            prime_team: None,
         },
     );
     assert_eq!(auth.anthropic_subscription_warning().await, None);
@@ -188,7 +178,6 @@ async fn the_anthropic_subscription_warning_matches_the_active_credential() {
         "anthropic",
         AuthCredential::ApiKey {
             key: "sk-ant-oat-subscription".to_string(),
-            prime_team: None,
         },
     );
     let warning = auth

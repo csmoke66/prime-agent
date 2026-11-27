@@ -193,7 +193,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
     let cwd = config.cwd.clone();
     // Session persistence first: the conversation-log path and the resume
     // context both come from the session manager.
-    let mut session_manager = config
+    let session_manager = config
         .session_manager
         .unwrap_or_else(|| SessionManager::in_memory(&cwd));
     let conversation_log = {
@@ -208,8 +208,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
                     .map(|path| path.display().to_string())
             })
     };
-    let (settings, trace_consent) =
-        crate::agent_traces::ContinuousTraceUpload::load_settings(&cwd, &config.agent_dir);
+    let settings = crate::settings::SettingsManager::create(&cwd, &config.agent_dir);
     // Resolve the kernel shell once, before any side effects: an invalid
     // `shellPath` must fail session creation with a clear config error
     // naming the setting, not every kernel `bash()` call later.
@@ -223,20 +222,6 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
         .shell_command_prefix
         .clone()
         .filter(|prefix| !prefix.is_empty());
-    let traces = session_manager
-        .is_persisted()
-        .then(|| {
-            crate::agent_traces::ContinuousTraceUpload::install(
-                &cwd,
-                &config.agent_dir,
-                session_manager.get_session_file(),
-                trace_consent,
-            )
-        })
-        .flatten();
-    if let Some(traces) = traces {
-        session_manager.on_persist(Box::new(move |path| traces.persisted(path)));
-    }
     let wiring = super::runtime_wiring::wire_session_runtime(
         session_manager,
         &config.agent_dir,

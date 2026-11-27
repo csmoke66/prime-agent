@@ -160,7 +160,6 @@ impl SessionFile {
             window: None,
             lease: None,
             child_usage_recovery: super::child_usage::ChildUsageRecovery::default(),
-            trace_upload: None,
             anthropic_warning_shown: false,
             skipped_lines: 0,
             billed_row_sink: BilledRowSinkSlot::default(),
@@ -224,7 +223,6 @@ impl SessionFile {
             window: None,
             lease: None,
             child_usage_recovery: super::child_usage::ChildUsageRecovery::default(),
-            trace_upload: None,
             anthropic_warning_shown,
             skipped_lines: 0,
             billed_row_sink: BilledRowSinkSlot::default(),
@@ -295,7 +293,6 @@ impl SessionFile {
         // Same leaf, same branch: the window's counts already hold the unloaded prefix.
         full.branch_roles = self.branch_roles.take();
         full.lease.clone_from(&self.lease);
-        full.trace_upload.clone_from(&self.trace_upload);
         full.billed_row_sink.clone_from(&self.billed_row_sink);
         full.child_usage_recovery
             .clone_from(&self.child_usage_recovery);
@@ -330,7 +327,6 @@ impl SessionFile {
             window: None,
             lease: None,
             child_usage_recovery: super::child_usage::ChildUsageRecovery::default(),
-            trace_upload: None,
             anthropic_warning_shown: false,
             skipped_lines: 0,
             billed_row_sink: BilledRowSinkSlot::default(),

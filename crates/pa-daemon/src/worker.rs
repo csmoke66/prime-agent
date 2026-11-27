@@ -162,7 +162,6 @@ pub struct Worker {
     pub(crate) events: Arc<EventPump>,
     /// The `/model` catalog background-refresh coalescing gate: at most
     /// one refresh plus one queued re-arm per burst.
-    pub(crate) model_catalog_refresh_gate: std::sync::Arc<crate::model_catalog::RefreshGate>,
     recovery: Arc<Mutex<Option<WorkerRecoveryJournal>>>,
     side_questions: crate::side_question::SideQuestionManager,
     /// Single-use peer-transport grants (worker memory only).
@@ -892,9 +891,6 @@ impl Worker {
             released_attach_tokens: std::sync::Mutex::new(std::collections::HashSet::new()),
             connection_sinks: std::sync::Mutex::new(Vec::new()),
             events,
-            model_catalog_refresh_gate: std::sync::Arc::new(
-                crate::model_catalog::RefreshGate::default(),
-            ),
             recovery,
             side_questions,
             peer_grants: PeerGrantStore::new(),

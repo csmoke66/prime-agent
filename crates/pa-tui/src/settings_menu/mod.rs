@@ -244,7 +244,6 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             current: if current.telemetry_enabled.is_some() { "View" } else { "Unavailable" }.into(),
             values: None, submenu: None,
         },
-        toggle("trace-sharing", "Trace sharing", "Automatically upload session traces", current.trace_sharing),
         SettingsMenuRow {
             id: "provider-block-delivery",
             label: "Provider rejection delivery",
@@ -576,7 +575,6 @@ pub struct SettingsCurrentValues {
     pub factory_enabled: Option<bool>,
     pub speed_display: bool,
     pub telemetry_enabled: Option<bool>,
-    pub trace_sharing: Option<bool>,
     pub autocompact: bool,
     pub compaction_threshold_percent: f64,
     pub tool_output_reminder_percent: Option<u8>,

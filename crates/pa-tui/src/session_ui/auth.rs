@@ -112,7 +112,6 @@ impl SessionUi {
                 } else {
                     let auth = self.provider_auth.clone().expect("the selector was open");
                     if provider.id.starts_with("mcp:")
-                        || provider.id == crate::provider_auth::PRIME_INFERENCE_PROVIDER_ID
                         || crate::provider_auth::SUBSCRIPTION_PROVIDER_IDS
                             .contains(&provider.id.as_str())
                     {
@@ -144,7 +143,7 @@ impl SessionUi {
         crate::auth_panel::AuthPanelHandle::new(self.auth_panel_notes.clone())
     }
 
-    /// Enter on a panel-driven login row (the MCP OAuth, Prime Inference, and Codex Subscription
+    /// Enter on a panel-driven login row (the MCP OAuth and Codex Subscription
     /// logins): mount the inline auth panel and spawn the flow against it. Flows that check the
     /// cooperative cancel arm its shared flag so Esc/ctrl+c ends the flow without writing
     /// credentials.
@@ -197,12 +196,7 @@ impl SessionUi {
         // A cancel key ends the mounted panel and arms the blocking body's flag. Only the binding
         // match unmounts: a raw ctrl+c with the binding remapped away is an unhandled key, not a
         // cancel — unmounting without marking leaves a live flow that can persist credentials.
-        let cancel_key = kb.matches(&id, "tui.select.cancel");
-        let team_picker = view
-            .auth_panel
-            .as_ref()
-            .is_some_and(crate::auth_panel::AuthPanel::team_picker_mounted);
-        if cancel_key && !team_picker {
+        if kb.matches(&id, "tui.select.cancel") {
             if let Some(cancel) = self.auth_panel_cancel.take() {
                 cancel.store(true, std::sync::atomic::Ordering::Relaxed);
             }
@@ -290,15 +284,6 @@ impl SessionUi {
                     panel.mount_paste(&prompt, tone, style, allow_empty, reply);
                 }
             }
-            AuthPanelRequest::SelectTeam {
-                teams,
-                current,
-                reply,
-            } => {
-                if let Some(panel) = view.auth_panel.as_mut() {
-                    panel.mount_teams(teams, current, reply);
-                }
-            }
             AuthPanelRequest::ProviderSettled { provider, outcome } => {
                 self.auth_panel_cancel = None;
                 view.auth_panel = None;
@@ -316,13 +301,6 @@ impl SessionUi {
             AuthPanelRequest::McpSettled { note } => {
                 view.auth_panel = None;
                 self.note(&note, view);
-            }
-            AuthPanelRequest::TracesSettled { outcome, gen } => {
-                // A superseded run's late settle cannot clear a newer login: the generation guard.
-                if gen == self.traces_login_gen {
-                    view.auth_panel = None;
-                    self.finish_traces_login(outcome, view).await;
-                }
             }
         }
         self.dirty = true;

@@ -193,7 +193,6 @@ fn session_options(
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         client_settings: None,
         telemetry: None,

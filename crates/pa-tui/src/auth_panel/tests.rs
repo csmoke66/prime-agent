@@ -1,4 +1,4 @@
-//! The auth panel's unit battery: the request folds, the paste field, the team picker, the URL
+//! The auth panel's unit battery: the request folds, the paste field, the URL
 //! block, the per-surface chrome, the scrub hygiene, and the cancel-signal contract.
 
 use super::*;
@@ -15,26 +15,6 @@ fn sink() -> crate::clipboard::OscSink {
 
 fn theme() -> Theme {
     Theme::builtin("prime", crate::theme::ColorMode::TrueColor)
-}
-
-fn acme() -> PrimeTeamOption {
-    PrimeTeamOption {
-        team_id: "team-acme".to_string(),
-        name: "Acme Corp".to_string(),
-        slug: Some("acme".to_string()),
-        role: Some("Owner".to_string()),
-        created_at: None,
-    }
-}
-
-fn beta() -> PrimeTeamOption {
-    PrimeTeamOption {
-        team_id: "team-beta".to_string(),
-        name: "Beta Team".to_string(),
-        slug: None,
-        role: None,
-        created_at: None,
-    }
 }
 
 fn frame_text(panel: &mut AuthPanel) -> Vec<String> {
@@ -61,17 +41,6 @@ fn mount_paste_tone(tone: PastePromptTone) -> (AuthPanel, oneshot::Receiver<Opti
         false,
         reply,
     );
-    (panel, answer)
-}
-
-/// A team picker mounted with its oneshot pair.
-fn mount_teams(
-    teams: Vec<PrimeTeamOption>,
-    current: Option<&str>,
-) -> (AuthPanel, oneshot::Receiver<PrimeTeamPick>) {
-    let mut panel = AuthPanel::new("Login to Prime Inference");
-    let (reply, answer) = oneshot::channel();
-    panel.mount_teams(teams, current.map(str::to_string), reply);
     (panel, answer)
 }
 
@@ -283,128 +252,6 @@ fn the_masked_field_renders_bullets_never_the_secret() {
     );
 }
 
-#[test]
-fn the_team_picker_renders_the_ts_rows() {
-    let (mut panel, _answer) = mount_teams(vec![acme(), beta()], Some("team-beta"));
-    let rows = frame_text(&mut panel);
-    assert!(rows.iter().any(|row| row.contains("Select a Prime Team:")));
-    assert!(rows
-        .iter()
-        .any(|row| { row.contains("Choose which account pays for Prime Inference usage.") }));
-    assert!(rows.iter().any(|row| row.contains("Search teams")));
-    assert!(rows.iter().any(|row| row.contains("Personal")));
-    assert!(rows.iter().any(|row| row.contains("personal account")));
-    assert!(rows.iter().any(|row| row.contains("Acme Corp")));
-    assert!(rows
-        .iter()
-        .any(|row| row.contains("slug: acme, role: owner")));
-    assert!(rows.iter().any(|row| row.contains("role: member")));
-    let beta_row = rows
-        .iter()
-        .find(|row| row.contains("Beta Team"))
-        .expect("the beta row");
-    assert!(beta_row.contains("current"), "the beta row: {beta_row:?}");
-    assert!(
-        !rows
-            .iter()
-            .any(|row| row.contains("personal account · current")),
-        "personal is not current while a team is stored"
-    );
-}
-
-#[test]
-fn the_personal_row_is_current_without_a_stored_selection() {
-    let (mut panel, _answer) = mount_teams(vec![acme()], None);
-    let rows = frame_text(&mut panel);
-    assert!(rows
-        .iter()
-        .any(|row| row.contains("personal account · current")));
-}
-
-#[test]
-fn the_picker_navigates_and_picks() {
-    let (mut panel, mut answer) = mount_teams(vec![acme(), beta()], None);
-    panel.handle_key("down", &kb(), &mut sink());
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(answer.try_recv(), Ok(PrimeTeamPick::Team(acme())));
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(answer.try_recv(), Ok(PrimeTeamPick::PersonalAccount));
-}
-
-#[test]
-fn escape_on_the_picker_answers_the_cancelled_pick() {
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    panel.handle_key("escape", &kb(), &mut sink());
-    assert_eq!(answer.try_recv(), Ok(PrimeTeamPick::Cancelled));
-}
-
-#[test]
-fn the_picker_search_filters_and_picks_the_surviving_row() {
-    let (mut panel, mut answer) = mount_teams(vec![acme(), beta()], None);
-    for character in "acme".chars() {
-        panel.handle_key(character.to_string().as_str(), &kb(), &mut sink());
-    }
-    let rows = frame_text(&mut panel);
-    assert!(rows.iter().any(|row| row.contains("Acme Corp")));
-    assert!(
-        !rows.iter().any(|row| row.contains("Beta Team")),
-        "the non-match is filtered out: {rows:?}"
-    );
-    assert!(
-        !rows.iter().any(|row| row.contains("Personal")),
-        "the personal row is filtered out too: {rows:?}"
-    );
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(answer.try_recv(), Ok(PrimeTeamPick::Team(acme())));
-    let (mut panel, _answer) = mount_teams(vec![acme()], None);
-    for character in "personal".chars() {
-        panel.handle_key(character.to_string().as_str(), &kb(), &mut sink());
-    }
-    let rows = frame_text(&mut panel);
-    assert!(rows.iter().any(|row| row.contains("Personal")));
-    assert!(
-        !rows.iter().any(|row| row.contains("Acme Corp")),
-        "the team row is filtered out: {rows:?}"
-    );
-}
-
-#[test]
-fn an_empty_filter_renders_the_ts_empty_row_and_selects_nothing() {
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    for character in "zzz".chars() {
-        panel.handle_key(character.to_string().as_str(), &kb(), &mut sink());
-    }
-    let rows = frame_text(&mut panel);
-    assert!(rows.iter().any(|row| row.contains("No matching teams")));
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert!(
-        answer.try_recv().is_err(),
-        "an empty filter selects nothing"
-    );
-}
-
-#[test]
-fn the_picker_navigation_clamps_instead_of_wrapping() {
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    panel.handle_key("up", &kb(), &mut sink());
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(
-        answer.try_recv(),
-        Ok(PrimeTeamPick::PersonalAccount),
-        "up clamps at the personal row (index 0)"
-    );
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    panel.handle_key("down", &kb(), &mut sink());
-    panel.handle_key("down", &kb(), &mut sink());
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(
-        answer.try_recv(),
-        Ok(PrimeTeamPick::Team(acme())),
-        "down clamps at the last row"
-    );
-}
-
 /// A dropped reply cancels the flow (the old terminal input's EOF contract).
 #[tokio::test]
 async fn a_dropped_prompt_reply_cancels_the_flow() {
@@ -417,10 +264,6 @@ async fn a_dropped_prompt_reply_cancels_the_flow() {
             .await,
         None
     );
-    assert_eq!(
-        handle.select_team(vec![acme()], None).await,
-        PrimeTeamPick::Cancelled
-    );
 }
 
 #[test]
@@ -429,10 +272,6 @@ fn a_paste_payload_lands_in_the_mounted_field() {
     panel.handle_paste("  sk-pasted-key  ");
     panel.handle_key("enter", &kb(), &mut sink());
     assert_eq!(answer.try_recv(), Ok(Some("sk-pasted-key".to_string())));
-    let (mut panel, mut answer) = mount_teams(vec![acme()], None);
-    panel.handle_paste("acme");
-    panel.handle_key("enter", &kb(), &mut sink());
-    assert_eq!(answer.try_recv(), Ok(PrimeTeamPick::Team(acme())));
 }
 
 /// Provider-supplied text can never execute terminal control operations: the panel scrubs
@@ -440,7 +279,7 @@ fn a_paste_payload_lands_in_the_mounted_field() {
 #[test]
 fn provider_text_is_scrubbed_never_a_terminal_sequence() {
     let mut panel = AuthPanel::new("Login to \u{1b}]8;;https://evil.example\u{7}Evil");
-    panel.push_progress("Loading\u{1b}[2J teams...");
+    panel.push_progress("Loading\u{1b}[2J steps...");
     panel.show_auth_url(
         "https://a.example/\u{1b}]8;;https://evil.example\u{7}link\u{1b}\\\u{1b}]8;;\u{1b}\\"
             .to_string(),
@@ -457,21 +296,6 @@ fn provider_text_is_scrubbed_never_a_terminal_sequence() {
         "the clear never renders: {joined:?}"
     );
     assert!(!joined.contains("\u{1b}]8;;"));
-
-    let (mut panel, mut _answer) = mount_teams(
-        vec![PrimeTeamOption {
-            team_id: "t".to_string(),
-            name: "A\u{1b}[2J Corp".to_string(),
-            slug: Some("s\u{7}".to_string()),
-            role: Some("Owner\u{1b}".to_string()),
-            created_at: None,
-        }],
-        None,
-    );
-    let rows = frame_text(&mut panel);
-    let joined = rows.join("\n");
-    assert!(!joined.contains('\u{1b}'), "no escapes render: {joined:?}");
-    assert!(joined.contains('A'), "the scrubbed name still renders");
 }
 
 #[test]

@@ -1096,18 +1096,15 @@ mod tests {
 
     /// Write a models.json with one auth-configured custom provider.
     fn registry_with_custom_model(dir: &std::path::Path) -> Arc<ModelRegistry> {
-        // Hermetic environment credential source: this sandbox exports
-        // PRIME_API_KEY globally, which would unlock the built-in providers
-        // and evict the custom catalog from the default empty-query limit.
+        // Hermetic environment credential source: an ambient provider key
+        // would unlock the built-in providers and evict the custom catalog
+        // from the default empty-query limit.
         struct NoEnvCredentials;
         impl crate::auth::manager::EnvCredentialSource for NoEnvCredentials {
             fn key_names(&self, _provider: &str) -> Option<Vec<String>> {
                 None
             }
             fn api_key(&self, _provider: &str) -> Option<String> {
-                None
-            }
-            fn prime_team_id(&self) -> Option<String> {
                 None
             }
             fn ambient_identity_material(&self, _provider: &str) -> String {

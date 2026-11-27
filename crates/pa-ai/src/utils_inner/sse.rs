@@ -143,10 +143,10 @@ mod tests {
     }
 
     #[test]
-    fn decodes_prime_inference_capture() {
+    fn decodes_a_captured_glm_stream() {
         let text = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/testdata/prime_inference_glm53_flash.sse"
+            "/tests/testdata/glm53_flash.sse"
         ))
         .unwrap();
         let mut decoder = SseDecoder::new();

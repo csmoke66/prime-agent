@@ -63,5 +63,5 @@ either changes.
 
 ## Generated files
 
-- The model catalog is hand-maintained data: `crates/pa-ai/src/models_generated.rs` is hand-written Rust (no generator, no generated JSON — edit it by hand), and the catalog fixture `crates/pa-models/tests/fixtures/catalog.v1.json` refreshes with `scripts/generate-catalog-fixture.py` from the real `PrimeIntellect-ai/prime-agent-catalog` snapshot. Flag edits that would reintroduce a generator or hand-tweak the fixture rows.
+- The model catalog is hand-maintained data compiled into the binary: `crates/pa-models/catalog/models.json` and `crates/pa-models/catalog/mcp-services.json` (edit by hand), plus the compiled fallback list `crates/pa-ai/src/models_generated.rs` (hand-written Rust, no generator). Flag edits that would reintroduce a network catalog fetch or a generator.
 - Bulk data files are exempt from the size guidance; the exemption's reason is that the file mirrors an upstream data source.

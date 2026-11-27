@@ -230,7 +230,6 @@ pub struct SessionFile {
     /// by [`Self::set_leaf`], `None` while stale (the next read recounts).
     branch_roles: Option<HashMap<String, usize>>,
     pub(crate) window: Option<SessionWindow>,
-    pub(crate) trace_upload: Option<std::sync::Arc<pa_core::agent_traces::ContinuousTraceUpload>>,
     pub(crate) lease: Option<std::sync::Arc<crate::lease::SessionLease>>,
     child_usage_recovery: child_usage::ChildUsageRecovery,
     /// Rows the full reader skipped as unparsable (the TS loader's

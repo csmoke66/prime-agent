@@ -203,18 +203,10 @@ impl Worker {
         // The fresh arms defer their creation prefix to after the startup scope
         // registers, so a fresh `--models` session persists the scoped startup pick.
         let mut fresh_prefix = FreshPrefixPlan::None;
-        let (settings, trace_consent) = pa_core::agent_traces::ContinuousTraceUpload::load_settings(
+        let settings = pa_core::settings::SettingsManager::create(
             std::path::Path::new(&cwd),
             &self.config.agent_dir,
         );
-        let traces = |path: &std::path::Path| {
-            pa_core::agent_traces::ContinuousTraceUpload::install(
-                std::path::Path::new(&cwd),
-                &self.config.agent_dir,
-                Some(path),
-                trace_consent.clone(),
-            )
-        };
         let mut store = match (&session_path, no_session) {
             (Some(path), false) if path.exists() => {
                 let loaded = {
@@ -233,7 +225,6 @@ impl Worker {
                 };
                 match loaded {
                     Ok(mut opened) => {
-                        opened.trace_upload = traces(&opened.path);
                         opened_existing_session = true;
                         if opened.skipped_lines > 0 {
                             // The rows stay on disk (the append-only
@@ -318,7 +309,6 @@ impl Worker {
                     rlm_depth.unwrap_or(0),
                 );
                 created.set_path(path.clone());
-                created.trace_upload = traces(&created.path);
                 let acquired = {
                     let path = path.clone();
                     let agent_dir = self.config.agent_dir.clone();
@@ -357,7 +347,6 @@ impl Worker {
                 );
                 let path = session_dir.join(session_file_name(created.session_id()));
                 created.set_path(path.clone());
-                created.trace_upload = traces(&created.path);
                 let acquired = {
                     let path = path.clone();
                     let agent_dir = self.config.agent_dir.clone();
@@ -394,8 +383,7 @@ impl Worker {
         }
 
         // The `models` patterns (else settings `enabledModels`) resolve once into
-        // the scoped list, AFTER the store open (the saved-model restore's wait
-        // already covered the catalog fetch): resolving earlier stores an empty scope.
+        // the scoped list, AFTER the store open.
         let model_patterns = match payload.get("models").and_then(Value::as_array) {
             Some(patterns) => patterns
                 .iter()
@@ -408,17 +396,10 @@ impl Worker {
         let scoped_models = if model_patterns.is_empty() {
             Vec::new()
         } else {
-            let mut registry = crate::state_getters::worker_model_registry(&self.config.agent_dir);
-            pa_core::models::resolve_model_scope_from_models_with_readiness(
-                &mut registry,
-                &model_patterns,
-                settings
-                    .get_default_provider()
-                    .zip(settings.get_default_model()),
-                is_continuing,
-                pa_core::models::SESSION_MODEL_RESTORE_READINESS_TIMEOUT_MS,
-            )
-            .await
+            let registry = crate::state_getters::worker_model_registry(&self.config.agent_dir);
+            let available: Vec<pa_types::ai::Model> =
+                registry.get_available().into_iter().cloned().collect();
+            pa_core::models::resolve_model_scope_from_models(&model_patterns, &available)
         };
         self.engine.configure_startup_scope(
             scoped_models.clone(),
@@ -666,7 +647,7 @@ impl Worker {
             let auth = pa_core::auth::AuthStorage::create(&agent_dir);
             let mut registry =
                 pa_core::models::ModelRegistry::create(auth, agent_dir.join("models.json"));
-            let _ = registry.refresh_available_models().await;
+            let _ = registry.refresh_available_models();
         });
         self.work_notify.notify_one();
         // Warm the context-tree cache at session open, so an early `/context`

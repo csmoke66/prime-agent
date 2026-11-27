@@ -3,17 +3,12 @@
 use pa_agent::types::ThinkingLevel;
 use pa_types::ai::Model;
 
-use super::prime_inference::{is_private_prime_inference_model, private_prime_inference_models};
-
-pub const PRIME_INFERENCE_DEFAULT_MODEL_ID: &str = "z-ai/glm-5.3";
-
 pub fn default_model_per_provider(provider: &str) -> Option<&'static str> {
     Some(match provider {
         "amazon-bedrock" => "us.anthropic.claude-opus-4-6-v1",
         "anthropic" => "claude-opus-4-7",
         "openai" | "azure-openai-responses" | "github-copilot" => "gpt-5.4",
         "openai-codex" => "gpt-5.5",
-        "prime-inference" => PRIME_INFERENCE_DEFAULT_MODEL_ID,
         "deepseek" => "deepseek-v4-pro",
         "google" | "google-vertex" => "gemini-3.1-pro-preview",
         "openrouter" => "moonshotai/kimi-k2.6",
@@ -138,59 +133,21 @@ pub fn build_fallback_model(
     if provider_models.is_empty() {
         return None;
     }
-    // Private ids must inherit a private-route template: a listed private
-    // route, else the bundled one (the catalog lists private routes only
-    // for an entitled account).
-    let mut model = if is_private_prime_inference_model(&Model {
-        id: model_id.to_string(),
-        provider: provider.to_string(),
-        ..wire_skeleton()
-    }) {
-        provider_models
-            .iter()
-            .copied()
-            .find(|model| {
-                is_private_prime_inference_model(&Model {
-                    id: model.id.clone(),
-                    provider: model.provider.clone(),
-                    ..wire_skeleton()
-                })
-            })
-            .cloned()
-            .or_else(|| private_prime_inference_models().into_iter().next())?
-    } else {
-        let default_id = default_model_per_provider(provider)?;
-        provider_models
-            .iter()
-            .copied()
-            .find(|model| model.id == default_id)
-            .unwrap_or(provider_models[0])
-            .clone()
-    };
+    let default_id = default_model_per_provider(provider)?;
+    let mut model = provider_models
+        .iter()
+        .copied()
+        .find(|model| model.id == default_id)
+        .unwrap_or(provider_models[0])
+        .clone();
     model.id = model_id.to_string();
     model.name = model_id.to_string();
     Some(model)
 }
 
-fn wire_skeleton() -> Model {
-    serde_json::from_value(serde_json::json!({
-        "id": "", "name": "", "api": "openai-completions", "provider": "",
-        "baseUrl": "", "reasoning": false, "input": [], "cost": {
-            "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0
-        },
-        "contextWindow": 0, "maxTokens": 0
-    }))
-    .expect("skeleton model serializes")
-}
-
-/// Preferred default: prime-inference glm-5.3 first, then per-provider defaults.
+/// Preferred default: the first model that is its provider's default.
 #[must_use]
 pub fn find_preferred_default_model(available_models: &[Model]) -> Option<&Model> {
-    if let Some(model) = available_models.iter().find(|model| {
-        model.provider == "prime-inference" && model.id == PRIME_INFERENCE_DEFAULT_MODEL_ID
-    }) {
-        return Some(model);
-    }
     available_models
         .iter()
         .find(|model| default_model_per_provider(&model.provider).is_some_and(|id| model.id == id))
@@ -605,7 +562,7 @@ pub struct InitialModelOptions<'a> {
 ///    first scoped model (skipped for a continued session)
 /// 3. The saved settings default, rebuilt from the provider template when the
 ///    saved id is missing from the catalog
-/// 4. The featured default (prime-inference glm-5.3, then per-provider ids)
+/// 4. The featured default (the first model that is its provider's default)
 /// 5. The first available model.
 #[must_use]
 pub fn find_initial_model(options: &InitialModelOptions<'_>) -> Option<Model> {
@@ -637,26 +594,14 @@ pub fn find_initial_model(options: &InitialModelOptions<'_>) -> Option<Model> {
         {
             return Some(found.clone());
         }
-        // A saved id missing from this build's snapshot survives on the
-        // provider template — except private Prime Inference ids, whose
-        // template route is authorized per team.
-        if !is_private_prime_inference_reference(provider, id) {
-            if let Some(rebuilt) = build_fallback_model(provider, id, options.available_models) {
-                return Some(rebuilt);
-            }
+        // A saved id missing from this build's catalog survives on the provider template.
+        if let Some(rebuilt) = build_fallback_model(provider, id, options.available_models) {
+            return Some(rebuilt);
         }
     }
     find_preferred_default_model(options.available_models)
         .cloned()
         .or_else(|| options.available_models.first().cloned())
-}
-
-/// The private-model predicate without a full `Model` value (TS
-/// `isPrivatePrimeInferenceModel({ provider, id })`).
-#[must_use]
-pub(super) fn is_private_prime_inference_reference(provider: &str, model_id: &str) -> bool {
-    provider == "prime-inference"
-        && super::prime_inference::is_private_prime_inference_model_id(model_id)
 }
 
 #[cfg(test)]
@@ -678,120 +623,27 @@ mod tests {
         vec![
             model("anthropic", "claude-sonnet-4-5", "Sonnet"),
             model("anthropic", "claude-sonnet-4-5-20250929", "Sonnet dated"),
-            model("prime-inference", "z-ai/glm-5.3", "GLM"),
+            model("zai", "glm-5.3", "GLM"),
             model("openrouter", "openai/gpt-4o", "GPT-4o"),
         ]
     }
 
     #[test]
-    fn a_display_name_pattern_selects_a_cataloged_private_default() {
-        let all = private_prime_inference_models();
-        assert!(scope_patterns_select_reference(
-            &["GLM 5.2 Fast".to_string()],
-            "prime-inference",
-            "internal/glm-5.2-fast",
-            &all,
-            &all,
-        ));
-    }
-
-    #[test]
-    fn a_fuzzy_scope_uses_the_catalog_winner_not_a_singleton_default() {
-        let mut all = private_prime_inference_models();
-        all.push(model("prime-inference", "z-ai/glm-5.3", "GLM 5.3"));
-        let patterns = vec!["glm".to_string()];
-        let scoped = resolve_model_scope_from_models(&patterns, &all);
-        assert_eq!(
-            scoped
-                .iter()
-                .map(|entry| (entry.model.provider.as_str(), entry.model.id.as_str()))
-                .collect::<Vec<_>>(),
-            [("prime-inference", "z-ai/glm-5.3")]
-        );
-        assert!(!scope_patterns_select_reference(
-            &patterns,
-            "prime-inference",
-            "internal/glm-5.2-fast",
-            &all,
-            &all,
-        ));
-        assert!(scope_patterns_select_reference(
-            &patterns,
-            "prime-inference",
-            "z-ai/glm-5.3",
-            &all,
-            &all,
-        ));
-    }
-
-    #[test]
-    fn an_unlisted_private_reference_competes_with_the_full_catalog() {
-        let mut all = private_prime_inference_models();
-        all.push(model("prime-inference", "z-ai/glm-5.3", "GLM 5.3"));
-        for (pattern, selected) in [
-            ("glm", false),
-            ("prime-inference/internal/glm-5.9-turbo", true),
-            ("prime-inference/internal/*:high", true),
-        ] {
-            assert_eq!(
-                scope_patterns_select_reference(
-                    &[pattern.to_string()],
-                    "prime-inference",
-                    "internal/glm-5.9-turbo",
-                    &all,
-                    &all,
-                ),
-                selected,
-                "pattern {pattern}"
-            );
-        }
-    }
-
-    #[test]
-    fn unavailable_competitors_do_not_hide_a_missing_scoped_default() {
-        let available = vec![model("prime-inference", "a-glm-5.2", "Public GLM 5.2")];
-        let mut all = private_prime_inference_models();
-        all.extend(available.iter().cloned());
-        all.push(model("custom", "zz-glm-5.2", "Unavailable GLM 5.2"));
-        let patterns = vec!["glm-5.2".to_string()];
-        assert_eq!(
-            resolve_model_scope_from_models(&patterns, &available)
-                .iter()
-                .map(|entry| entry.model.id.as_str())
-                .collect::<Vec<_>>(),
-            ["a-glm-5.2"]
-        );
-        assert!(scope_patterns_select_reference(
-            &patterns,
-            "prime-inference",
-            "internal/glm-5.2-fast",
-            &available,
-            &all,
-        ));
-        assert!(!scope_patterns_select_reference(
-            &patterns,
-            "prime-inference",
-            "internal/glm-5.2-fast",
-            &all,
-            &all,
-        ));
-    }
-
-    #[test]
     fn failover_candidates_order_by_catalog_after_current() {
         let mut catalog = catalog();
-        catalog.push(model("zai", "z-ai/glm-5.3", "GLM via zai"));
         catalog.push(model("openrouter", "z-ai/glm-5.3", "GLM via openrouter"));
-        // The prime-inference entry (catalog position 2) fails over to the
-        // providers after it (openrouter first at position 3, zai at 4).
-        let current = model("prime-inference", "z-ai/glm-5.3", "GLM");
+        catalog.push(model("vercel-ai-gateway", "z-ai/glm-5.3", "GLM via vercel"));
+        catalog.push(model("zai", "z-ai/glm-5.3", "GLM via zai"));
+        // Providers rank by their first catalog position (zai 2, openrouter 3, vercel 5):
+        // zai fails over to the providers after it, openrouter wraps around to zai last.
+        let current = model("zai", "z-ai/glm-5.3", "GLM");
         let candidates = failover_candidates(&current, &catalog);
         assert_eq!(
             candidates
                 .iter()
                 .map(|model| model.provider.as_str())
                 .collect::<Vec<_>>(),
-            vec!["openrouter", "zai"]
+            vec!["openrouter", "vercel-ai-gateway"]
         );
         let current = model("openrouter", "z-ai/glm-5.3", "GLM");
         let candidates = failover_candidates(&current, &catalog);
@@ -800,7 +652,7 @@ mod tests {
                 .iter()
                 .map(|model| model.provider.as_str())
                 .collect::<Vec<_>>(),
-            vec!["zai", "prime-inference"]
+            vec!["vercel-ai-gateway", "zai"]
         );
         let current = model("anthropic", "claude-sonnet-4-5", "Sonnet");
         assert!(failover_candidates(&current, &catalog).is_empty());
@@ -828,7 +680,7 @@ mod tests {
     #[test]
     fn scoped_patterns_and_thinking_levels() {
         let catalog = catalog();
-        let patterns = vec!["claude-sonnet".to_string(), "z-ai/glm-5.3:high".to_string()];
+        let patterns = vec!["claude-sonnet".to_string(), "zai/glm-5.3:high".to_string()];
         let scoped = resolve_model_scope_from_models(&patterns, &catalog);
         assert_eq!(scoped.len(), 2);
         assert_eq!(scoped[0].model.id, "claude-sonnet-4-5");
@@ -873,50 +725,6 @@ mod tests {
             resolved.model.as_ref().map(|m| m.provider.as_str()),
             Some("openrouter")
         );
-    }
-
-    #[test]
-    fn fallback_model_uses_the_private_template_for_private_ids() {
-        // No private route listed (an unentitled account): the bundled
-        // private template still serves.
-        let catalog = catalog();
-        let fallback = build_fallback_model("prime-inference", "internal/glm-5.9-turbo", &catalog);
-        let fallback = fallback.expect("private template exists");
-        assert_eq!(fallback.id, "internal/glm-5.9-turbo");
-        // Inherited the private template's compat (max_tokens field).
-        assert!(fallback.compat.is_some());
-        // Inherited the private template's ZERO pricing: an unknown
-        // internal id must never bill the public provider default's rate.
-        assert_eq!(fallback.cost.input.0, 0.0);
-        assert_eq!(fallback.cost.output.0, 0.0);
-    }
-
-    /// TS regression (#2459): Prime Inference rejects `enable_thinking`
-    /// with a 400, so a fallback model — public or private — must never
-    /// inherit the zai thinking format from its template.
-    #[test]
-    fn fallback_models_never_inherit_the_zai_thinking_format() {
-        use pa_ai::types::ModelExt;
-        use pa_types::ai::{CompatKind, ThinkingFormat};
-        let mut catalog: Vec<Model> =
-            vec![
-                pa_ai::models_generated::get_model("prime-inference", "z-ai/glm-5.3")
-                    .expect("the compiled prime-inference default")
-                    .clone(),
-            ];
-        catalog.extend(private_prime_inference_models());
-        for model_id in ["z-ai/glm-9", "internal/glm-5.9-turbo"] {
-            let fallback = build_fallback_model("prime-inference", model_id, &catalog)
-                .unwrap_or_else(|| panic!("{model_id} has a fallback template"));
-            let Some(CompatKind::OpenAiCompletions(compat)) = fallback.compat_kind() else {
-                panic!("{model_id}: fallback inherits a compat object");
-            };
-            assert_ne!(
-                compat.thinking_format,
-                Some(ThinkingFormat::Zai),
-                "{model_id}: fallback must not inherit the zai thinking format"
-            );
-        }
     }
 
     #[test]
@@ -987,8 +795,8 @@ mod tests {
             available_models: &catalog,
         };
         let model = find_initial_model(&options).expect("featured default resolves");
-        assert_eq!(model.provider, "prime-inference");
-        assert_eq!(model.id, "z-ai/glm-5.3");
+        assert_eq!(model.provider, "zai");
+        assert_eq!(model.id, "glm-5.3");
         let available: Vec<Model> = catalog
             .iter()
             .filter(|model| model.provider == "anthropic")
@@ -1020,20 +828,20 @@ mod tests {
             cli_model: None,
             scoped_models: &scoped,
             is_continuing: false,
-            default_provider: Some("prime-inference"),
-            default_model_id: Some("z-ai/glm-5.3"),
+            default_provider: Some("zai"),
+            default_model_id: Some("glm-5.3"),
             all_models: &catalog,
             available_models: &catalog,
         };
         let model = find_initial_model(&options).expect("scoped model resolves");
-        assert_eq!(model.provider, "prime-inference");
-        assert_eq!(model.id, "z-ai/glm-5.3");
+        assert_eq!(model.provider, "zai");
+        assert_eq!(model.id, "glm-5.3");
         let continued = InitialModelOptions {
             is_continuing: true,
             ..options
         };
         let model = find_initial_model(&continued).expect("saved default resolves");
-        assert_eq!(model.provider, "prime-inference");
-        assert_eq!(model.id, "z-ai/glm-5.3");
+        assert_eq!(model.provider, "zai");
+        assert_eq!(model.id, "glm-5.3");
     }
 }

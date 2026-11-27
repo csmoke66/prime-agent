@@ -10,10 +10,9 @@
     clippy::cast_precision_loss
 )]
 
-//! Real-terminal e2e for the inline auth panel (the `/login` Prime
-//! Inference team picker): the login flow must NEVER take the terminal
+//! Real-terminal e2e for the inline auth panel (the `/mcp` view login): the login flow must NEVER take the terminal
 //! over — no alternate-screen leave, no screen clear, no mouse-tracking
-//! release — while the panel and the team picker render inline.
+//! release — while the panel renders inline.
 #![cfg(unix)]
 
 use std::io::{BufRead, Read, Write};
@@ -26,35 +25,19 @@ use nix::fcntl::{fcntl, FcntlArg::F_SETFL, OFlag};
 use nix::pty::{openpty, Winsize};
 use serde_json::{json, Value};
 
-use pa_tui::auth_panel::{AuthPanelHandle, PrimeTeamOption, PrimeTeamPick};
+use pa_tui::auth_panel::AuthPanelHandle;
 use pa_tui::interactive::{
     run_interactive, InteractiveOptions, ModelSelection, SessionSelection, UiMode,
 };
 use pa_tui::provider_auth::{
-    AuthFlow, AuthStatusIndicator, AuthStatusStyle, AuthType, ProviderAuthCommands,
-    ProviderAuthCommandsHandle, ProviderAuthOutcome, ProviderRow, ProviderRowsFuture,
-    ProviderWarningFuture, PRIME_INFERENCE_PROVIDER_ID,
+    AuthFlow, AuthType, ProviderAuthCommands, ProviderAuthCommandsHandle, ProviderAuthOutcome,
+    ProviderRow, ProviderRowsFuture, ProviderWarningFuture,
 };
 use std::pin::Pin;
 use std::sync::Arc;
 
 /// Set only when this binary is re-executed as the product-under-test.
 const CHILD_SOCKET_ENV: &str = "PA_LOGIN_PANEL_CHILD_SOCKET";
-
-/// The child half: the real interactive loop against the parent's mock
-/// supervisor, with the scripted provider-auth hook.
-#[test]
-fn login_panel_child_mode() {
-    let Ok(socket) = std::env::var(CHILD_SOCKET_ENV) else {
-        return;
-    };
-    let options = child_options(PathBuf::from(socket));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    let _ = runtime.block_on(run_interactive(options, UiMode::Terminal));
-}
 
 /// The `/mcp`-view child half: the same loop with a scripted client-auth
 /// hook and a roster carrying the `linear` service.
@@ -86,90 +69,6 @@ fn model_sign_in_child_mode() {
     let _ = runtime.block_on(run_interactive(options, UiMode::Terminal));
 }
 
-/// The scripted provider-auth hook: the Prime Inference row and the panel-driven login.
-struct ScriptedProviderAuth;
-
-impl ProviderAuthCommands for ScriptedProviderAuth {
-    fn login_options(&self) -> ProviderRowsFuture {
-        let row = ProviderRow {
-            id: PRIME_INFERENCE_PROVIDER_ID.to_string(),
-            name: "Prime Inference".to_string(),
-            auth_type: AuthType::ApiKey,
-            status: Some(AuthStatusIndicator {
-                style: AuthStatusStyle::Success,
-                label: "configured".to_string(),
-            }),
-            flow: AuthFlow::TerminalFlow,
-            configured: true,
-            available: true,
-        };
-        Box::pin(async move { vec![row] })
-    }
-
-    fn logout_options(&self) -> ProviderRowsFuture {
-        Box::pin(async move { Vec::new() })
-    }
-
-    fn login(
-        &self,
-        provider: &ProviderRow,
-        _api_key: Option<&str>,
-    ) -> Pin<Box<dyn std::future::Future<Output = ProviderAuthOutcome> + Send>> {
-        let name = provider.name.clone();
-        Box::pin(async move {
-            ProviderAuthOutcome::Error(format!("{name} login is not available in this build yet."))
-        })
-    }
-
-    fn login_on_panel(
-        &self,
-        provider: &ProviderRow,
-        panel: AuthPanelHandle,
-    ) -> Pin<Box<dyn std::future::Future<Output = ProviderAuthOutcome> + Send>> {
-        let name = provider.name.clone();
-        Box::pin(async move {
-            panel.progress("Loading Prime teams...");
-            let teams = vec![
-                PrimeTeamOption {
-                    team_id: "team-acme".to_string(),
-                    name: "Acme Corp".to_string(),
-                    slug: Some("acme".to_string()),
-                    role: Some("Owner".to_string()),
-                    created_at: None,
-                },
-                PrimeTeamOption {
-                    team_id: "team-beta".to_string(),
-                    name: "Beta Team".to_string(),
-                    slug: None,
-                    role: None,
-                    created_at: None,
-                },
-            ];
-            match panel.select_team(teams, None).await {
-                PrimeTeamPick::Team(team) => ProviderAuthOutcome::Status(format!(
-                    "Saved API key for {name}. Using team \"{}\".",
-                    team.name
-                )),
-                _ => ProviderAuthOutcome::Status(format!(
-                    "Saved API key for {name}. Using personal account."
-                )),
-            }
-        })
-    }
-
-    fn logout(
-        &self,
-        _provider: &ProviderRow,
-    ) -> Pin<Box<dyn std::future::Future<Output = ProviderAuthOutcome> + Send>> {
-        Box::pin(async move { ProviderAuthOutcome::Cancelled })
-    }
-
-    fn anthropic_subscription_warning(&self) -> ProviderWarningFuture {
-        // The panel PTY e2e drives no Anthropic subscription auth.
-        Box::pin(async move { None })
-    }
-}
-
 fn child_options(socket: PathBuf) -> InteractiveOptions {
     InteractiveOptions {
         models: None,
@@ -195,8 +94,7 @@ fn child_options(socket: PathBuf) -> InteractiveOptions {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
-        provider_auth: Some(ProviderAuthCommandsHandle(Arc::new(ScriptedProviderAuth))),
+        provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),
         session_rlm_depth: None,
@@ -359,62 +257,6 @@ const ALT_SCREEN_LEAVE: &str = "\x1b[?1049l";
 const SCREEN_CLEAR: &str = "\x1b[2J";
 const MOUSE_DISABLE: &str = "\x1b[?1006l\x1b[?1002l";
 
-/// The terminal-sequence e2e: `/login` drives the inline auth panel, and
-/// the byte stream shows no terminal takeover (the old flow's alt-screen
-/// leave + clear + raw stdin prompt never happen).
-#[test]
-fn prime_login_renders_the_team_picker_without_a_terminal_takeover() {
-    let mut harness = LoginPanelHarness::start();
-
-    harness.wait_from_start("\x1b[?1049h", "the startup alternate-screen enter");
-
-    harness.write(b"/login\r");
-    harness.wait_from_start("Search providers", "the provider selector panel");
-
-    // Enter selects the Prime Inference row; the window to the settled
-    // status is the takeover-free proof.
-    let mark = harness.mark();
-    harness.write(b"\r");
-    // The mount needle is the picker's styled subtitle: ratatui's diff
-    // skips the title's default-styled spaces, so the subtitle paints in one contiguous run.
-    harness.wait_from(
-        mark,
-        "Choose which account pays for Prime Inference usage.",
-        "the inline team picker",
-    );
-
-    harness.wait_from(mark, "Acme Corp", "the team row");
-    harness.wait_from(mark, "personal account", "the personal row");
-
-    harness.write(b"\r");
-    harness.wait_from(
-        mark,
-        "Saved API key for Prime Inference. Using personal account.",
-        "the settled login status",
-    );
-
-    let window = harness.window_since(mark);
-    assert!(
-        find_subsequence(window, ALT_SCREEN_LEAVE.as_bytes()).is_none(),
-        "the login never leaves the alternate screen"
-    );
-    assert!(
-        find_subsequence(window, SCREEN_CLEAR.as_bytes()).is_none(),
-        "the login never clears the screen"
-    );
-    assert!(
-        find_subsequence(window, MOUSE_DISABLE.as_bytes()).is_none(),
-        "the login never releases the mouse tracking (the old suspend bracket)"
-    );
-    // The numbered stdin prompt is gone too: the flow renders in the panel.
-    assert!(
-        find_subsequence(window, "Enter a team number".as_bytes()).is_none(),
-        "the numbered stdin prompt never prints"
-    );
-
-    harness.finish();
-}
-
 /// The `/mcp`-view login e2e: Enter on the connection row runs the login
 /// flow, and the byte stream shows the panel rendering INLINE.
 #[test]
@@ -505,11 +347,6 @@ struct LoginPanelHarness {
 }
 
 impl LoginPanelHarness {
-    /// The `/login` child (the provider-auth hook).
-    fn start() -> LoginPanelHarness {
-        LoginPanelHarness::start_for("login_panel_child_mode")
-    }
-
     /// The `/mcp`-view child (the client-auth hook + the roster).
     fn start_mcp() -> LoginPanelHarness {
         LoginPanelHarness::start_for("login_panel_mcp_child_mode")

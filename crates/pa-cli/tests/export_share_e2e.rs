@@ -302,7 +302,6 @@ async fn tui_export_and_share_surface() {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),

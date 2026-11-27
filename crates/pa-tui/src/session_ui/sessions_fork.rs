@@ -347,7 +347,6 @@ impl SessionUi {
             version: String::new(),
             onboarding: None,
             client_auth: self.client_auth.clone(),
-            traces: self.traces.clone(),
             provider_auth: self.provider_auth.clone(),
             telemetry: self.telemetry.clone(),
             keybindings: self.keybindings.clone(),

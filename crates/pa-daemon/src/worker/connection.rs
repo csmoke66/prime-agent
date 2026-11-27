@@ -51,17 +51,6 @@ impl OutboundFrame {
             seq: 0,
         }
     }
-
-    /// `model_catalog_changed`: a background catalog refresh changed what this worker
-    /// would answer for `get_model_catalog` (Rust-only extension: the picker-open
-    /// refresh lands the fresh catalog through this broadcast).
-    pub(crate) fn model_catalog_changed() -> Self {
-        OutboundFrame {
-            payload: br#"{"type":"model_catalog_changed"}"#.to_vec(),
-            outbound_type: "model_catalog_changed",
-            seq: 0,
-        }
-    }
 }
 
 /// One sequence-stamped broadcast stream shared by every frame-emitting

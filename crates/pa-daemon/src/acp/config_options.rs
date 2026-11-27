@@ -216,7 +216,6 @@ mod tests {
             max_tokens: 4_096,
             max_tokens_explicit: false,
             featured: None,
-            serving: None,
             headers: None,
             compat: None,
         }

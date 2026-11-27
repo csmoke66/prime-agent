@@ -268,13 +268,6 @@ pub enum DaemonOutbound {
         #[serde(flatten)]
         rest: JsonMap,
     },
-    /// The Rust-only no-stall picker-open extension: a background catalog refresh changed the
-    /// served
-    /// snapshot, so every client re-fetches (same shape as `model_catalog_changed`).
-    ModelCatalogChanged {
-        #[serde(flatten)]
-        rest: JsonMap,
-    },
     RosterUpdate {
         changed: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]

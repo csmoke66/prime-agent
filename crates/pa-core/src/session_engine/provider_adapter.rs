@@ -1328,7 +1328,6 @@ mod tests {
                 crate::auth::ANTHROPIC_PROVIDER_ID,
                 crate::auth::AuthCredential::ApiKey {
                     key: "new-login-key".to_string(),
-                    prime_team: None,
                 },
             );
         })

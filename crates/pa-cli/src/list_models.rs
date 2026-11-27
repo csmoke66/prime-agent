@@ -3,17 +3,9 @@
 
 use crate::mode::RunOptions;
 
-/// Build the registry against the agent dir, refresh entitlements, and print
+/// Build the registry against the agent dir, refresh the catalog, and print
 /// the catalog table; exits 0 after listing.
 pub fn run(options: &RunOptions) -> Result<i32, String> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    rt.block_on(list(options))
-}
-
-async fn list(options: &RunOptions) -> Result<i32, String> {
     let config = &options.config;
     let auth = pa_core::auth::AuthStorage::create(&config.agent_dir);
     let mut registry =
@@ -25,7 +17,7 @@ async fn list(options: &RunOptions) -> Result<i32, String> {
     if let pa_daemon::model_allowlist::DaemonAllowlist::Unreadable(reason) = &policy {
         return Err(format!("Could not read allowedModels: {reason}"));
     }
-    let mut models = registry.refresh_available_models().await;
+    let mut models = registry.refresh_available_models();
     if models.is_empty() {
         println!("{}", no_models_available_message());
         return Ok(0);

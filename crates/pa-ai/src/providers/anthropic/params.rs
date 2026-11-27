@@ -173,7 +173,6 @@ mod tests {
             featured: None,
             headers: None,
             compat: None,
-            serving: None,
         };
         let context = Context {
             system_prompt: None,

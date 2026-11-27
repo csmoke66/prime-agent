@@ -23,16 +23,12 @@ pub fn compiled_models() -> &'static [Model] {
     &COMPILED
 }
 
-/// Distinct compiled `(provider, api, baseUrl)` tuples (Prime Inference
-/// excluded — its transport is served by the live-fetch domain).
+/// Distinct compiled `(provider, api, baseUrl)` tuples.
 #[must_use]
 pub fn compiled_transport_tuples() -> Vec<(&'static str, &'static str, &'static str)> {
     let mut tuples: Vec<(&'static str, &'static str, &'static str)> = Vec::new();
     let mut seen: HashSet<(&str, &str, &str)> = HashSet::new();
     for model in compiled_models() {
-        if model.provider == "prime-inference" {
-            continue;
-        }
         if seen.insert((
             model.provider.as_str(),
             model.api.as_str(),
@@ -46,19 +42,4 @@ pub fn compiled_transport_tuples() -> Vec<(&'static str, &'static str, &'static 
         }
     }
     tuples
-}
-
-/// The compiled offline Prime Inference entries (the onboarding fallback
-/// before the first credentialed fetch). Private ids (internal/, dev/, ids
-/// containing `:`) never ship compiled.
-#[must_use]
-pub fn prime_inference_offline_entries() -> Vec<Model> {
-    compiled_models()
-        .iter()
-        .filter(|model| {
-            model.provider == "prime-inference"
-                && !crate::prime_inference::is_private_prime_inference_model_id(&model.id)
-        })
-        .cloned()
-        .collect()
 }

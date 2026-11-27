@@ -12,7 +12,6 @@ pub fn get_api_key_env_vars(provider: &str) -> Option<Vec<&'static str>> {
             let env_var = match other {
                 "openai" => "OPENAI_API_KEY",
                 "azure-openai-responses" => "AZURE_OPENAI_API_KEY",
-                "prime-inference" => "PRIME_API_KEY",
                 "deepseek" => "DEEPSEEK_API_KEY",
                 "google" => "GEMINI_API_KEY",
                 "google-vertex" => "GOOGLE_CLOUD_API_KEY",
@@ -121,10 +120,6 @@ mod tests {
 
     #[test]
     fn maps_provider_env_vars() {
-        assert_eq!(
-            get_api_key_env_vars("prime-inference").unwrap(),
-            vec!["PRIME_API_KEY"]
-        );
         assert_eq!(
             get_api_key_env_vars("anthropic").unwrap(),
             vec!["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]

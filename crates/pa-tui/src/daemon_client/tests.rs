@@ -253,17 +253,6 @@ fn failed_response_is_a_typed_rejection() {
     );
 }
 
-#[test]
-fn model_catalog_changed_parses_to_the_refresh_event() {
-    // The worker's broadcast frame parses into the refresh event:
-    // unknown payloads stay None, this one never drops silently.
-    let value = json!({"type": "model_catalog_changed"});
-    assert!(matches!(
-        client_event_from_value(&value),
-        Some(DaemonClientEvent::ModelCatalogChanged)
-    ));
-}
-
 /// The layout handoff keys the stash on the LATEST sequence the worker
 /// reported, so `meta.sequence` must ride the parsed session event.
 #[test]

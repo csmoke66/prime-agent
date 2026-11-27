@@ -13,7 +13,7 @@ fn glm_fast_model() -> Value {
         "id": "internal/glm-5.3-fast",
         "name": "GLM 5.3 Fast",
         "api": "openai-completions",
-        "provider": "prime-inference",
+        "provider": "test-provider",
         "reasoning": true,
         "input": ["text"],
         "cost": { "input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0 },

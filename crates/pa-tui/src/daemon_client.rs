@@ -97,9 +97,6 @@ pub enum DaemonClientEvent {
     },
     /// `heartbeats_changed`: the daemon-global broadcast when the heartbeat catalog changes.
     HeartbeatsChanged,
-    /// `model_catalog_changed`: a background daemon-side catalog refresh
-    /// changed the served snapshot. Rust-only extension (no TS counterpart).
-    ModelCatalogChanged,
     /// `session_binding`: the supervisor rebound a session to a new active id; the view
     /// re-attaches.
     SessionBinding {
@@ -210,7 +207,6 @@ pub(crate) fn client_event_from_value(value: &Value) -> Option<DaemonClientEvent
             resync: value.get("resync") == Some(&Value::Bool(true)),
         }),
         "heartbeats_changed" => Some(DaemonClientEvent::HeartbeatsChanged),
-        "model_catalog_changed" => Some(DaemonClientEvent::ModelCatalogChanged),
         "session_binding" => Some(DaemonClientEvent::SessionBinding {
             previous_active_session_id: value
                 .get("previousActiveSessionId")

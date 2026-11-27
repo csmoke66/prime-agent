@@ -683,7 +683,6 @@ fn api_key_credential_views_read_the_shared_store() {
             "serper",
             AuthCredential::ApiKey {
                 key: "serper-key".to_string(),
-                prime_team: None,
             },
         );
     }
@@ -757,7 +756,6 @@ fn api_key_credential_views_see_a_cross_instance_write_after_the_reload() {
             "serper",
             AuthCredential::ApiKey {
                 key: "serper-key".to_string(),
-                prime_team: None,
             },
         );
     }

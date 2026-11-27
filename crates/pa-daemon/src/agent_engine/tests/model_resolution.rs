@@ -138,152 +138,26 @@ fn settings_default_drives_unflagged_resolution() {
     assert_eq!(model.id, "mock-1");
 }
 
-/// A scripted loopback HTTP server (the pa-core tests/common pattern,
-/// in-crate): answers from a queue of raw responses and records every
-/// request head. Nothing leaves loopback.
-struct MockCatalogServer {
-    port: u16,
-    requests: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-}
-
-impl MockCatalogServer {
-    async fn start(responses: Vec<Vec<u8>>) -> Self {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind mock catalog server");
-        let port = listener.local_addr().unwrap().port();
-        let requests: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let queue = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
-            responses,
-        )));
-        let request_log = std::sync::Arc::clone(&requests);
-        tokio::spawn(async move {
-            loop {
-                let Ok((mut socket, _)) = listener.accept().await else {
-                    return;
-                };
-                let requests = std::sync::Arc::clone(&request_log);
-                let queue = std::sync::Arc::clone(&queue);
-                tokio::spawn(async move {
-                    let mut buffer = [0u8; 8_192];
-                    let mut read = 0usize;
-                    loop {
-                        let Ok(n) = socket.read(&mut buffer[read..]).await else {
-                            return;
-                        };
-                        if n == 0 {
-                            return;
-                        }
-                        read += n;
-                        if buffer[..read].windows(4).any(|w| w == b"\r\n\r\n") {
-                            break;
-                        }
-                        if read == buffer.len() {
-                            break;
-                        }
-                    }
-                    let head = String::from_utf8_lossy(&buffer[..read]).to_string();
-                    requests.lock().unwrap().push(head);
-                    let response = queue.lock().unwrap().pop_front().unwrap_or_else(|| {
-                        b"HTTP/1.1 500 Drained\r\ncontent-length: 0\r\n\r\n".to_vec()
-                    });
-                    let _ = socket.write_all(&response).await;
-                    let _ = socket.flush().await;
-                });
-            }
-        });
-        Self { port, requests }
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("http://127.0.0.1:{}{}", self.port, path)
-    }
-
-    fn request_count(&self) -> usize {
-        self.requests.lock().unwrap().len()
-    }
-}
-
-fn catalog_ok_json(body: &str) -> Vec<u8> {
-    format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
-}
-
-/// One auth.json with a Prime Inference key + team: the file auth the
-/// engine's registry reads (the private-model lane's scope).
-fn write_prime_auth(agent_dir: &std::path::Path) {
+/// One auth.json with a stored Anthropic key: the file auth the engine's registry reads.
+fn write_anthropic_auth(agent_dir: &std::path::Path) {
     std::fs::create_dir_all(agent_dir).unwrap();
     std::fs::write(
         agent_dir.join("auth.json"),
-        serde_json::json!({
-            "prime-inference": {
-                "type": "api_key",
-                "key": "test-key",
-                "primeTeam": { "teamId": "team-1", "name": "Test Team" }
-            }
-        })
-        .to_string(),
+        serde_json::json!({ "anthropic": { "type": "api_key", "key": "test-key" } }).to_string(),
     )
     .unwrap();
 }
 
-/// The Prime Inference `/models` payload: every compiled offline
-/// entry (the coverage gate keeps thin fetches out) plus the private
-/// `internal/glm-5.3-fast` the compiled fallback lacks.
-fn pi_payload() -> String {
-    let mut data: Vec<Value> = pa_models::transports::prime_inference_offline_entries()
-        .iter()
-        .map(|model| {
-            serde_json::json!({
-                "id": model.id,
-                "display_name": model.name,
-                "pricing": {
-                    "input_usd_per_mtok": 1.0, "output_usd_per_mtok": 2.0
-                },
-                "specs": {
-                    "context_window": model.context_window,
-                    "max_output_tokens": model.max_tokens,
-                    "supports_reasoning": model.reasoning,
-                    "modalities": { "input": ["text"], "output": ["text"] },
-                },
-            })
-        })
-        .collect();
-    data.push(serde_json::json!({
-        "id": "internal/glm-5.3-fast",
-        "display_name": "GLM 5.3 Fast (internal)",
-        "pricing": { "input_usd_per_mtok": 0.42, "output_usd_per_mtok": 2.1 },
-        "specs": {
-            "context_window": 400_000, "max_output_tokens": 131_072,
-            "supports_reasoning": true,
-            "modalities": { "input": ["text"], "output": ["text"] },
-        },
-    }));
-    serde_json::json!({ "data": data }).to_string()
-}
+/// The provider default the startup chain lands on when only Anthropic is configured.
+const STARTUP_DEFAULT: &str = "claude-opus-4-7";
 
-/// Install a loopback catalog for `agent_dir` (both fetch layers point
-/// at `server`; no bundled snapshot, so the compiled fallback is the
-/// base and only the fetches add the private team model).
-fn install_loopback_catalog(agent_dir: &std::path::Path, server: &MockCatalogServer) {
-    let catalog = pa_models::ModelCatalog::with_urls(
-        Some(agent_dir.join("models")),
-        None,
-        &server.url("/catalog"),
-        &server.url("/api/v1"),
-    );
-    pa_core::models::install_catalog(&agent_dir.join("models.json"), std::sync::Arc::new(catalog));
-}
+/// The saved model the restore tests pin (not the startup default).
+const PINNED_MODEL: &str = "claude-sonnet-5-5";
 
-/// A session file whose last `model_change` row pins the private team
-/// model — what a revived worker reads at create.
-fn session_file_pinning_private_model(dir: &std::path::Path) -> std::path::PathBuf {
-    session_file_pinning_model(dir, "prime-inference", "internal/glm-5.3-fast")
+/// A session file whose last `model_change` row pins [`PINNED_MODEL`] —
+/// what a revived worker reads at create.
+fn session_file_pinning_saved_model(dir: &std::path::Path) -> std::path::PathBuf {
+    session_file_pinning_model(dir, "anthropic", PINNED_MODEL)
 }
 
 /// A session file whose last `model_change` row pins the given model —
@@ -361,106 +235,27 @@ fn root_startup_chain_ignores_child_allowlist() {
     assert_eq!(model.id, "mock-1");
 }
 
-/// The create-config key override pins the KEY, never the headers: a
-/// request target with an explicit key still ships the registry's
-/// merged headers (Macroscope PR #2755: `switch_model` dropped the
-/// stored provider headers whenever an override was configured). The
-/// stored login's team is not one of them: it rides only with the
-/// stored key.
-#[tokio::test]
-async fn an_api_key_override_keeps_the_merged_headers_but_not_the_stored_team() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    std::fs::write(
-        agent_dir.join("models.json"),
-        serde_json::json!({
-            "providers": { "prime-inference": { "headers": { "X-Probe": "merged" } } }
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let engine = restore_test_engine(dir.path(), Some("prime-inference"), None);
-    engine.configure_model(EngineModelSelection {
-        provider: None,
-        model: None,
-        api_key: Some("explicit-override".to_string()),
-        thinking: None,
-    });
-    let model = engine.resolve_registry_model().expect("resolved model");
-    assert_eq!(model.provider, "prime-inference");
-    let resolved = engine.resolve_request_auth(&model);
-    assert_eq!(resolved.api_key.as_deref(), Some("explicit-override"));
-    let headers = resolved
-        .headers
-        .expect("the override keeps the merged headers");
-    assert_eq!(headers.get("X-Probe").map(String::as_str), Some("merged"));
-    assert_eq!(
-        headers.get("X-Prime-Team-ID"),
-        None,
-        "the stored team rides only with the stored key"
-    );
-}
-
-/// TS #2497: the auth storage is the single team-header owner. The
-/// stored Prime team resolves as `X-Prime-Team-ID` on the request
-/// auth — with the provider-side fallback deleted, these merged
-/// headers keep the team on the wire.
-#[tokio::test]
-async fn request_auth_carries_the_stored_team_header() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    let engine = restore_test_engine(dir.path(), Some("prime-inference"), None);
-    let model = engine.resolve_registry_model().expect("resolved model");
-    assert_eq!(model.provider, "prime-inference");
-    let resolved = engine.resolve_request_auth(&model);
-    assert_eq!(resolved.api_key.as_deref(), Some("test-key"));
-    let headers = resolved.headers.expect("merged request headers");
-    assert_eq!(
-        headers.get("X-Prime-Team-ID").map(String::as_str),
-        Some("team-1"),
-        "the stored team ships as the team header"
-    );
-}
-
-/// The revival race this lane fixes (the 2026-09-23 05:57 fleet kill):
-/// a revived create without model flags lands on the featured default
-/// while the daemon boot's catalog fetch is still in flight; the
-/// create-time restore pins the saved model after the window instead.
+/// A revived create without model flags resolves the startup default until the
+/// create-time restore pins the session's saved model.
 #[tokio::test]
 async fn revived_session_restores_its_pinned_model_not_the_startup_default() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    let pi = pi_payload();
-    let layer_a = serde_json::json!({ "schemaVersion": 1, "models": [] }).to_string();
-    let server = MockCatalogServer::start(vec![
-        catalog_ok_json(&layer_a),
-        catalog_ok_json(&pi),
-        catalog_ok_json(&pi),
-    ])
-    .await;
-    install_loopback_catalog(&agent_dir, &server);
-    let path = session_file_pinning_private_model(dir.path());
+    write_anthropic_auth(&agent_dir);
+    let path = session_file_pinning_saved_model(dir.path());
     let engine = restore_test_engine(dir.path(), None, None);
     engine.set_session_file(path.clone());
 
     let cold = engine.resolve_registry_model().expect("cold resolution");
-    assert_eq!(cold.provider, "prime-inference");
-    assert_eq!(cold.id, "z-ai/glm-5.3");
-    assert_eq!(
-        server.request_count(),
-        0,
-        "the cold resolution never fetches"
-    );
+    assert_eq!(cold.provider, "anthropic");
+    assert_eq!(cold.id, STARTUP_DEFAULT);
 
     engine.restore_session_model(&path, None).await;
     let restored = engine
         .resolve_registry_model()
         .expect("restored resolution");
-    assert_eq!(restored.provider, "prime-inference");
-    assert_eq!(restored.id, "internal/glm-5.3-fast");
+    assert_eq!(restored.provider, "anthropic");
+    assert_eq!(restored.id, PINNED_MODEL);
     assert!(
         engine.model_fallback_message().is_none(),
         "a successful restore leaves no fallback message"
@@ -471,24 +266,20 @@ async fn revived_session_restores_its_pinned_model_not_the_startup_default() {
 async fn revived_session_fallback_is_on_the_record() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    // Every fetch fails instantly (the drained queue answers 500): the
-    // restore misses fast, the startup chain owns the session.
-    let server = MockCatalogServer::start(Vec::new()).await;
-    install_loopback_catalog(&agent_dir, &server);
-    let path = session_file_pinning_private_model(dir.path());
+    write_anthropic_auth(&agent_dir);
+    let path = session_file_pinning_model(dir.path(), "anthropic", "claude-retired");
     let engine = restore_test_engine(dir.path(), None, None);
     engine.set_session_file(path.clone());
 
     engine.restore_session_model(&path, None).await;
     assert_eq!(
         engine.model_fallback_message().as_deref(),
-        Some("Could not restore model prime-inference/internal/glm-5.3-fast. Using prime-inference/z-ai/glm-5.3"),
+        Some("Could not restore model anthropic/claude-retired. Using anthropic/claude-opus-4-7"),
         "the fallback is published, never silent"
     );
     let resolved = engine.resolve_registry_model().expect("startup chain");
-    assert_eq!(resolved.provider, "prime-inference");
-    assert_eq!(resolved.id, "z-ai/glm-5.3");
+    assert_eq!(resolved.provider, "anthropic");
+    assert_eq!(resolved.id, STARTUP_DEFAULT);
 }
 
 #[tokio::test]
@@ -496,7 +287,7 @@ async fn create_flags_beat_the_saved_session_model() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
     write_custom_provider_models_json(&agent_dir, "http://127.0.0.1:9");
-    let path = session_file_pinning_private_model(dir.path());
+    let path = session_file_pinning_saved_model(dir.path());
     let engine = restore_test_engine(dir.path(), Some("battery"), Some("mock-1"));
     engine.set_session_file(path.clone());
 
@@ -511,9 +302,7 @@ async fn create_flags_beat_the_saved_session_model() {
 async fn fresh_session_without_a_saved_model_keeps_the_startup_chain() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    let server = MockCatalogServer::start(Vec::new()).await;
-    install_loopback_catalog(&agent_dir, &server);
+    write_anthropic_auth(&agent_dir);
     let mut session =
         crate::session_store::SessionFile::create(dir.path().to_str().unwrap_or("/tmp"), None, 0);
     let path = dir.path().join(crate::session_store::session_file_name(
@@ -527,31 +316,22 @@ async fn fresh_session_without_a_saved_model_keeps_the_startup_chain() {
     engine.restore_session_model(&path, None).await;
     assert!(engine.model_fallback_message().is_none());
     let resolved = engine.resolve_registry_model().expect("startup chain");
-    assert_eq!(resolved.id, "z-ai/glm-5.3");
+    assert_eq!(resolved.id, STARTUP_DEFAULT);
 }
 
 #[tokio::test]
 async fn a_restore_decision_is_scoped_to_its_session_file() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
-    let pi = pi_payload();
-    let layer_a = serde_json::json!({ "schemaVersion": 1, "models": [] }).to_string();
-    let server = MockCatalogServer::start(vec![
-        catalog_ok_json(&layer_a),
-        catalog_ok_json(&pi),
-        catalog_ok_json(&pi),
-    ])
-    .await;
-    install_loopback_catalog(&agent_dir, &server);
-    let pinned = session_file_pinning_private_model(dir.path());
+    write_anthropic_auth(&agent_dir);
+    let pinned = session_file_pinning_saved_model(dir.path());
     let engine = restore_test_engine(dir.path(), None, None);
     engine.set_session_file(pinned.clone());
     engine.restore_session_model(&pinned, None).await;
     let restored = engine
         .resolve_registry_model()
         .expect("restored resolution");
-    assert_eq!(restored.id, "internal/glm-5.3-fast");
+    assert_eq!(restored.id, PINNED_MODEL);
 
     let mut other =
         crate::session_store::SessionFile::create(dir.path().to_str().unwrap_or("/tmp"), None, 0);
@@ -562,7 +342,7 @@ async fn a_restore_decision_is_scoped_to_its_session_file() {
     other.rewrite().unwrap();
     engine.set_session_file(other_path);
     let moved = engine.resolve_registry_model().expect("moved resolution");
-    assert_eq!(moved.id, "z-ai/glm-5.3");
+    assert_eq!(moved.id, STARTUP_DEFAULT);
     assert!(
         engine.model_fallback_message().is_none(),
         "the old file's decision does not leak into the moved-to session"
@@ -573,24 +353,15 @@ async fn a_restore_decision_is_scoped_to_its_session_file() {
 async fn a_model_switch_never_leaks_into_the_replacement_session() {
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
-    write_prime_auth(&agent_dir);
+    write_anthropic_auth(&agent_dir);
     write_custom_provider_models_json(&agent_dir, "http://127.0.0.1:9");
-    let pi = pi_payload();
-    let layer_a = serde_json::json!({ "schemaVersion": 1, "models": [] }).to_string();
-    let server = MockCatalogServer::start(vec![
-        catalog_ok_json(&layer_a),
-        catalog_ok_json(&pi),
-        catalog_ok_json(&pi),
-    ])
-    .await;
-    install_loopback_catalog(&agent_dir, &server);
 
-    let file_a = session_file_pinning_private_model(dir.path());
+    let file_a = session_file_pinning_saved_model(dir.path());
     let engine = std::sync::Arc::new(restore_test_engine(dir.path(), None, None));
     engine.set_session_file(file_a.clone());
     engine.restore_session_model(&file_a, None).await;
     let restored = engine.resolve_registry_model().expect("restored");
-    assert_eq!(restored.id, "internal/glm-5.3-fast");
+    assert_eq!(restored.id, PINNED_MODEL);
 
     // A mid-session /model switch on session A (the worker runs the
     // engine's synchronous switch on the blocking pool, like the turn
@@ -610,12 +381,12 @@ async fn a_model_switch_never_leaks_into_the_replacement_session() {
     let switched = engine.resolve_registry_model().expect("switched");
     assert_eq!(switched.id, "mock-1");
 
-    let file_b = session_file_pinning_private_model(dir.path());
+    let file_b = session_file_pinning_saved_model(dir.path());
     engine.set_session_file(file_b.clone());
     engine.restore_session_model(&file_b, None).await;
     let moved = engine.resolve_registry_model().expect("moved resolution");
     assert_eq!(
-        moved.id, "internal/glm-5.3-fast",
+        moved.id, PINNED_MODEL,
         "the moved-to session's own file pin wins over the previous session's switch"
     );
     assert!(engine.model_fallback_message().is_none());
@@ -1207,27 +978,19 @@ fn a_model_switch_keeps_the_agent_slot_in_sync_with_the_reported_level() {
     );
 }
 
-async fn private_default_create_worker(
-    dir: &std::path::Path,
-    responses: Vec<Vec<u8>>,
-) -> std::sync::Arc<crate::worker::Worker> {
+fn missing_default_create_worker(dir: &std::path::Path) -> std::sync::Arc<crate::worker::Worker> {
     let agent_dir = dir.join("agent");
-    write_prime_auth(&agent_dir);
+    write_anthropic_auth(&agent_dir);
     std::fs::write(
         agent_dir.join("settings.json"),
         json!({
-            "defaultProvider": "prime-inference",
-            "defaultModel": "internal/glm-5.3-fast",
-            "enabledModels": [
-                "prime-inference/z-ai/glm-5.3",
-                "prime-inference/internal/glm-5.3-fast",
-            ]
+            "defaultProvider": "anthropic",
+            "defaultModel": "claude-retired",
+            "enabledModels": ["anthropic/claude-sonnet-5-5", "anthropic/claude-retired"]
         })
         .to_string(),
     )
     .unwrap();
-    let server = MockCatalogServer::start(responses).await;
-    install_loopback_catalog(&agent_dir, &server);
     std::sync::Arc::new(crate::worker::Worker::new(
         crate::worker::WorkerConfig {
             socket_path: dir.join("worker.sock"),
@@ -1244,53 +1007,11 @@ async fn private_default_create_worker(
     ))
 }
 
-async fn create_state(worker: &crate::worker::Worker, dir: &std::path::Path) -> Value {
-    let created = worker
-        .dispatch(
-            "create",
-            &json!({ "sessionPath": dir.join("race-session.jsonl"), "cwd": dir }),
-        )
-        .await;
-    assert!(created.success, "create failed: {created:?}");
-    let state = worker
-        .dispatch(
-            "get_connection_state",
-            &json!({ "activeSessionId": "race-create" }),
-        )
-        .await;
-    state.data.expect("state data")
-}
-
-#[tokio::test]
-async fn a_fresh_scoped_create_waits_for_the_private_default() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let pi = pi_payload();
-    let layer_a = json!({ "schemaVersion": 1, "models": [] }).to_string();
-    let worker = private_default_create_worker(
-        dir.path(),
-        vec![
-            catalog_ok_json(&layer_a),
-            catalog_ok_json(&pi),
-            catalog_ok_json(&pi),
-        ],
-    )
-    .await;
-    let data = create_state(&worker, dir.path()).await;
-    assert_eq!(
-        data["model"]["provider"], "prime-inference",
-        "the session runs on the provider default: {data}"
-    );
-    assert_eq!(
-        data["model"]["id"], "internal/glm-5.3-fast",
-        "the private default the patterns scope in wins the startup pick: {data}"
-    );
-}
-
 #[tokio::test]
 async fn a_fresh_scoped_create_falls_back_with_a_recorded_message() {
     for no_session in [false, true] {
         let dir = tempfile::TempDir::new().unwrap();
-        let worker = private_default_create_worker(dir.path(), Vec::new()).await;
+        let worker = missing_default_create_worker(dir.path());
         let mut payload = json!({ "cwd": dir.path() });
         if no_session {
             payload["noSession"] = json!(true);
@@ -1308,12 +1029,12 @@ async fn a_fresh_scoped_create_falls_back_with_a_recorded_message() {
             .await;
         let data = state.data.expect("state data");
         assert_eq!(
-            data["model"]["id"], "z-ai/glm-5.3",
+            data["model"]["id"], PINNED_MODEL,
             "the fallback is the first scoped model: {data}"
         );
         assert_eq!(
             summary["modelFallbackMessage"],
-            "Default model prime-inference/internal/glm-5.3-fast is not available. Using prime-inference/z-ai/glm-5.3",
+            "Default model anthropic/claude-retired is not available. Using anthropic/claude-sonnet-5-5",
             "the fallback is on the record (noSession={no_session}): {summary}"
         );
         let attached = worker
@@ -1331,7 +1052,7 @@ async fn a_fresh_scoped_create_falls_back_with_a_recorded_message() {
             let mut target =
                 crate::session_store::SessionFile::create(dir.path().to_str().unwrap(), None, 0);
             target.set_path(path.clone());
-            target.append_model_change("prime-inference", "z-ai/glm-5.3");
+            target.append_model_change("anthropic", PINNED_MODEL);
             target.rewrite().unwrap();
             let switched = worker
                 .dispatch(

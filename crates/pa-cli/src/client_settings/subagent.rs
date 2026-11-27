@@ -69,11 +69,7 @@ pub(super) fn global_model_choices(cwd: &Path, agent_dir: &Path) -> Result<Globa
     if let Some(error) = registry.get_error() {
         anyhow::bail!("{error}");
     }
-    let available = registry.get_available();
-    let catalog = registry.get_all().iter().filter(|model| {
-        !pa_core::models::is_private_prime_inference_model(model) || available.contains(model)
-    });
-    let mut models = model_choices(catalog, &policy, None);
+    let mut models = model_choices(registry.get_all().iter(), &policy, None);
     if let DaemonAllowlist::Allowed(rules) = &policy {
         // Exact selectors can be temporarily absent from the catalog (e.g. a custom provider).
         for rule in rules {

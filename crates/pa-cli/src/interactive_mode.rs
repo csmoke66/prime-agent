@@ -530,9 +530,6 @@ fn build_tui_options(
                 config.agent_dir.clone(),
             )),
         )),
-        traces: Some(pa_tui::traces::TracesCommandsHandle(std::sync::Arc::new(
-            crate::client_traces::ClientTraces::new(config.cwd.clone(), config.agent_dir.clone()),
-        ))),
         provider_auth: Some(provider_auth),
         telemetry: Some(std::sync::Arc::new(CliInteractionTelemetry::new(
             config.cwd.clone(),

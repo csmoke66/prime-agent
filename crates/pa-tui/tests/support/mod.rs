@@ -125,7 +125,6 @@ pub fn options(socket: PathBuf) -> InteractiveOptions {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: pa_tui::keybindings::KeybindingsManager::new(),

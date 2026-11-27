@@ -71,11 +71,6 @@ pub fn pin_catalog_models(
 ) -> Result<Vec<Model>, String> {
     let mut models = Vec::with_capacity(catalog_models.len());
     for model in catalog_models {
-        // Prime Inference is fetched live with credentials; the remote
-        // catalog never carries it.
-        if model.provider == "prime-inference" {
-            continue;
-        }
         let key = (
             model.provider.clone(),
             model.api.clone(),
@@ -131,7 +126,6 @@ mod tests {
                 max_tokens: 1,
                 max_tokens_explicit: false,
                 featured: None,
-                serving: None,
                 headers,
                 compat: None,
             }
@@ -175,7 +169,6 @@ mod tests {
         let payload = json!({"schemaVersion": 1, "models": [
             catalog_entry("known", "openai-completions", "prov", "https://prov.example"),
             catalog_entry("unknown", "openai-completions", "prov", "https://elsewhere.example"),
-            catalog_entry("prime", "openai-completions", "prime-inference", "https://api.pinference.ai/api/v1"),
         ]});
         let models = parse_provider_model_catalog(&payload, &templates).expect("pinned");
         assert_eq!(models.len(), 1);

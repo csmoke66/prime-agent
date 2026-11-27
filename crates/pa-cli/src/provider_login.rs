@@ -1,6 +1,6 @@
 //! The provider auth flows behind the TUI's `/login` and `/logout` (TS
 //! `ProviderAuthFlows`): the provider catalog rows, the API-key store, the
-//! MCP device flow, the Prime Inference login, and the subscription logins;
+//! MCP device flow and the subscription logins;
 //! the Prime browser logins are not ported yet.
 
 use std::path::{Path, PathBuf};
@@ -45,8 +45,6 @@ const BUILT_IN_PROVIDER_DISPLAY_NAMES: &[(&str, &str)] = &[
     ("opencode-go", "OpenCode Go"),
     ("openai", "OpenAI"),
     ("openrouter", "OpenRouter"),
-    ("prime-agent-traces", "Prime Agent Traces"),
-    ("prime-inference", "Prime Inference"),
     ("vercel-ai-gateway", "Vercel AI Gateway"),
     ("xai", "xAI (Grok)"),
     ("zai", "ZAI"),
@@ -61,8 +59,6 @@ const BUILT_IN_PROVIDER_DISPLAY_NAMES: &[(&str, &str)] = &[
         "Xiaomi MiMo Token Plan (Singapore)",
     ),
 ];
-
-const PRIME_INFERENCE_PROVIDER_ID: &str = "prime-inference";
 
 /// The display name of a provider id (else the id itself).
 fn display_name(provider_id: &str) -> String {
@@ -157,7 +153,6 @@ fn api_key_source_label(source: AuthSource, label: Option<&str>) -> String {
         AuthSource::Environment => {
             format!("env: {}", label.unwrap_or("API key"))
         }
-        AuthSource::PrimeCli => label.unwrap_or("Prime CLI").to_string(),
         AuthSource::Runtime => "runtime API key".to_string(),
         AuthSource::Fallback => "custom API key".to_string(),
         AuthSource::ModelsJsonKey => "key in models.json".to_string(),
@@ -226,8 +221,7 @@ impl ProviderAuth {
 
 impl ProviderAuthCommands for ProviderAuth {
     /// TS `getLoginProviderOptions`: the subscription rows and the
-    /// API-key model providers, sorted TS-style with prime-inference
-    /// first. The service rows (the MCP OAuth integrations, the
+    /// API-key model providers, sorted TS-style. The service rows (the MCP OAuth integrations, the
     /// web-search credential) live on the `/mcp` view (the operator's
     /// 2026-09-24 `/login`-is-providers-only directive).
     fn login_options(&self) -> ProviderRowsFuture {
@@ -264,7 +258,7 @@ impl ProviderAuthCommands for ProviderAuth {
         })
     }
 
-    /// The panel-driven flows (the MCP OAuth login, the Prime Inference login):
+    /// The panel-driven flows (the MCP OAuth login):
     /// the flow drives the inline auth panel and never touches the terminal.
     fn login_on_panel(
         &self,
@@ -362,24 +356,18 @@ impl ProviderAuth {
                     continue;
                 }
                 let (credential, status) = provider.credential_status(&provider_id);
-                // Prime Inference logs in through the Prime flow, not a pasted key.
-                let flow = if provider_id == PRIME_INFERENCE_PROVIDER_ID {
-                    AuthFlow::TerminalFlow
-                } else {
-                    AuthFlow::ApiKeyPrompt
-                };
                 rows.push(ProviderRow {
                     status: status_indicator(credential.as_ref(), &status, AuthType::ApiKey),
                     id: provider_id.clone(),
                     name: display_name(&provider_id),
                     auth_type: AuthType::ApiKey,
-                    flow,
+                    flow: AuthFlow::ApiKeyPrompt,
                     configured: status.configured,
                     available: true,
                 });
             }
 
-            // Configured first, prime-inference first among them, then oauth before api key by
+            // Configured first, then oauth before api key by
             // name.
             rows.sort_by(|a, b| {
                 let configured = |row: &ProviderRow| {
@@ -390,16 +378,7 @@ impl ProviderAuth {
                 };
                 configured(b).cmp(&configured(a)).then(ts_row_order(a, b))
             });
-            let mut sorted: Vec<ProviderRow> = Vec::with_capacity(rows.len());
-            let mut rest = rows;
-            if let Some(index) = rest
-                .iter()
-                .position(|row| row.id == PRIME_INFERENCE_PROVIDER_ID)
-            {
-                sorted.push(rest.remove(index));
-            }
-            sorted.append(&mut rest);
-            sorted
+            rows
         }
     }
 
@@ -468,13 +447,7 @@ fn login_blocking(
         ));
     };
     let mut auth = pa_core::auth::AuthStorage::create(agent_dir);
-    auth.set(
-        &provider_row.id,
-        AuthCredential::ApiKey {
-            key: api_key,
-            prime_team: None,
-        },
-    );
+    auth.set(&provider_row.id, AuthCredential::ApiKey { key: api_key });
     if let Some(error) = auth.drain_errors().pop() {
         return ProviderAuthOutcome::Error(format!("could not save the API key: {error}"));
     }
@@ -513,36 +486,6 @@ fn login_blocking_on_panel(
         } else {
             ProviderAuthOutcome::Status(outcome)
         };
-    }
-    // The Prime Inference login.
-    if provider_row.id == PRIME_INFERENCE_PROVIDER_ID {
-        return tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_or_else(
-                |error| {
-                    ProviderAuthOutcome::Error(format!(
-                        "Failed to login to {}: {error}",
-                        provider_row.name
-                    ))
-                },
-                |runtime| {
-                    runtime.block_on(crate::prime_inference_login::run_prime_inference_login(
-                        crate::prime_inference_login::PrimeLoginInputs {
-                            agent_dir: &agent_dir,
-                            provider_name: &provider_row.name,
-                            config: &pa_core::auth::resolve_prime_inference_auth_config(),
-                            http: &pa_core::auth::ReqwestPrimeHttp,
-                            prime_cli_config_path:
-                                crate::prime_inference_login::prime_cli_config_path(&agent_dir)
-                                    .as_deref(),
-                            prime_team_id: std::env::var("PRIME_TEAM_ID").ok().as_deref(),
-                            poll_interval_ms: None,
-                        },
-                        &crate::prime_inference_login::PanelPrimeLoginUi::new(panel),
-                    ))
-                },
-            );
     }
     // The Codex Subscription login.
     if provider_row.id == pa_core::auth::OPENAI_CODEX_PROVIDER_ID {

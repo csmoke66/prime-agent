@@ -190,8 +190,7 @@ pub(crate) fn build_params(
     }
 
     // OpenAI and OpenRouter accept a top-level service_tier
-    // (https://openrouter.ai/docs/guides/features/service-tiers). Prime Inference tolerates but
-    // ignores the field (probed 2026-09-01), so it is not forwarded; other OpenAI-compatible
+    // (https://openrouter.ai/docs/guides/features/service-tiers); other OpenAI-compatible
     // gateways may reject unknown fields.
     if let Some(service_tier) = options.base.service_tier {
         if model.provider == "openai" || model.provider == "openrouter" {
@@ -358,48 +357,16 @@ pub(crate) fn build_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{clamp_thinking_level, get_supported_thinking_levels};
+    use crate::models::clamp_thinking_level;
     use crate::models_generated;
     use crate::types::{Message, StreamOptions, UserMessage, UserMessageContent};
-
-    /// TS #2497 pin: the provider layer owns no Prime Inference team lookup — a prime-inference
-    /// request with `PRIME_TEAM_ID` set and no caller header carries no `X-Prime-Team-ID` (the auth
-    /// storage is the single owner of the team header).
-    #[test]
-    fn prime_inference_adds_no_team_header_the_caller_did_not_pass() {
-        std::env::set_var("PRIME_TEAM_ID", "cli-profile-team");
-        let model = models_generated::get_model("prime-inference", "z-ai/glm-5.3")
-            .expect("the catalog carries a prime-inference model");
-        let compat = crate::providers::openai_completions::get_compat(model);
-        let headers = build_headers(model, "k", None, None, &compat, None);
-        std::env::remove_var("PRIME_TEAM_ID");
-        assert!(
-            headers
-                .iter()
-                .all(|(name, _)| !name.eq_ignore_ascii_case("X-Prime-Team-ID")),
-            "the provider must not inject a team header: {headers:?}"
-        );
-
-        // A caller header (the auth owner's merged headers) still ships.
-        let caller = std::collections::HashMap::from([(
-            "X-Prime-Team-ID".to_string(),
-            "auth-owner-team".to_string(),
-        )]);
-        let headers = build_headers(model, "k", Some(&caller), None, &compat, None);
-        assert!(
-            headers.iter().any(|(name, value)| {
-                name.eq_ignore_ascii_case("X-Prime-Team-ID") && value == "auth-owner-team"
-            }),
-            "the auth owner's header must ship: {headers:?}"
-        );
-    }
 
     /// Discussion #3562: an explicit Authorization from the model or the caller replaces the
     /// default bearer header instead of shipping beside it, whatever the header name's case.
     #[test]
     fn explicit_authorization_replaces_the_default_without_case_duplicates() {
-        let mut model = models_generated::get_model("prime-inference", "z-ai/glm-5.3")
-            .expect("the catalog carries a prime-inference model")
+        let mut model = models_generated::get_model("zai", "glm-4.7")
+            .expect("the catalog carries a zai model")
             .clone();
         let authorizations = |model: &Model, caller: Option<&HashMap<String, String>>| {
             let compat = crate::providers::openai_completions::get_compat(model);
@@ -542,11 +509,7 @@ mod tests {
                 "{provider}/{model_id}: no tier requested means no field"
             );
         }
-        let gateway = tiered_params(
-            "prime-inference",
-            "anthropic/claude-fable-5",
-            Some(ServiceTier::Priority),
-        );
+        let gateway = tiered_params("zai", "glm-4.7", Some(ServiceTier::Priority));
         assert!(
             !gateway.contains_key("service_tier"),
             "gateways never receive the field"
@@ -565,137 +528,12 @@ mod tests {
         reasoning_params_for(model, level)
     }
 
-    /// A Prime Inference route sends only the reasoning parameters its live catalog declaration
-    /// selects (effort-declared → `reasoning_effort`, toggle-declared → the `reasoning` object);
-    /// `enable_thinking` never reaches a Prime Inference route (TS regression #2519).
-    #[test]
-    fn sends_only_the_declared_reasoning_parameters_for_live_rebuilt_routes() {
-        // Effort-declared route (the glm-5.3 shape): reasoning_effort with the declared levels, no
-        // reasoning object, no enable_thinking.
-        let mut effort_model = models_generated::get_model("prime-inference", "z-ai/glm-5.3")
-            .expect("compiled template")
-            .clone();
-        effort_model.compat = Some(crate::types::ModelCompat::from_kind(
-            crate::types::CompatKind::OpenAiCompletions(Box::new(
-                crate::types::OpenAiCompletionsCompat {
-                    supports_reasoning_effort: Some(true),
-                    ..Default::default()
-                },
-            )),
-        ));
-        for level in [ModelThinkingLevel::High, ModelThinkingLevel::Medium] {
-            let params = reasoning_params_for(&effort_model, level);
-            for key in ["enable_thinking", "chat_template_kwargs", "reasoning"] {
-                assert!(
-                    !params.contains_key(key),
-                    "effort route: request must not carry {key}"
-                );
-            }
-            // medium is not declared by the route; the clamp sends the nearest level
-            assert_eq!(params.get("reasoning_effort"), Some(&json!("high")));
-        }
-
-        // Toggle-declared route (the glm-4.7 shape): the reasoning object only, with the declared
-        // on and off arms.
-        let mut toggle_model = effort_model;
-        toggle_model.compat = Some(crate::types::ModelCompat::from_kind(
-            crate::types::CompatKind::OpenAiCompletions(Box::new(
-                crate::types::OpenAiCompletionsCompat {
-                    supports_reasoning_effort: Some(false),
-                    thinking_format: Some(crate::types::ThinkingFormat::Openrouter),
-                    ..Default::default()
-                },
-            )),
-        ));
-        let mut declared_map = crate::types::ThinkingLevelMap::new();
-        declared_map.insert(ModelThinkingLevel::Minimal, None);
-        declared_map.insert(ModelThinkingLevel::Low, None);
-        declared_map.insert(ModelThinkingLevel::Medium, None);
-        declared_map.insert(ModelThinkingLevel::High, Some("high".to_string()));
-        declared_map.insert(ModelThinkingLevel::Xhigh, None);
-        declared_map.insert(ModelThinkingLevel::Max, None);
-        toggle_model.thinking_level_map = Some(declared_map);
-
-        let params = reasoning_params_for(&toggle_model, ModelThinkingLevel::High);
-        assert_eq!(params.get("reasoning"), Some(&json!({ "enabled": true })));
-        assert!(!params.contains_key("reasoning_effort"));
-        for key in ["enable_thinking", "chat_template_kwargs"] {
-            assert!(
-                !params.contains_key(key),
-                "toggle route: request must not carry {key}"
-            );
-        }
-        let params = reasoning_params_for(&toggle_model, ModelThinkingLevel::Off);
-        assert_eq!(params.get("reasoning"), Some(&json!({ "enabled": false })));
-    }
-
-    /// The compiled fallback catalog is conservative (TS #2519: the live catalog owns the reasoning
-    /// declarations): offline, a Prime Inference route declares neither the effort selector nor a
-    /// thinking format, so a reasoning request sends no reasoning parameter at all.
-    #[test]
-    fn compiled_fallback_prime_inference_routes_send_no_reasoning_parameters() {
-        for (model_id, level) in [
-            ("z-ai/glm-5.3", ModelThinkingLevel::High),
-            ("z-ai/glm-5.3", ModelThinkingLevel::Medium),
-            ("z-ai/glm-4.7", ModelThinkingLevel::High),
-            ("z-ai/glm-4.7", ModelThinkingLevel::Off),
-        ] {
-            let params = compiled_params("prime-inference", model_id, level);
-            for key in [
-                "enable_thinking",
-                "chat_template_kwargs",
-                "reasoning",
-                "reasoning_effort",
-            ] {
-                assert!(
-                    !params.contains_key(key),
-                    "compiled fallback {model_id}: request must not carry {key}"
-                );
-            }
-        }
-    }
-
     /// The direct z.ai routes keep the toggle: their compat still selects the zai thinking format,
     /// so reasoning requests send `enable_thinking`.
     #[test]
     fn keeps_the_zai_thinking_toggle_on_direct_zai_routes() {
         let params = compiled_params("zai", "glm-4.7", ModelThinkingLevel::High);
         assert_eq!(params.get("enable_thinking"), Some(&json!(true)));
-    }
-
-    /// The `deepseek/deepseek-v4-flash-0731` route takes low, high, and max and does not make
-    /// reasoning mandatory: offline, the entry offers exactly off, low, high, and max, and each
-    /// level sends what the route accepts.
-    #[test]
-    fn compiled_deepseek_v4_flash_0731_offers_the_route_ladder() {
-        let model =
-            models_generated::get_model("prime-inference", "deepseek/deepseek-v4-flash-0731")
-                .expect("compiled catalog carries the route");
-        let sent: Vec<_> = get_supported_thinking_levels(model)
-            .into_iter()
-            .map(|level| {
-                let params = reasoning_params_for(model, level);
-                (
-                    level,
-                    params.get("thinking").cloned(),
-                    params.get("reasoning_effort").cloned(),
-                )
-            })
-            .collect();
-        let on = Some(json!({ "type": "enabled" }));
-        assert_eq!(
-            sent,
-            [
-                (
-                    ModelThinkingLevel::Off,
-                    Some(json!({ "type": "disabled" })),
-                    None
-                ),
-                (ModelThinkingLevel::Low, on.clone(), Some(json!("low"))),
-                (ModelThinkingLevel::High, on.clone(), Some(json!("high"))),
-                (ModelThinkingLevel::Max, on, Some(json!("max"))),
-            ]
-        );
     }
 
     /// A `reasoning: false` model whose map addresses levels (the live catalog's

@@ -358,9 +358,6 @@ pub struct InteractiveOptions {
     /// `/mcp login` / `/mcp logout`: the client-side auth flows the composition root provides;
     /// `None` reports the commands as unavailable.
     pub client_auth: Option<crate::client_auth::ClientAuthCommandsHandle>,
-    /// `/traces`: the settings + credential state the composition root owns (the trace upload
-    /// subsystem stays unported); `None` reports the command as unavailable.
-    pub traces: Option<crate::traces::TracesCommandsHandle>,
     /// `/login` + `/logout`: the provider auth flows the composition root owns (credential
     /// storage, OAuth, the provider catalog); `None` reports the commands as unavailable.
     pub provider_auth: Option<crate::provider_auth::ProviderAuthCommandsHandle>,

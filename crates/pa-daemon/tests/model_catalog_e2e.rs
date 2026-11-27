@@ -1,7 +1,5 @@
 //! `/model` picker catalog e2e: `get_model_catalog` must serve the registry
-//! snapshot (full catalog plus the providers with configured auth), and an
-//! offline daemon (no network, no live catalog) falls back to the bundled
-//! catalog with the disk cache untouched.
+//! snapshot: the compiled catalog plus the providers with configured auth.
 #![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -38,8 +36,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Supervisor {
         .stderr(Stdio::null())
         .env_remove("PRIME_API_KEY")
         .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
-        // Offline mode: the refresh stays on the bundled fallback and never writes the disk cache
-        // (TS `PI_OFFLINE`).
+        // No telemetry or package network traffic from the test daemon.
         .env("PI_OFFLINE", "1")
         .spawn()
         .expect("spawn pa-daemon supervisor");
@@ -148,7 +145,7 @@ fn write_models_json(agent_dir: &Path, base_url: &str) {
 }
 
 #[test]
-fn offline_daemon_serves_the_bundled_catalog_fallback() {
+fn the_daemon_serves_the_compiled_catalog() {
     let dir = std::env::temp_dir().join(format!(
         "pa-model-catalog-{}",
         std::process::id() * 1000
@@ -193,7 +190,7 @@ fn offline_daemon_serves_the_bundled_catalog_fallback() {
     let models = data["models"].as_array().expect("models array");
     assert!(
         models.len() > 100,
-        "the bundled catalog must serve as the offline fallback (got {} models)",
+        "the daemon must serve the compiled catalog (got {} models)",
         models.len()
     );
     assert!(models
@@ -201,10 +198,8 @@ fn offline_daemon_serves_the_bundled_catalog_fallback() {
         .any(|model| model["id"] == "mock-1" && model["provider"] == "prime-inference"));
     let fable = models
         .iter()
-        .find(|model| {
-            model["id"] == "anthropic/claude-fable-5" && model["provider"] == "prime-inference"
-        })
-        .expect("a bundled featured model");
+        .find(|model| model["id"] == "claude-fable-5" && model["provider"] == "anthropic")
+        .expect("a compiled catalog model");
     assert_eq!(fable["name"], "Claude Fable 5");
     assert_eq!(fable["cost"]["input"], 10);
     assert_eq!(fable["contextWindow"], 1_000_000);
@@ -221,11 +216,6 @@ fn offline_daemon_serves_the_bundled_catalog_fallback() {
         .as_str()
         .unwrap_or_default()
         .starts_with("internal/")));
-
-    assert!(
-        !agent_dir.join("prime-inference-models-cache.json").exists(),
-        "offline mode must not write the catalog cache"
-    );
     drop(client);
     drop(supervisor);
     let _ = std::fs::remove_dir_all(&dir);

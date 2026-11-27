@@ -695,7 +695,7 @@ pub(crate) async fn build_headless_engine_with(
             let session = session_manager
                 .as_ref()
                 .map(pa_core::session::manager::SessionManager::active_context);
-            select_model(&mut registry, config, session.as_ref()).await?
+            select_model(&mut registry, config, session.as_ref())?
         }
     };
     // Resolve request auth once: the stored team / `PRIME_TEAM_ID` reach the wire through these
@@ -1126,7 +1126,7 @@ async fn session_header_json(
     Some(serde_json::Value::Object(object).to_string())
 }
 
-async fn select_model(
+fn select_model(
     registry: &mut pa_core::models::ModelRegistry,
     config: &crate::mode::RuntimeConfig,
     session: Option<&pa_core::session::SessionContext>,
@@ -1145,26 +1145,16 @@ async fn select_model(
             .ok_or_else(|| "No matching model found.".to_string());
     }
     // A resumed session with messages restores its own model before the
-    // defaults chain (TS `createAgentSession`), through the daemon restore's
-    // bounded catalog-readiness wait; a miss falls through on the record.
+    // defaults chain (TS `createAgentSession`); a miss falls through on the record.
     if let Some((provider, model_id)) = session
         .filter(|context| !context.messages.is_empty())
         .and_then(|context| context.model.as_ref())
     {
-        if let Some(model) = pa_core::models::find_session_model_with_readiness_wait(
-            registry,
-            provider,
-            model_id,
-            pa_core::models::SESSION_MODEL_RESTORE_READINESS_TIMEOUT_MS,
-        )
-        .await
-        {
+        if let Some(model) = pa_core::models::find_session_model(registry, provider, model_id) {
             return Ok(model);
         }
         eprintln!("Could not restore model {provider}/{model_id}");
     }
-    // A missed restore's readiness window may have refreshed the catalog, so
-    // the defaults chain resolves against the refreshed view.
     let settings = pa_core::settings::SettingsManager::create(&config.cwd, &config.agent_dir);
     let available: Vec<Model> = registry.get_available().into_iter().cloned().collect();
     let saved_provider = settings.get_default_provider();
@@ -1912,7 +1902,6 @@ mod tests {
                 max_tokens: 8192,
                 max_tokens_explicit: false,
                 featured: None,
-                serving: None,
                 headers: None,
                 compat: None,
             }

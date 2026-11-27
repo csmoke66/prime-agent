@@ -418,39 +418,6 @@ impl SettingsManager {
             .unwrap_or(true)
     }
 
-    /// `agentTraces.enabled`: unset means OFF — trace sharing is opt-in, exactly the TS default.
-    #[must_use]
-    pub fn get_agent_traces_enabled(&self) -> bool {
-        self.merged
-            .agent_traces
-            .as_ref()
-            .and_then(|traces| traces.enabled)
-            .unwrap_or(false)
-    }
-
-    /// Whether a trace-sharing choice was ever written: the `agentTraces.enabled` key
-    /// present in the merged settings. Only a fresh home (no choice written) is asked, once.
-    #[must_use]
-    pub fn agent_traces_choice_written(&self) -> bool {
-        self.merged
-            .agent_traces
-            .as_ref()
-            .and_then(|traces| traces.enabled)
-            .is_some()
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error when the global settings file cannot be written.
-    pub fn set_agent_traces_enabled(&mut self, enabled: bool) -> Result<()> {
-        let traces = self
-            .global
-            .agent_traces
-            .get_or_insert_with(Default::default);
-        traces.enabled = Some(enabled);
-        self.save_global(&["agentTraces.enabled"])
-    }
-
     pub fn set_packages(&mut self, packages: Vec<serde_json::Value>) {
         self.global.packages = Some(packages.clone());
         self.persist_scope_field(
@@ -1324,30 +1291,6 @@ mod tests {
         );
         manager.global.idle_eviction_minutes = Some(serde_json::json!(45));
         assert_eq!(manager.get_idle_eviction(), IdleEviction::Minutes(45));
-    }
-
-    #[test]
-    fn agent_traces_default_off_and_persist_the_opt_in() {
-        let mut manager = SettingsManager::in_memory(&Settings::default());
-        assert!(!manager.get_agent_traces_enabled());
-        manager.set_agent_traces_enabled(true).unwrap();
-        assert!(manager.get_agent_traces_enabled());
-        manager.reload().unwrap();
-        assert!(manager.get_agent_traces_enabled());
-        manager.set_agent_traces_enabled(false).unwrap();
-        assert!(!manager.get_agent_traces_enabled());
-    }
-
-    #[test]
-    fn agent_traces_choice_written_marks_a_provisioned_home() {
-        let mut manager = SettingsManager::in_memory(&Settings::default());
-        assert!(!manager.agent_traces_choice_written());
-        manager.set_agent_traces_enabled(false).unwrap();
-        assert!(manager.agent_traces_choice_written());
-        manager.reload().unwrap();
-        assert!(manager.agent_traces_choice_written());
-        manager.set_agent_traces_enabled(true).unwrap();
-        assert!(manager.agent_traces_choice_written());
     }
 
     #[test]

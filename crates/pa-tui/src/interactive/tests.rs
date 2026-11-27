@@ -146,7 +146,6 @@ pub(crate) fn options(selection: ModelSelection) -> InteractiveOptions {
         onboarding: None,
         telemetry_disabled: None,
         client_auth: None,
-        traces: None,
         provider_auth: None,
         telemetry: None,
         keybindings: crate::keybindings::KeybindingsManager::new(),
@@ -279,15 +278,7 @@ fn the_headless_settle_names_every_stuck_member() {
             ..Default::default()
         },
         HeadlessSettle {
-            traces_upload_pending: true,
-            ..Default::default()
-        },
-        HeadlessSettle {
             auth_panel_open: true,
-            ..Default::default()
-        },
-        HeadlessSettle {
-            traces_login_pending: true,
             ..Default::default()
         },
         HeadlessSettle {
@@ -330,14 +321,12 @@ fn the_headless_settle_names_every_stuck_member() {
         dirty: true,
         share_pending: true,
         reload_pending: true,
-        traces_upload_pending: true,
         harness_pending: true,
         auth_panel_open: true,
-        traces_login_pending: true,
         mcp_auth_pending: true,
         anthropic_warning_mark_pending: true,
     };
-    assert_eq!(all.blockers().len(), 14);
+    assert_eq!(all.blockers().len(), 12);
     assert!(
         all.blockers()
             .iter()

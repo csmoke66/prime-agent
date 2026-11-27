@@ -2,8 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const PRIME_INFERENCE_PROVIDER_ID: &str = "prime-inference";
-
 /// The Serper web-search credential's auth-store slot (auth.json's `serper`
 /// key, the `AuthCredential::ApiKey` form): the websearch skill's runtime
 /// reads it on every call, and the `/mcp` view's api-key entry stores it.
@@ -19,48 +17,10 @@ pub const ECO_CREDENTIAL_ID: &str = "eco";
 pub const ECO_CREDENTIAL_NAME: &str = "You.com Eco (web search)";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PrimeTeamCredential {
-    pub team_id: String,
-    pub name: String,
-    pub slug: Option<String>,
-    pub role: Option<String>,
-    pub created_at: Option<String>,
-}
-
-/// The team half of a Prime Inference key write: an absent argument preserves the stored team,
-/// `null` is the personal account.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PrimeTeamAssignment {
-    /// TS `undefined`: keep the stored team, but only on the same key.
-    PreserveWhenKeyMatches,
-    /// TS `null`: the personal account.
-    PersonalAccount,
-    /// TS `PrimeTeam`: this team.
-    Team(PrimeTeamCredential),
-}
-
-/// The stored Prime team selection: `undefined` means no stored selection applies. Fleet divergence
-/// (P5): a runtime or environment API-key override does not hide the stored team.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StoredPrimeTeam {
-    /// TS `undefined`.
-    NotSelected,
-    /// TS `null`: the personal account.
-    PersonalAccount,
-    /// TS `PrimeTeamCredential`.
-    Team(PrimeTeamCredential),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuthCredential {
     #[serde(rename = "api_key")]
-    ApiKey {
-        key: String,
-        #[serde(rename = "primeTeam", default, skip_serializing_if = "Option::is_none")]
-        prime_team: Option<PrimeTeamCredential>,
-    },
+    ApiKey { key: String },
     /// A pasted MCP static token (the inline paste flow for `requires-setup` token
     /// services): the literal bearer value plus the endpoint it is bound to. No expiry.
     #[serde(rename = "mcp_static_token")]
@@ -172,7 +132,6 @@ pub enum AuthSource {
     Stored,
     Runtime,
     Environment,
-    PrimeCli,
     Fallback,
     ModelsJsonKey,
     ModelsJsonCommand,

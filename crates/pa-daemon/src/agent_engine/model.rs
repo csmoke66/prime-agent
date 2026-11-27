@@ -167,8 +167,7 @@ impl AgentSessionEngine {
             }
         }
         // An explicit create flag wins for the MODEL — the saved thinking
-        // above still applies, and the restore skips the model's readiness
-        // window entirely.
+        // above still applies.
         if self.current_selection().model.is_some() {
             return;
         }
@@ -176,15 +175,9 @@ impl AgentSessionEngine {
             return;
         };
         let auth = pa_core::auth::AuthStorage::create(&self.config.agent_dir);
-        let mut registry =
+        let registry =
             pa_core::models::ModelRegistry::create(auth, self.config.agent_dir.join("models.json"));
-        let restored = pa_core::models::find_session_model_with_readiness_wait(
-            &mut registry,
-            &provider,
-            &model_id,
-            pa_core::models::SESSION_MODEL_RESTORE_READINESS_TIMEOUT_MS,
-        )
-        .await;
+        let restored = pa_core::models::find_session_model(&registry, &provider, &model_id);
         let (model, fallback_message) = if let Some(restored) = restored {
             (Some((restored.provider, restored.id)), None)
         } else {

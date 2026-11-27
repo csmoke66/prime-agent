@@ -1,0 +1,1 @@
+- The splash, first-run screen, and installer banner show a beehive logo.

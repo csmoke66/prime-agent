@@ -16,7 +16,7 @@ use super::pty::PtyChild;
 /// The first paint's needle: the brand splash is the empty chat's header
 /// (the corpus settings keep the TUI out of the first-run flow). Pinned
 /// empirically against the real binary.
-const FIRST_PAINT_NEEDLE: &[u8] = "▗▄▄█▀".as_bytes();
+const FIRST_PAINT_NEEDLE: &[u8] = "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀".as_bytes();
 
 /// The ready needle: the tray's session-usage pill ("model · tokens
 /// (percent)") — the first content the chat surface can only paint once

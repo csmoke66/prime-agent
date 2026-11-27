@@ -838,7 +838,7 @@ fn splash_renders_logo_version_model_and_cwd() {
     assert!(lines.iter().any(|l| text(l).contains("cwd /tmp/project")));
     assert!(lines
         .iter()
-        .any(|l| text(l).contains("\u{2597}\u{2584}\u{2584}")));
+        .any(|l| text(l).contains(&"\u{2580}".repeat(20))));
 }
 
 #[test]

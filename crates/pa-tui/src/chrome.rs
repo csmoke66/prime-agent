@@ -12,15 +12,15 @@ use crate::theme::{Theme, ThemeBg, ThemeColor};
 pub(crate) const DAYBREAK_BLUE_LABEL: &str = "◆ Blue";
 pub(crate) const DAYBREAK_BLUE_COLOR: ThemeColor = ThemeColor::MdLink;
 
-/// The compact 7-row brand butterfly.
-pub const PRIME_COMPACT_BUTTERFLY_LOGO: &str = concat!(
-    "                 \u{2597}\u{2584}\u{2584}\u{2588}\u{2580}\n",
-    "   \u{2588}\u{2588}\u{2588}\u{2584}       \u{2597}\u{2584}\u{2588}\u{2588}\u{2588}\u{2580}\n",
-    "  \u{2597}\u{2588}\u{259b}\u{2590}\u{2588}\u{2599}   \u{2597}\u{2584}\u{2588}\u{2580}\u{2597}\u{2588}\u{2580}\n",
-    " \u{2597}\u{2588}\u{259b} \u{259f}\u{2588}\u{2588}\u{2599}\u{2584}\u{2588}\u{2588}\u{259b} \u{259f}\u{259b}\n",
-    " \u{2597}\u{259f}\u{258c} \u{2590}\u{2588}\u{2588}\u{2588}\u{259b}\u{2598}\u{2597}\u{2584}\u{2588}\u{2596}\n",
-    "\u{259f}\u{2588}\u{2588}\u{2588}\u{2584}  \u{2584}\u{2584}\u{259f}\u{2588}\u{2588}\u{2588}\u{2580}\n",
-    "\u{259c}\u{2588}\u{259b}\u{2580}\u{2598}  \u{259c}\u{2588}\u{259b}\u{2580}\u{2598}",
+/// The compact 7-row brand beehive.
+pub const BEEHIVE_LOGO: &str = concat!(
+    "        \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    "     \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    "   \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    "  \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    " \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    " \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}  \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\n",
+    "\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}    \u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}",
 );
 
 /// Truncate a plain string to a visible width (cut on grapheme
@@ -359,14 +359,14 @@ pub fn render_top_bar(state: &ChromeState, theme: &Theme, width: usize) -> Line 
     line
 }
 
-/// The brand splash: butterfly logo beside the version/model/cwd metadata
+/// The brand splash: beehive logo beside the version/model/cwd metadata
 /// (TS `BrandSplashHeader`, `topPadding` always on).
 #[must_use]
 pub fn render_splash(state: &ChromeState, theme: &Theme, width: usize) -> Vec<Line> {
     let safe_width = width.max(1);
     let padding_x = usize::from(safe_width > 1);
     let content_width = safe_width.saturating_sub(padding_x * 2).max(1);
-    let logo_raw: Vec<&str> = PRIME_COMPACT_BUTTERFLY_LOGO.split('\n').collect();
+    let logo_raw: Vec<&str> = BEEHIVE_LOGO.split('\n').collect();
     let logo_canvas_width = logo_raw
         .iter()
         .map(|line| str_width(line))

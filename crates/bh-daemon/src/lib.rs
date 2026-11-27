@@ -41,6 +41,7 @@ mod compact_autorefine;
 pub mod compaction;
 mod compaction_outcome;
 pub(crate) mod compaction_supervision;
+pub(crate) mod context_edit;
 pub(crate) mod context_tree_cache;
 pub(crate) mod context_tree_children;
 pub(crate) mod create_reuse;

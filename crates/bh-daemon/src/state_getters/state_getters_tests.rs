@@ -629,6 +629,37 @@ async fn get_session_context_matches_the_ts_context_shape() {
     assert_eq!(context["messages"][0]["content"], json!("hello"));
 }
 
+/// `set_session_context` replaces the model-visible context: the edited list, not the old
+/// history plus an addition, is what the context builder (and so the next turn) yields.
+#[tokio::test]
+async fn set_session_context_replaces_the_model_visible_context() {
+    let worker = created_worker().await;
+    let _ = worker
+        .dispatch(
+            "prompt_and_wait",
+            &json!({ "activeSessionId": "getter-session", "message": "hello" }),
+        )
+        .await;
+    let context = |worker: &Worker| {
+        let response = worker.handle_get_session_context();
+        response.data.expect("data")["context"]["messages"].clone()
+    };
+    let mut edited = context(&worker);
+    edited[0]["content"] = json!("edited");
+    edited.as_array_mut().unwrap().push(json!({
+        "role": "custom", "customType": "note", "content": "kept verbatim",
+        "display": true, "timestamp": 1234,
+    }));
+
+    let payload = json!({ "activeSessionId": "getter-session", "messages": edited });
+    let response = worker.dispatch("set_session_context", &payload).await;
+    assert_eq!(response.data, Some(json!({ "changed": true })), "{response:?}");
+    assert_eq!(context(&worker), edited);
+
+    let response = worker.dispatch("set_session_context", &payload).await;
+    assert_eq!(response.data, Some(json!({ "changed": false })));
+}
+
 /// No prompt (empty string, the TS key present) and no tools (the `toolDefinition`
 /// key omitted, like the TS `undefined` field).
 #[tokio::test]

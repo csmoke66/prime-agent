@@ -1,0 +1,1 @@
+- Added `/edit_context`: it opens the model-visible context as JSON in `$VISUAL`/`$EDITOR` and applies your edit to the next turn. A rejected edit is kept as a draft for the next `/edit_context`.

@@ -191,7 +191,9 @@ impl SessionUi {
 
     /// Take a pending `app.editor.external` request: the interactive loop
     /// performs the editor child's terminal handoff.
-    pub(crate) fn take_external_editor_request(&mut self) -> Option<String> {
+    pub(crate) fn take_external_editor_request(
+        &mut self,
+    ) -> Option<(String, crate::external_editor::EditorTarget)> {
         self.external_editor_request.take()
     }
 

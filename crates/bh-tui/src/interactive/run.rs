@@ -1019,7 +1019,7 @@ async fn run_interactive_surface(
                         // Hand the terminal to the editor, then resume. The input reader would
                         // steal the editor's keys, so it stops (flag + join) and respawns after the
                         // resume.
-                        if let Some(command) = session.take_external_editor_request() {
+                        if let Some((command, target)) = session.take_external_editor_request() {
                             let reader = match &renderer {
                                 Renderer::Terminal {
                                     ui_tx, exit_guard, ..
@@ -1050,11 +1050,20 @@ async fn run_interactive_surface(
                                 });
                                 let outcome = match stopped {
                                     Ok(()) => {
-                                        crate::external_editor::edit(
-                                            &command,
-                                            &view.editor.get_expanded_text(),
-                                        )
-                                        .await
+                                        match &target {
+                                            crate::external_editor::EditorTarget::PromptDraft => {
+                                                crate::external_editor::edit(
+                                                    &command,
+                                                    &view.editor.get_expanded_text(),
+                                                    "md",
+                                                )
+                                                .await
+                                            }
+                                            crate::external_editor::EditorTarget::Context(text) => {
+                                                crate::external_editor::edit(&command, text, "json")
+                                                    .await
+                                            }
+                                        }
                                     }
                                     Err(error) => Err(error),
                                 };
@@ -1073,7 +1082,14 @@ async fn run_interactive_surface(
                                     session.error_row(&format!("{error:#}"), &mut view);
                                 }
                                 spawn_session_reader(ui_tx, exit_guard);
-                                session.apply_external_editor_outcome(outcome, &mut view);
+                                match target {
+                                    crate::external_editor::EditorTarget::PromptDraft => {
+                                        session.apply_external_editor_outcome(outcome, &mut view);
+                                    }
+                                    crate::external_editor::EditorTarget::Context(_) => {
+                                        session.apply_context_edit_outcome(outcome, &mut view).await;
+                                    }
+                                }
                             }
                         }
                         // The `/mcp` view resolved to an auth request: mount the inline auth panel

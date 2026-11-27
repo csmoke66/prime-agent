@@ -120,6 +120,7 @@ impl Worker {
             "get_commands" => self.handle_get_commands().await,
             "get_resource_snapshot" => self.handle_get_resource_snapshot().await,
             "get_session_context" => self.handle_get_session_context(),
+            "set_session_context" => self.handle_set_session_context(payload).await,
             "get_system_prompt" => self.handle_get_system_prompt().await,
             "session_prompt_segments" => self.handle_prompt_segments(payload).await,
             "get_tool_definition" => self.handle_get_tool_definition(payload).await,

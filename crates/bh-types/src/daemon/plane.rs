@@ -90,6 +90,7 @@ pub fn command_plane(command_type: &str) -> DaemonCommandPlane {
         | "get_rlm_max_depth_status"
         | "set_rlm_max_depth"
         | "get_session_context"
+        | "set_session_context"
         | "get_session_tree"
         | "get_user_messages_for_forking"
         | "get_last_assistant_text"

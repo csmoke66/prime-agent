@@ -489,15 +489,19 @@ pub fn build_session_context(entries: &[FileEntry], leaf_id: Option<&str>) -> Se
         } else {
             payload.harness_state_fingerprint
         };
-        messages.push(AgentMessage::CompactionSummary(CompactionSummaryMessage {
-            summary: payload.summary,
-            tokens_before: payload.tokens_before,
-            retained_message_count: Some(retained.len() as u64),
-            custom_instructions: payload.custom_instructions,
-            harness_digest: summary_harness_digest,
-            harness_state_fingerprint: summary_harness_state_fingerprint,
-            timestamp: timestamp_to_millis(entries[compaction_index].timestamp()),
-        }));
+        // A compaction with no summary and no kept tail is a context replacement (`/edit_context`):
+        // it only hides earlier history, so it contributes no summary message.
+        if !(payload.summary.is_empty() && first_kept_id.is_empty()) {
+            messages.push(AgentMessage::CompactionSummary(CompactionSummaryMessage {
+                summary: payload.summary,
+                tokens_before: payload.tokens_before,
+                retained_message_count: Some(retained.len() as u64),
+                custom_instructions: payload.custom_instructions,
+                harness_digest: summary_harness_digest,
+                harness_state_fingerprint: summary_harness_state_fingerprint,
+                timestamp: timestamp_to_millis(entries[compaction_index].timestamp()),
+            }));
+        }
         messages.extend(retained);
         for &index in &path[path.partition_point(|&i| i <= compaction_index)..] {
             append_message(&entries[index], &mut messages, keep_digest_entry_id);

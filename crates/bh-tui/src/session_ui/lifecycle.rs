@@ -192,6 +192,8 @@ impl SessionUi {
             side_bash_counter: 0,
             suspend_requested: false,
             external_editor_request: None,
+            context_edit_baseline: String::new(),
+            context_edit_draft: None,
             pending_mcp_auth: None,
             picker_restored_draft: false,
             suspend_adoption_emitted: false,

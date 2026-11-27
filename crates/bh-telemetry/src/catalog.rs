@@ -259,7 +259,7 @@ pub const AUTH_CATEGORIES: &[&str] = &[
 
 pub const FEATURE_NAMES: &[&str] = &[
     "model", "login", "logout", "effort", "goal", "new", "resume", "fork", "clone", "tree",
-    "feedback",
+    "feedback", "edit_context",
 ];
 
 pub const FEATURE_OUTCOMES: &[&str] = &[
@@ -689,6 +689,11 @@ const AGENT_SESSION_ENDED: EventRule = EventRule {
         ("feature_clone_failed_count", optional(count())),
         ("feature_clone_canceled_count", optional(count())),
         ("feature_clone_unavailable_count", optional(count())),
+        ("feature_edit_context_initiated_count", optional(count())),
+        ("feature_edit_context_completed_count", optional(count())),
+        ("feature_edit_context_failed_count", optional(count())),
+        ("feature_edit_context_canceled_count", optional(count())),
+        ("feature_edit_context_unavailable_count", optional(count())),
         ("feature_tree_initiated_count", optional(count())),
         ("feature_tree_completed_count", optional(count())),
         ("feature_tree_failed_count", optional(count())),
@@ -981,6 +986,11 @@ const TUI_EXIT: EventRule = EventRule {
         ("feature_clone_failed_count", optional(count())),
         ("feature_clone_canceled_count", optional(count())),
         ("feature_clone_unavailable_count", optional(count())),
+        ("feature_edit_context_initiated_count", optional(count())),
+        ("feature_edit_context_completed_count", optional(count())),
+        ("feature_edit_context_failed_count", optional(count())),
+        ("feature_edit_context_canceled_count", optional(count())),
+        ("feature_edit_context_unavailable_count", optional(count())),
         ("feature_tree_initiated_count", optional(count())),
         ("feature_tree_completed_count", optional(count())),
         ("feature_tree_failed_count", optional(count())),

@@ -678,7 +678,8 @@ impl SessionUi {
                     }
                 }
                 Some(command) => {
-                    self.external_editor_request = Some(command);
+                    self.external_editor_request =
+                        Some((command, crate::external_editor::EditorTarget::PromptDraft));
                 }
             }
             self.dirty = true;

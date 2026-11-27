@@ -1245,6 +1245,16 @@ pub enum DaemonCommand {
         #[serde(flatten)]
         rest: JsonMap,
     },
+    /// Replace the model-visible context with `messages` (the `get_session_context`
+    /// message shape). Rust-native extension; backs the TUI's `/edit_context`.
+    SetSessionContext {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        messages: Vec<Value>,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
     GetSessionTree {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,

@@ -7,6 +7,7 @@ mod apply;
 mod auth;
 mod bash;
 mod commands;
+mod context_edit;
 mod factory;
 mod harness;
 mod heartbeats;
@@ -404,7 +405,12 @@ pub(crate) struct SessionUi {
     /// `app.suspend` (default ctrl+z) requested the process-group suspend: the interactive
     /// loop performs the cycle right after dispatch, because the renderer is the loop's terminal.
     suspend_requested: bool,
-    external_editor_request: Option<String>,
+    external_editor_request: Option<(String, crate::external_editor::EditorTarget)>,
+    /// `/edit_context`: the unedited dump the saved text is compared against.
+    context_edit_baseline: String,
+    /// `/edit_context`: the last saved text the daemon or the JSON parser rejected, reopened
+    /// by the next `/edit_context` so a failed edit can be retried.
+    context_edit_draft: Option<String>,
     /// The `/mcp` view's internal auth resolution: the loop mounts the panel
     /// and spawns the command through the auth seam, never the typed-command path.
     pending_mcp_auth: Option<McpAuthIntent>,

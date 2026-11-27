@@ -5,6 +5,14 @@
 
 use anyhow::{Context, Result};
 
+/// What an external-editor handoff edits, and so where its saved text goes.
+pub(crate) enum EditorTarget {
+    /// The prompt draft (`app.editor.external`).
+    PromptDraft,
+    /// The session context dump `/edit_context` opened, as JSON text.
+    Context(String),
+}
+
 /// The editor command (TS `process.env.VISUAL || process.env.EDITOR`):
 /// `$VISUAL` falls through to `$EDITOR` when unset or empty; `None` when
 /// no non-empty command is configured at all.
@@ -23,13 +31,13 @@ pub(crate) fn editor_command() -> Option<String> {
 /// stays silent; the IO/spawn failure TS swallows is surfaced instead.
 /// The temp file is removed on every path past a successful create: we
 /// created it, we remove it.
-pub(crate) async fn edit(command: &str, text: &str) -> Result<Option<String>> {
+pub(crate) async fn edit(command: &str, text: &str, extension: &str) -> Result<Option<String>> {
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_millis())
         .unwrap_or_default();
     // The name shows in the user's editor buffer.
-    let path = std::env::temp_dir().join(format!("beehive-editor-{millis}.md"));
+    let path = std::env::temp_dir().join(format!("beehive-editor-{millis}.{extension}"));
     // O_EXCL (`create_new`): the draft never follows or truncates a
     // pre-planted path or symlink, and 0600 keeps the prompt draft
     // owner-only in the shared temp dir. A pre-existing path fails the create

@@ -772,6 +772,13 @@ impl SessionUi {
                 }
                 self.handle_reload_command(view)?;
             }
+            "edit_context" => {
+                if resolved.args.is_empty() {
+                    self.handle_edit_context_command(view).await?;
+                } else {
+                    self.note("Usage: /edit_context", view);
+                }
+            }
             "heartbeat" => self.handle_heartbeat_command(text, view).await,
             "heartbeats" => {
                 if !resolved.args.is_empty() {

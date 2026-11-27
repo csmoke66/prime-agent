@@ -634,11 +634,8 @@ fn login_recovery_merges_the_exact_daemon_error_wording() {
     assert_eq!(
         flat[1..],
         vec![
-            format!(
-                " Authentication failed for \"test-provider\". Credentials{}",
-                " ".repeat(3)
-            ),
-            " may have expired or network is unavailable. · Run /login to".to_string(),
+            " Authentication failed for \"test-provider\". Credentials may ".to_string(),
+            " have expired or network is unavailable. · Run /login to    ".to_string(),
             format!(" update credentials.{}", " ".repeat(40)),
         ]
     );

@@ -297,7 +297,7 @@ fn renders_the_ts_inline_panel_shape() {
         format!(
             "  {name}{name_pad}{}  {squares}   {label}{label_pad}{}test-provider",
             " ".repeat(33),
-            " ".repeat(37),
+            " ".repeat(39),
         )
     };
     assert_eq!(

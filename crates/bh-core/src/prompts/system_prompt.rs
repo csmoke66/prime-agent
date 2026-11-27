@@ -371,7 +371,7 @@ fn session_role_section(options: &BuildSystemPromptOptions, has_ipython: bool) -
             );
         } else if has_ipython {
             lines.push(
-                "When a task calls for an answer, reply explicitly with `await agent_message.send(message, receiver_role=\"parent\")`. Not every message or task needs a reply; continue cleanup after sending and go idle normally.".to_string(),
+                "When you end a turn because an assigned task is complete, first send the result to your parent with `await agent_message.send(message, receiver_role=\"parent\")`; your final assistant text alone is not a report. Messages that need no answer (acknowledgments, harness notices) need no reply; continue cleanup after sending and go idle normally.".to_string(),
             );
         }
         if has_ipython {
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn factory_child_gets_the_factory_line_instead_of_the_reply_line() {
-        const REPLY: &str = "reply explicitly with `await agent_message.send(";
+        const REPLY: &str = "send the result to your parent with `await agent_message.send(";
         const FACTORY: &str = "Your final message is this state's output";
         let mut child = base_options();
         child.rlm_depth = Some(1);

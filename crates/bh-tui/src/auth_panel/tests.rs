@@ -14,7 +14,7 @@ fn sink() -> crate::clipboard::OscSink {
 }
 
 fn theme() -> Theme {
-    Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
+    Theme::new(crate::theme::ColorMode::TrueColor)
 }
 
 fn frame_text(panel: &mut AuthPanel) -> Vec<String> {

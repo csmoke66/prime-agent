@@ -1,41 +1,6 @@
-//! Bundled theme definitions (pure data, the product theme files verbatim), shared by the TUI's
-//! theme loader (bh-tui) and the session HTML exporter (bh-core); a theme's `export` section
-//! carries the export page's background overrides. Only the built-ins are data here; custom theme
-//! discovery and behavior belong to the consuming crates.
+//! The bundled Beehive palette (pure data, the product theme file verbatim), shared by the TUI's
+//! palette loader (bh-tui) and the session HTML exporter (bh-core); its `export` section
+//! carries the export page's background colors.
 
-/// The bundled theme names, in builtin resolution order.
-pub const BUILTIN_THEME_NAMES: [&str; 3] = ["beehive", "dark", "light"];
-
-/// The `beehive` theme file (Beehive's default, dark-first).
+/// The Beehive palette file: the only palette.
 pub const BEEHIVE_THEME_JSON: &str = include_str!("../themes/beehive.json");
-pub const DARK_THEME_JSON: &str = include_str!("../themes/dark.json");
-pub const LIGHT_THEME_JSON: &str = include_str!("../themes/light.json");
-
-/// The bundled theme file for `name`, when `name` is a built-in theme.
-#[must_use]
-pub fn builtin_theme_json(name: &str) -> Option<&'static str> {
-    match name {
-        // "prime" is the pre-rename theme name that existing settings files still carry.
-        "beehive" | "prime" => Some(BEEHIVE_THEME_JSON),
-        "dark" => Some(DARK_THEME_JSON),
-        "light" => Some(LIGHT_THEME_JSON),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The bundled files parse as JSON objects with a name and colors, each
-    /// advertising the theme name it is looked up by.
-    #[test]
-    fn builtin_theme_files_parse_and_match_their_names() {
-        for name in BUILTIN_THEME_NAMES {
-            let raw = builtin_theme_json(name).unwrap();
-            let value: serde_json::Value = serde_json::from_str(raw).expect("valid JSON");
-            assert_eq!(value["name"], *name);
-            assert!(value["colors"].is_object(), "{name} has colors");
-        }
-    }
-}

@@ -285,7 +285,7 @@ mod tests {
     use crate::tool_card::ToolCallCard;
 
     fn view() -> AgentView {
-        AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
+        AgentView::new(Theme::new(ColorMode::TrueColor))
     }
 
     fn tool_card(id: &str) -> ChatEntry {

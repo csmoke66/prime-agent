@@ -198,12 +198,6 @@ impl bh_tui::client_settings::ClientSettings for RecordingSettings {
         self.record(&format!("tool-output-reminder={percent}"))
     }
 
-    fn theme(&self) -> Option<String> {
-        None
-    }
-    fn set_theme(&self, theme: &str) -> Result<()> {
-        self.record(&format!("theme={theme}"))
-    }
     fn show_images(&self) -> bool {
         true
     }
@@ -558,7 +552,7 @@ fn tab_and_the_number_keys_move_the_tabs_not_the_arrows() {
         .any(|row| row.contains("Quiet startup")));
     // The retired fullscreen row is not there.
     let display = frame_with(&frames, "Mermaid diagrams");
-    assert!(display.iter().any(|row| row.contains("Theme")));
+    assert!(display.iter().any(|row| row.contains("Terminal progress")));
     assert!(
         !display
             .iter()

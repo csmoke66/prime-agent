@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::PackageManager;
 use super::discovery::{
-    collect_ancestor_agents_skill_dirs, collect_auto_prompt_entries, collect_auto_theme_entries,
-    collect_skill_entries, SkillDiscoveryMode,
+    collect_ancestor_agents_skill_dirs, collect_auto_prompt_entries, collect_skill_entries,
+    SkillDiscoveryMode,
 };
 use super::patterns::is_enabled_by_overrides;
 use super::{
@@ -96,14 +96,6 @@ impl PackageManager {
             &project_overrides[1],
             project_base_dir,
         );
-        add_resources(
-            accumulator,
-            ResourceType::Themes,
-            collect_auto_theme_entries(&project_dirs[2]),
-            &project_metadata,
-            &project_overrides[2],
-            project_base_dir,
-        );
 
         add_resources(
             accumulator,
@@ -181,14 +173,6 @@ impl PackageManager {
             collect_auto_prompt_entries(&user_dirs[1]),
             &user_metadata,
             &user_overrides[1],
-            global_base_dir,
-        );
-        add_resources(
-            accumulator,
-            ResourceType::Themes,
-            collect_auto_theme_entries(&user_dirs[2]),
-            &user_metadata,
-            &user_overrides[2],
             global_base_dir,
         );
     }

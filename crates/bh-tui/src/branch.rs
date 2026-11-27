@@ -131,7 +131,7 @@ mod tests {
     use crate::theme::{ColorMode, Theme};
 
     fn theme() -> Theme {
-        Theme::builtin("beehive", ColorMode::TrueColor)
+        Theme::new(ColorMode::TrueColor)
     }
 
     fn flat(rows: &[Line]) -> Vec<String> {

@@ -1,8 +1,6 @@
-//! The `beehive`, `dark`, and `light` built-in palettes with the TS JSON
-//! themes' variable/color layout; colors resolve to truecolor or 256-color
-//! ANSI depending on `COLORTERM`/`TERM`.
+//! The Beehive palette, the only one, in the TS JSON variable/color layout;
+//! colors resolve to truecolor or 256-color ANSI depending on `COLORTERM`/`TERM`.
 
-use anyhow::{Context, Result};
 use ratatui::style::{Color, Modifier, Style};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -147,7 +145,6 @@ impl ThemeBg {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThemeJson {
-    name: String,
     #[serde(default)]
     vars: BTreeMap<String, String>,
     colors: BTreeMap<String, serde_json::Value>,
@@ -365,7 +362,6 @@ pub(crate) fn quantized_luminance(color: Color) -> Option<f64> {
 /// The active theme: resolved styles per color slot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Theme {
-    pub name: String,
     fg: BTreeMap<&'static str, Style>,
     bg: BTreeMap<&'static str, Style>,
     bg_colors: BTreeMap<&'static str, Color>,
@@ -397,7 +393,6 @@ impl Theme {
             }
         }
         Theme {
-            name: json.name.clone(),
             fg,
             bg,
             bg_colors,
@@ -411,9 +406,13 @@ impl Theme {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics only if the bundled palette JSON fails to parse.
     #[must_use]
-    pub fn builtin(name: &str, mode: ColorMode) -> Theme {
-        let json = builtin_theme_json(name);
+    pub fn new(mode: ColorMode) -> Theme {
+        let json = serde_json::from_str(bh_types::themes::BEEHIVE_THEME_JSON)
+            .expect("the bundled palette is valid JSON");
         Theme::from_json(&json, mode)
     }
 
@@ -768,45 +767,13 @@ fn bg_name_lookup(name: &str) -> Option<&'static str> {
     })
 }
 
-/// The bundled theme files, shared with the session HTML exporter
-/// via [`bh_types::themes`].
-pub const BEEHIVE_JSON: &str = bh_types::themes::BEEHIVE_THEME_JSON;
-pub const DARK_JSON: &str = bh_types::themes::DARK_THEME_JSON;
-pub const LIGHT_JSON: &str = bh_types::themes::LIGHT_THEME_JSON;
-
-/// Resolve a bundled theme JSON by name, falling back to the beehive
-/// theme when the name is unknown.
-///
-/// # Panics
-///
-/// Panics only if the bundled `beehive` theme JSON fails to parse.
-#[must_use]
-pub fn builtin_theme_json(name: &str) -> ThemeJson {
-    let raw = bh_types::themes::builtin_theme_json(name).unwrap_or(BEEHIVE_JSON);
-    serde_json::from_str(raw)
-        .unwrap_or_else(|_| serde_json::from_str(BEEHIVE_JSON).expect("beehive.json is valid"))
-}
-
-/// Load a theme from a JSON file path.
-///
-/// # Errors
-///
-/// Returns `Err` when the file cannot be read or its JSON cannot be parsed.
-pub fn load_theme_from_path(path: &std::path::Path, mode: ColorMode) -> Result<Theme> {
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("reading theme {}", path.display()))?;
-    let json: ThemeJson =
-        serde_json::from_str(&raw).with_context(|| format!("parsing theme {}", path.display()))?;
-    Ok(Theme::from_json(&json, mode))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn beehive_theme_resolves() {
-        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
+        let theme = Theme::new(ColorMode::TrueColor);
         let accent = theme.fg_style(ThemeColor::Accent);
         match accent.fg {
             Some(Color::Rgb(0x7c, 0x6f, 0xaf)) => {}
@@ -824,7 +791,7 @@ mod tests {
 
     #[test]
     fn var_reference_resolves() {
-        let theme = Theme::builtin("beehive", ColorMode::Color256);
+        let theme = Theme::new(ColorMode::Color256);
         let accent = theme.fg_style(ThemeColor::Accent);
         assert!(matches!(accent.fg, Some(Color::Indexed(_))));
     }
@@ -845,7 +812,7 @@ mod tests {
 
     #[test]
     fn the_selection_style_is_the_hover_color_never_the_accent() {
-        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
+        let theme = Theme::new(ColorMode::TrueColor);
         assert_eq!(
             theme.selection_row_style(),
             theme.hover_row_style(),
@@ -897,9 +864,9 @@ mod tests {
 
     #[test]
     fn soft_selection_reads_off_the_editor_surface() {
-        for name in ["beehive", "dark", "light"] {
+        {
             for mode in [ColorMode::TrueColor, ColorMode::Color256] {
-                let theme = Theme::builtin(name, mode);
+                let theme = Theme::new(mode);
                 let wash = theme
                     .soft_selection_style()
                     .bg
@@ -910,11 +877,11 @@ mod tests {
                 let (Some(wash_lum), Some(surface_lum)) =
                     (quantized_luminance(wash), quantized_luminance(surface))
                 else {
-                    panic!("{name}/{mode:?}: wash and surface must both evaluate");
+                    panic!("{mode:?}: wash and surface must both evaluate");
                 };
                 assert!(
                     (wash_lum - surface_lum).abs() >= SELECTION_MIN_LUMINANCE_DELTA - 1.0,
-                    "{name}/{mode:?}: wash {wash:?} lum {wash_lum:.2} vs surface {surface:?} lum {surface_lum:.2}"
+                    "{mode:?}: wash {wash:?} lum {wash_lum:.2} vs surface {surface:?} lum {surface_lum:.2}"
                 );
             }
         }
@@ -922,29 +889,15 @@ mod tests {
 
     #[test]
     fn soft_selection_pins_the_contrast_ladder_values() {
-        let beehive = Theme::builtin("beehive", ColorMode::TrueColor);
+        let beehive = Theme::new(ColorMode::TrueColor);
         assert_eq!(
             beehive.soft_selection_style().bg,
             Some(Color::Rgb(54, 54, 58))
         );
-        let beehive256 = Theme::builtin("beehive", ColorMode::Color256);
+        let beehive256 = Theme::new(ColorMode::Color256);
         assert_eq!(
             beehive256.soft_selection_style().bg,
             Some(Color::Indexed(237))
-        );
-        let dark = Theme::builtin("dark", ColorMode::TrueColor);
-        assert_eq!(dark.soft_selection_style().bg, Some(Color::Rgb(80, 80, 95)));
-        let dark256 = Theme::builtin("dark", ColorMode::Color256);
-        assert_eq!(dark256.soft_selection_style().bg, Some(Color::Indexed(244)));
-        let light = Theme::builtin("light", ColorMode::TrueColor);
-        assert_eq!(
-            light.soft_selection_style().bg,
-            Some(Color::Rgb(202, 202, 218))
-        );
-        let light256 = Theme::builtin("light", ColorMode::Color256);
-        assert_eq!(
-            light256.soft_selection_style().bg,
-            Some(Color::Indexed(251))
         );
     }
 
@@ -981,34 +934,34 @@ mod tests {
 
     #[test]
     fn the_hover_band_and_the_selection_share_one_color() {
-        for name in ["beehive", "dark", "light"] {
+        {
             for mode in [ColorMode::TrueColor, ColorMode::Color256] {
-                let theme = Theme::builtin(name, mode);
+                let theme = Theme::new(mode);
                 let hover = theme.hover_row_style();
                 let selection = theme.selection_row_style();
                 assert_eq!(
                     hover.bg,
                     theme.soft_selection_style().bg,
-                    "{name}/{mode:?}: the hover is the one light wash"
+                    "{mode:?}: the hover is the one light wash"
                 );
                 assert_eq!(
                     hover.bg, selection.bg,
-                    "{name}/{mode:?}: the selection paints the hover's own band color"
+                    "{mode:?}: the selection paints the hover's own band color"
                 );
                 assert!(
                     selection.add_modifier.is_empty(),
-                    "{name}/{mode:?}: the selection carries no modifiers"
+                    "{mode:?}: the selection carries no modifiers"
                 );
                 let band = hover.bg.expect("the hover paints a background");
                 let band_lum = quantized_luminance(band)
-                    .unwrap_or_else(|| panic!("{name}/{mode:?}: the band must evaluate"));
+                    .unwrap_or_else(|| panic!("{mode:?}: the band must evaluate"));
                 let surface = theme
                     .bg_color(ThemeBg::UserMessageBg)
                     .and_then(quantized_luminance)
                     .expect("the editor surface evaluates");
                 assert!(
                     (band_lum - surface).abs() >= SELECTION_MIN_LUMINANCE_DELTA - 1.0,
-                    "{name}/{mode:?}: the light band reads off its surface"
+                    "{mode:?}: the light band reads off its surface"
                 );
             }
         }
@@ -1016,7 +969,7 @@ mod tests {
 
     #[test]
     fn the_hover_band_splits_on_grapheme_clusters() {
-        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
+        let theme = Theme::new(ColorMode::TrueColor);
         let combining = "e\u{301}x";
         let wide = "\u{4e2d}y";
         let mut line = vec![crate::Span::raw(combining), crate::Span::raw(wide)];
@@ -1048,7 +1001,7 @@ mod tests {
 
     #[test]
     fn the_hover_band_covers_its_columns_and_never_demotes_the_selection() {
-        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
+        let theme = Theme::new(ColorMode::TrueColor);
         let mut line = vec![
             crate::Span::raw("plain "),
             crate::Span::styled("focused".to_string(), theme.selection_row_style()),

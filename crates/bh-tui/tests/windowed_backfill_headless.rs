@@ -531,7 +531,7 @@ fn a_reload_rebuild_during_an_in_flight_backfill_keeps_rows_unique_and_ordered()
             },
             HeadlessStep::Submit("/reload".to_string()),
             HeadlessStep::WaitRender {
-                needle: "Reloaded keybindings, skills, prompts, themes".to_string(),
+                needle: "Reloaded keybindings, skills, prompts".to_string(),
                 timeout_ms: 5000,
             },
             HeadlessStep::WaitGone {

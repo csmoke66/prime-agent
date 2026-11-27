@@ -346,8 +346,8 @@ class Supervisor:
                     elif name == "get_resource_snapshot":
                         # AgentConnectionResourceSnapshot wire shape.
                         response["data"] = {"contextFiles": [], "skills": [], "prompts": [],
-                                            "extensions": [], "themes": [], "diagnostics": {
-                                            "skills": [], "prompts": [], "extensions": [], "themes": []}}
+                                            "extensions": [], "diagnostics": {
+                                            "skills": [], "prompts": [], "extensions": []}}
                     elif name == "get_session_stats":
                         # AgentSession.getSessionStats's empty-session return shape.
                         response["data"] = {"sessionId": "fixture-durable", "userMessages": 0,

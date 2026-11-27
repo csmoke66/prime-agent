@@ -105,21 +105,17 @@ fn write_export(html: &str, session_file: &Path, output_path: Option<&str>) -> R
 
 /// Export a session to HTML (the daemon worker's `export_html` command).
 ///
-/// `theme_name` is resolved against `agent_dir`; `session_file` names the default
-/// output file; a given `output_path` is used verbatim.
+/// `session_file` names the default output file; a given `output_path` is used verbatim.
 ///
 /// # Errors
 ///
-/// Returns an error when the configured theme cannot be resolved or the export file
-/// cannot be written.
+/// Returns an error when the export file cannot be written.
 pub fn export_session_to_html(
     data: &SessionExportData,
-    theme_name: Option<&str>,
-    agent_dir: &Path,
     session_file: &Path,
     output_path: Option<&str>,
 ) -> Result<String> {
-    let theme = resolve_export_theme(theme_name, agent_dir)?;
+    let theme = resolve_export_theme()?;
     let html = generate_html(data, &theme);
     write_export(&html, session_file, output_path)
 }
@@ -130,18 +126,14 @@ pub fn export_session_to_html(
 ///
 /// # Errors
 ///
-/// Returns an error when the input file cannot be loaded or migrated, the theme
-/// cannot be resolved, or the file cannot be written.
-pub fn export_from_file(
-    input_path: &Path,
-    output_path: Option<&str>,
-    agent_dir: &Path,
-) -> Result<String> {
+/// Returns an error when the input file cannot be loaded or migrated, or the file cannot be
+/// written.
+pub fn export_from_file(input_path: &Path, output_path: Option<&str>) -> Result<String> {
     if !input_path.exists() {
         bail!("File not found: {}", input_path.display());
     }
     let data = session_data_from_file(input_path)?;
-    let theme = resolve_export_theme(None, agent_dir)?;
+    let theme = resolve_export_theme()?;
     let html = generate_html(&data, &theme);
     write_export(&html, input_path, output_path)
 }
@@ -224,12 +216,9 @@ mod tests {
     #[test]
     fn export_from_file_shape() {
         let dir = tempfile::TempDir::new().expect("temp dir");
-        let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(&agent_dir).expect("agent dir");
         let session = fixture_session(dir.path());
         let out = dir.path().join("out.html");
-        let returned =
-            export_from_file(&session, Some(out.to_str().unwrap()), &agent_dir).expect("export");
+        let returned = export_from_file(&session, Some(out.to_str().unwrap())).expect("export");
         assert_eq!(returned, out.to_string_lossy());
         let html = std::fs::read_to_string(&out).expect("read export");
         assert!(html.contains("Session Export"));
@@ -262,13 +251,11 @@ mod tests {
     #[test]
     fn default_output_name() {
         let dir = tempfile::TempDir::new().expect("temp dir");
-        let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(&agent_dir).expect("agent dir");
         let session = fixture_session(dir.path());
         let cwd = tempfile::TempDir::new().expect("cwd");
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(cwd.path()).expect("chdir");
-        let returned = export_from_file(&session, None, &agent_dir).expect("export");
+        let returned = export_from_file(&session, None).expect("export");
         std::env::set_current_dir(previous).expect("restore cwd");
         assert_eq!(returned, "beehive-session-fixture-session.html");
         assert!(cwd.path().join(&returned).exists());
@@ -278,9 +265,7 @@ mod tests {
     #[test]
     fn missing_input_file() {
         let dir = tempfile::TempDir::new().expect("temp dir");
-        let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(&agent_dir).expect("agent dir");
-        let error = export_from_file(&dir.path().join("nope.jsonl"), None, &agent_dir)
+        let error = export_from_file(&dir.path().join("nope.jsonl"), None)
             .expect_err("missing file must fail");
         assert!(
             error.to_string().starts_with("File not found:"),

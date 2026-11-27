@@ -13,8 +13,6 @@ fn menu() -> SettingsMenu {
         steering_mode: "all".to_string(),
         available_thinking_levels: vec!["low".to_string(), "high".to_string()],
         thinking_level: Some("low".to_string()),
-        available_themes: vec!["beehive".to_string(), "dark".to_string()],
-        theme: "beehive".to_string(),
         idle_eviction_minutes: "90".to_string(),
         ..Default::default()
     };
@@ -22,7 +20,7 @@ fn menu() -> SettingsMenu {
 }
 
 fn render_text(menu: &SettingsMenu) -> Vec<String> {
-    let theme = crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::Color256);
+    let theme = crate::theme::Theme::new(crate::theme::ColorMode::Color256);
     menu.render(&theme, 100, &KeybindingsManager::new())
         .iter()
         .map(|line| line.iter().map(|span| span.content.as_str()).collect())
@@ -136,28 +134,6 @@ fn enter_opens_the_thinking_submenu_and_selection_applies() {
 }
 
 #[test]
-fn theme_submenu_previews_and_esc_restores() {
-    let mut menu = menu();
-    // 3 jumps to the Display tab (theme leads it).
-    menu.handle_key("3", &kb());
-    menu.handle_key("enter", &kb());
-    assert_eq!(
-        menu.handle_key("down", &kb()),
-        SettingsMenuAction::PreviewTheme {
-            name: "dark".to_string()
-        }
-    );
-    assert_eq!(
-        menu.handle_key("esc", &kb()),
-        SettingsMenuAction::RestoreTheme {
-            name: "beehive".to_string()
-        }
-    );
-    let text = render_text(&menu);
-    assert!(text.iter().any(|row| row.contains("Theme")));
-}
-
-#[test]
 fn enter_opens_the_service_tier_submenu_preselected_and_selection_applies() {
     let values = SettingsCurrentValues {
         default_service_tier: "flex".to_string(),
@@ -233,7 +209,6 @@ fn switching_tabs_shows_that_tabs_settings() {
         .any(|row| row.contains("Autocomplete max items")));
     assert!(text.iter().any(|row| row.contains("Show hardware cursor")));
     assert!(!text.iter().any(|row| row.contains("Auto-compact")));
-    assert!(!text.iter().any(|row| row.contains("Theme")));
 }
 
 #[test]
@@ -450,7 +425,7 @@ fn switching_tabs_keeps_each_tabs_search_and_selection() {
 
 #[test]
 fn the_strip_lists_the_tabs_and_marks_the_active_one() {
-    let theme = crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::Color256);
+    let theme = crate::theme::Theme::new(crate::theme::ColorMode::Color256);
     let lines = menu().render(&theme, 100, &KeybindingsManager::new());
     // The strip rides under the search field with a blank row on
     // either side (the operator's 2026-09-28 spacing pass).

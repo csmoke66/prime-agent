@@ -273,7 +273,6 @@ fn a_scoped_reopen_expands_a_nested_anchor_outside_the_carried_branch() {
         socket_path: PathBuf::from("/tmp/agents-view-test.sock"),
         cwd: PathBuf::from("/tmp"),
         session_dir: None,
-        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: Some("g".to_string()),
         scope: Some(AgentsViewScope {
@@ -313,7 +312,6 @@ fn returning_mode(
         socket_path: PathBuf::from("/tmp/agents-view-test.sock"),
         cwd: PathBuf::from("/tmp"),
         session_dir: None,
-        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: Some(anchor.to_string()),
         scope: None,

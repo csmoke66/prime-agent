@@ -42,8 +42,6 @@ pub struct ProviderBlockTargetChoice {
 pub enum SettingsSubmenu {
     /// "Thinking Level" (the session's available levels).
     Thinking { levels: Vec<String> },
-    /// "Theme" (the registered themes; selection previews).
-    Theme { themes: Vec<String> },
     /// "Warnings" (the single warning toggle as its own list).
     Warnings,
     /// "Default Service Tier" (TS `SERVICE_TIER_OPTIONS`).
@@ -101,8 +99,7 @@ pub struct SettingsMenuRow {
     pub submenu: Option<SettingsSubmenu>,
 }
 
-/// One key press while the menu is open. The theme submenu's live preview
-/// and its Esc restore come through as their own actions.
+/// One key press while the menu is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsMenuAction {
     None,
@@ -132,16 +129,8 @@ pub enum SettingsMenuAction {
         selector: String,
         label: String,
     },
-    /// The theme submenu's selection moved: preview the theme live.
-    PreviewTheme {
-        name: String,
-    },
     /// Esc inside a submenu closed it; the menu itself stays open.
     SubmenuClosed,
-    /// The theme submenu closed with Esc: restore the row's theme.
-    RestoreTheme {
-        name: String,
-    },
 }
 
 /// The open submenu's own selection state.
@@ -540,16 +529,6 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
             submenu: None,
         },
         SettingsMenuRow {
-            id: "theme",
-            label: "Theme",
-            description: "Color theme for the interface",
-            current: current.theme.clone(),
-            values: None,
-            submenu: Some(SettingsSubmenu::Theme {
-                themes: current.available_themes.clone(),
-            }),
-        },
-        SettingsMenuRow {
             id: "child-models",
             label: "Child allowed models",
             description: "Select which models subagents can use in this session family",
@@ -610,8 +589,6 @@ pub struct SettingsCurrentValues {
     pub warnings_anthropic_extra_usage: bool,
     pub thinking_level: Option<String>,
     pub available_thinking_levels: Vec<String>,
-    pub theme: String,
-    pub available_themes: Vec<String>,
 }
 
 impl SettingsMenu {
@@ -778,12 +755,11 @@ impl SettingsMenu {
         }
         if let Some(mut sub) = self.sub.take() {
             let action = self.handle_submenu_key(&mut sub, key, kb);
-            // A value select, a theme restore, or the submenu's Esc closes the
-            // submenu; a plain navigation or live preview keeps it open.
+            // A value select or the submenu's Esc closes the submenu; a plain
+            // navigation keeps it open.
             let closed = matches!(
                 action,
                 SettingsMenuAction::Change { .. }
-                    | SettingsMenuAction::RestoreTheme { .. }
                     | SettingsMenuAction::SubmenuClosed
             );
             if !closed {
@@ -980,7 +956,7 @@ impl SettingsMenu {
                     .iter()
                     .position(|session| session.label == row.current)
                     .unwrap_or(0),
-                _ => 0,
+                SettingsSubmenu::Warnings => 0,
             };
             self.sub = Some(SubmenuState {
                 row: row_index,
@@ -1026,7 +1002,6 @@ impl SettingsMenu {
     ) -> SettingsMenuAction {
         let options = match &sub.kind {
             SettingsSubmenu::Thinking { levels } => levels.len(),
-            SettingsSubmenu::Theme { themes } => themes.len(),
             SettingsSubmenu::Warnings => 1,
             SettingsSubmenu::ServiceTier => SERVICE_TIER_CHOICES.len(),
             SettingsSubmenu::SessionServiceTier { tiers } => tiers.len(),
@@ -1040,14 +1015,12 @@ impl SettingsMenu {
                 } else {
                     sub.selected - 1
                 };
-                return Self::submenu_selection_change(sub);
             }
             return SettingsMenuAction::None;
         }
         if kb.matches(key, "tui.select.down") {
             if options > 0 {
                 sub.selected = (sub.selected + 1) % options;
-                return Self::submenu_selection_change(sub);
             }
             return SettingsMenuAction::None;
         }
@@ -1061,15 +1034,6 @@ impl SettingsMenu {
                         .map(|level| SettingsMenuAction::Change {
                             id: row_id,
                             value: level,
-                        })
-                }
-                SettingsSubmenu::Theme { themes } => {
-                    themes
-                        .get(sub.selected)
-                        .cloned()
-                        .map(|name| SettingsMenuAction::Change {
-                            id: row_id,
-                            value: name,
                         })
                 }
                 SettingsSubmenu::Warnings => Some(SettingsMenuAction::Change {
@@ -1120,34 +1084,10 @@ impl SettingsMenu {
             return SettingsMenuAction::None;
         }
         if kb.matches(key, "tui.select.cancel") || key == "ctrl+c" {
-            // Theme: Esc restores the row's theme; every submenu just goes back.
-            return self.submenu_cancel(sub);
+            // Every submenu just goes back; the menu itself stays open.
+            return SettingsMenuAction::SubmenuClosed;
         }
         SettingsMenuAction::None
-    }
-
-    /// The selection-change side effect: only the theme submenu previews live.
-    fn submenu_selection_change(sub: &SubmenuState) -> SettingsMenuAction {
-        match &sub.kind {
-            SettingsSubmenu::Theme { themes } => themes
-                .get(sub.selected)
-                .map_or(SettingsMenuAction::None, |name| {
-                    SettingsMenuAction::PreviewTheme { name: name.clone() }
-                }),
-            _ => SettingsMenuAction::None,
-        }
-    }
-
-    /// The submenu's Esc behavior: the theme submenu restores the theme the
-    /// row opened with.
-    fn submenu_cancel(&self, sub: &SubmenuState) -> SettingsMenuAction {
-        match &sub.kind {
-            SettingsSubmenu::Theme { .. } => SettingsMenuAction::RestoreTheme {
-                name: self.rows[sub.row].current.clone(),
-            },
-            // Every other submenu just goes back; the menu itself stays open.
-            _ => SettingsMenuAction::SubmenuClosed,
-        }
     }
 
     /// Switch to a tab: a pure focus move, nothing resets.
@@ -1349,11 +1289,6 @@ impl SettingsMenu {
                             (level.clone(), Some(thinking_description(level).to_owned()))
                         })
                         .collect(),
-                ),
-                SettingsSubmenu::Theme { themes } => (
-                    "Theme",
-                    "Select color theme",
-                    themes.iter().map(|name| (name.clone(), None)).collect(),
                 ),
                 SettingsSubmenu::Warnings => (
                     "Warnings",

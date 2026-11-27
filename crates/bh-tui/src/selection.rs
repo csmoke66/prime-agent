@@ -635,7 +635,7 @@ mod tests {
     use crate::Span;
 
     fn view() -> AgentView {
-        AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
+        AgentView::new(Theme::new(ColorMode::TrueColor))
     }
 
     fn rendered_row(frame: &[Line], row: usize) -> String {

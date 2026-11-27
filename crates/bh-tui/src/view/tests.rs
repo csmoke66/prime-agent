@@ -9,7 +9,7 @@ use crate::Line;
 use ratatui::style::Modifier;
 
 fn view() -> AgentView {
-    AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
+    AgentView::new(Theme::new(ColorMode::TrueColor))
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn injected_terminal_links_are_not_clickable() {
         custom_instructions: None,
         summary: injected.to_string(),
     };
-    let theme = Theme::builtin("beehive", ColorMode::TrueColor);
+    let theme = Theme::new(ColorMode::TrueColor);
     let rows = crate::compaction_row::render_compaction_stream(&streaming, true, &theme, 80);
     let links = crate::hyperlinks::frame_link_ranges(&rows);
     assert!(!rows.is_empty() && links.is_empty(), "{links:?}");
@@ -871,10 +871,7 @@ fn dock_pads_window_between_splash_and_editor() {
 }
 
 fn view_with(entries: Vec<ChatEntry>) -> AgentView {
-    let mut view = AgentView::new(crate::theme::Theme::builtin(
-        "beehive",
-        crate::theme::ColorMode::Color256,
-    ));
+    let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::Color256));
     for entry in entries {
         view.push_entry(entry);
     }

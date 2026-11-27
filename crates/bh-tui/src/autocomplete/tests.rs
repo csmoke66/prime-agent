@@ -275,7 +275,7 @@ fn should_trigger_file_completion_skips_slash_names() {
 }
 
 fn theme() -> crate::theme::Theme {
-    crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
+    crate::theme::Theme::new(crate::theme::ColorMode::TrueColor)
 }
 
 #[test]

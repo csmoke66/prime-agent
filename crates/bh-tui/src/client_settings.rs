@@ -162,14 +162,6 @@ pub trait ClientSettings: Send + Sync {
     fn set_tool_output_reminder_percent(&self, _percent: u8) -> Result<()> {
         anyhow::bail!("Tool-result reminder settings are unavailable")
     }
-    /// `theme` (TS `getTheme`/`setTheme`).
-    fn theme(&self) -> Option<String>;
-    /// Persists `theme` to the global scope.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` when the settings store fails.
-    fn set_theme(&self, theme: &str) -> Result<()>;
     /// `terminal.showImages` (TS default true).
     fn show_images(&self) -> bool;
     /// Persists `terminal.showImages` to the global scope.

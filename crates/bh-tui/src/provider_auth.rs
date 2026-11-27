@@ -534,7 +534,7 @@ mod tests {
     }
 
     fn theme() -> Theme {
-        crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
+        crate::theme::Theme::new(crate::theme::ColorMode::TrueColor)
     }
 
     fn anthropic() -> ProviderRow {

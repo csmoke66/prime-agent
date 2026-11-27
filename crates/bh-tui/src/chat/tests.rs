@@ -6,7 +6,7 @@ use crate::theme::{ColorMode, Theme, ThemeColor};
 use ratatui::style::Modifier;
 
 fn theme() -> Theme {
-    Theme::builtin("beehive", ColorMode::TrueColor)
+    Theme::new(ColorMode::TrueColor)
 }
 
 #[test]

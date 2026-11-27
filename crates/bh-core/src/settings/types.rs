@@ -350,7 +350,6 @@ pub struct Settings {
     pub transport: Option<TransportSetting>,
     pub steering_mode: Option<QueueModeSetting>,
     pub follow_up_mode: Option<QueueModeSetting>,
-    pub theme: Option<String>,
     pub compaction: Option<CompactionSettings>,
     pub auto_refine: Option<AutoRefineSettings>,
     /// Master switch for harness creation and context loading; unset preserves enabled behavior.
@@ -388,7 +387,6 @@ pub struct Settings {
     pub packages: Option<Vec<serde_json::Value>>,
     pub skills: Option<Vec<String>>,
     pub prompts: Option<Vec<String>>,
-    pub themes: Option<Vec<String>>,
     pub enable_skill_commands: Option<bool>,
     pub bundled_skills: Option<BundledSkillsSettings>,
     /// Read from global settings only, like the stored keys it selects between.

@@ -162,7 +162,7 @@ fn diff_selector_child_mode() {
         },
     ];
     let selector = ConfigSelector::new(rows);
-    let theme = bh_tui::app::load_theme("beehive");
+    let theme = bh_tui::app::load_theme();
     let keybindings = if remap_exit {
         let mut bindings = bh_tui::keybindings::KeybindingsConfig::new();
         bindings.insert("app.clear".to_string(), vec!["ctrl+q".to_string()]);
@@ -193,7 +193,6 @@ fn diff_replay_child_mode() {
     let stream =
         bh_tui::session::JsonlSessionStream::from_path(Path::new(&fixture)).expect("fixture");
     let options = bh_tui::app::AppOptions {
-        theme: "beehive".to_string(),
         panic_after_frame,
         ..Default::default()
     };

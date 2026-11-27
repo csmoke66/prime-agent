@@ -344,7 +344,6 @@ fn command_options(
         client_settings: None,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

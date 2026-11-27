@@ -491,7 +491,7 @@ mod tests {
 
     fn screen(browser: &mut HarnessBrowser, width: usize, height: usize) -> String {
         browser
-            .render(&Theme::builtin("beehive", ColorMode::TrueColor), width, height)
+            .render(&Theme::new(ColorMode::TrueColor), width, height)
             .into_iter()
             .map(|line| line.into_iter().map(|span| span.content.to_string()).collect::<String>())
             .collect::<Vec<_>>()

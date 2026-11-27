@@ -1,5 +1,5 @@
 //! Session resource resolution (`resolve()`): precedence-ranked collection
-//! of skill/prompt/theme paths from configured packages, settings
+//! of skill/prompt paths from configured packages, settings
 //! top-level arrays, and auto-discovery. Collisions resolve first-wins:
 //! entries are ordered by [`resource_precedence_rank`] and deduped by
 //! canonicalized path.
@@ -22,14 +22,9 @@ use super::SourceScope;
 pub enum ResourceType {
     Skills,
     Prompts,
-    Themes,
 }
 
-pub(crate) const RESOURCE_TYPES: [ResourceType; 3] = [
-    ResourceType::Skills,
-    ResourceType::Prompts,
-    ResourceType::Themes,
-];
+pub(crate) const RESOURCE_TYPES: [ResourceType; 2] = [ResourceType::Skills, ResourceType::Prompts];
 
 /// Where a resource came from: a package, or a top-level settings/auto slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -73,7 +68,7 @@ pub struct PathMetadata {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DisabledBy {
-    /// A `skills`/`prompts`/`themes` pattern in settings.
+    /// A `skills`/`prompts` pattern in settings.
     Settings,
     /// Web search is off (the bundled `websearch`): no key for the selected
     /// provider, or `bundledSkills.websearch: false`.
@@ -103,7 +98,6 @@ impl ResolvedResource {
 pub struct ResolvedPaths {
     pub skills: Vec<ResolvedResource>,
     pub prompts: Vec<ResolvedResource>,
-    pub themes: Vec<ResolvedResource>,
     pub diagnostics: Vec<crate::skills::diagnostics::ResourceDiagnostic>,
 }
 
@@ -133,7 +127,6 @@ pub(crate) fn resource_precedence_rank(metadata: &PathMetadata) -> u8 {
 pub(crate) struct PackageFilter {
     pub skills: Option<Vec<String>>,
     pub prompts: Option<Vec<String>>,
-    pub themes: Option<Vec<String>>,
 }
 
 impl PackageFilter {
@@ -141,7 +134,6 @@ impl PackageFilter {
         match resource_type {
             ResourceType::Skills => self.skills.as_ref(),
             ResourceType::Prompts => self.prompts.as_ref(),
-            ResourceType::Themes => self.themes.as_ref(),
         }
     }
 }
@@ -159,7 +151,6 @@ pub(crate) struct ConfiguredSource {
 pub(crate) struct BeehiveManifest {
     pub skills: Option<Vec<String>>,
     pub prompts: Option<Vec<String>>,
-    pub themes: Option<Vec<String>>,
 }
 
 impl BeehiveManifest {
@@ -167,7 +158,6 @@ impl BeehiveManifest {
         match resource_type {
             ResourceType::Skills => self.skills.clone(),
             ResourceType::Prompts => self.prompts.clone(),
-            ResourceType::Themes => self.themes.clone(),
         }
     }
 }
@@ -209,7 +199,6 @@ impl ResourceMap {
 pub(crate) struct ResourceAccumulator {
     pub skills: ResourceMap,
     pub prompts: ResourceMap,
-    pub themes: ResourceMap,
     pub diagnostics: Vec<crate::skills::diagnostics::ResourceDiagnostic>,
 }
 
@@ -218,7 +207,6 @@ impl ResourceAccumulator {
         match resource_type {
             ResourceType::Skills => &mut self.skills,
             ResourceType::Prompts => &mut self.prompts,
-            ResourceType::Themes => &mut self.themes,
         }
     }
 }
@@ -248,7 +236,6 @@ pub(crate) fn to_resolved_paths(accumulator: ResourceAccumulator) -> ResolvedPat
     ResolvedPaths {
         skills: map_to_resolved(accumulator.skills),
         prompts: map_to_resolved(accumulator.prompts),
-        themes: map_to_resolved(accumulator.themes),
         diagnostics: accumulator.diagnostics,
     }
 }
@@ -262,7 +249,6 @@ pub(crate) fn settings_array(
     match resource_type {
         ResourceType::Skills => settings.skills.clone().unwrap_or_default(),
         ResourceType::Prompts => settings.prompts.clone().unwrap_or_default(),
-        ResourceType::Themes => settings.themes.clone().unwrap_or_default(),
     }
 }
 
@@ -270,7 +256,6 @@ pub(crate) fn resource_type_dir_name(resource_type: ResourceType) -> &'static st
     match resource_type {
         ResourceType::Skills => "skills",
         ResourceType::Prompts => "prompts",
-        ResourceType::Themes => "themes",
     }
 }
 

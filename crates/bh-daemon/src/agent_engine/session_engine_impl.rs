@@ -1214,11 +1214,9 @@ impl SessionEngine for AgentSessionEngine {
                 "contextFiles": context_files,
                 "skills": skills,
                 "prompts": prompts,
-                "themes": [],
                 "diagnostics": {
                     "skills": engine.skill_diagnostics,
                     "prompts": [],
-                    "themes": [],
                 },
             })
         })

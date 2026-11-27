@@ -70,7 +70,6 @@ pub struct AgentsViewOptions {
     pub socket_path: PathBuf,
     pub cwd: PathBuf,
     pub session_dir: Option<PathBuf>,
-    pub theme: String,
     pub version: String,
     /// The session the view was opened from: anchors the entry selection on its row.
     pub anchor_session_id: Option<String>,
@@ -525,7 +524,7 @@ enum Composer {
 
 impl AgentsViewMode {
     fn new(mut options: AgentsViewOptions) -> Self {
-        let theme = crate::app::load_theme(&options.theme);
+        let theme = crate::app::load_theme();
         let query = options.query.clone().unwrap_or_default();
         // A multi-line notice renders as the dismissible panel; a single line keeps the hint-line
         // status.

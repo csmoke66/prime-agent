@@ -242,7 +242,7 @@ mod tests {
     use crate::theme::ColorMode;
 
     fn theme() -> Theme {
-        Theme::builtin("beehive", ColorMode::TrueColor)
+        Theme::new(ColorMode::TrueColor)
     }
 
     fn kb() -> KeybindingsManager {

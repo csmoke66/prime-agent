@@ -315,7 +315,6 @@ async fn run_agents_view_flow(
             socket_path: base.socket_path.clone(),
             cwd: base.cwd.clone(),
             session_dir: base.session_dir.clone(),
-            theme: base.theme.clone(),
             version: base.version.clone(),
             anchor_session_id: anchor.clone(),
             scope: frames.last().map(|(scope, _)| scope.clone()),
@@ -511,7 +510,6 @@ fn build_tui_options(
         initial_message: options.initial_message.clone(),
         show_images,
         fullscreen_mouse,
-        theme: settings.get_theme().map(str::to_string).unwrap_or_default(),
         // The client-settings seam the interactive commands persist
         // through (`/settings`).
         client_settings: Some(crate::client_settings::CliClientSettings::new(

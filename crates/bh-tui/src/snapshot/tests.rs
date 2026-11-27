@@ -3,10 +3,7 @@ use crate::chat::StatusKind;
 use serde_json::json;
 
 fn test_view() -> crate::view::AgentView {
-    crate::view::AgentView::new(crate::theme::Theme::builtin(
-        "beehive",
-        crate::theme::ColorMode::TrueColor,
-    ))
+    crate::view::AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor))
 }
 
 fn card_of(view: &crate::view::AgentView) -> Option<&ToolCallCard> {
@@ -2183,7 +2180,7 @@ fn elided_image_tool_results_render_their_marker_metadata() {
         0,
         crate::chat::Detail::All,
         crate::chat::Detail::All,
-        &crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor),
+        &crate::theme::Theme::new(crate::theme::ColorMode::TrueColor),
         100,
         true,
     );

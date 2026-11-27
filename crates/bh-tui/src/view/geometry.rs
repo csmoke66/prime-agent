@@ -408,7 +408,7 @@ mod tests {
             color in prop::sample::select(vec![ColorMode::TrueColor, ColorMode::Color256]),
             show_images in any::<bool>(),
         ) {
-            let mut view = AgentView::new(Theme::builtin("beehive", color));
+            let mut view = AgentView::new(Theme::new(color));
             view.detail = detail;
             view.show_images = show_images;
             indent.clone_into(&mut view.code_block_indent);

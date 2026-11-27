@@ -407,13 +407,13 @@ mod tests {
         let settings = project.join(CONFIG_DIR_NAME).join("settings.json");
         let shared = project.join(".beehive/shared.json");
         fs::create_dir_all(settings.parent().unwrap()).unwrap();
-        fs::write(&shared, r#"{"theme":"beehive"}"#).unwrap();
+        fs::write(&shared, r#"{"defaultProvider":"beehive"}"#).unwrap();
         std::os::unix::fs::symlink("shared.json", &settings).unwrap();
         let storage = FileSettingsStorage::new(&project, root.path().join("agent"));
 
         assert_eq!(
             storage.read(SettingsScope::Project).unwrap().as_deref(),
-            Some(r#"{"theme":"beehive"}"#)
+            Some(r#"{"defaultProvider":"beehive"}"#)
         );
         let target_lock = LockGuard::acquire(&shared, STALE_AFTER).unwrap();
         assert!(storage
@@ -422,14 +422,17 @@ mod tests {
         drop(target_lock);
         storage
             .with_lock(SettingsScope::Project, &mut |_| {
-                Some(r#"{"theme":"dark"}"#.into())
+                Some(r#"{"defaultProvider":"dark"}"#.into())
             })
             .unwrap();
         assert!(fs::symlink_metadata(&settings)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_to_string(&shared).unwrap(), r#"{"theme":"dark"}"#);
+        assert_eq!(
+            fs::read_to_string(&shared).unwrap(),
+            r#"{"defaultProvider":"dark"}"#
+        );
     }
 
     #[test]
@@ -456,7 +459,7 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 assert_eq!(current, None);
-                Some(r#"{ "theme": "beehive" }"#.to_string())
+                Some(r#"{ "defaultProvider": "beehive" }"#.to_string())
             })
             .unwrap();
         storage
@@ -543,29 +546,29 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 assert_eq!(current, None);
-                Some(r#"{ "theme": "beehive" }"#.to_string())
+                Some(r#"{ "defaultProvider": "beehive" }"#.to_string())
             })
             .unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "beehive" }"#)
+            Some(r#"{ "defaultProvider": "beehive" }"#)
         );
         let other = FileSettingsStorage::new(dir.path().join("cwd"), dir.path().join("agent"));
         assert_eq!(
             other.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "beehive" }"#)
+            Some(r#"{ "defaultProvider": "beehive" }"#)
         );
-        std::fs::write(&global, r#"{ "theme": "dark" }"#).unwrap();
+        std::fs::write(&global, r#"{ "defaultProvider": "dark" }"#).unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "dark" }"#)
+            Some(r#"{ "defaultProvider": "dark" }"#)
         );
         let tmp = global.with_extension("json.tmp-ext");
-        std::fs::write(&tmp, r#"{ "theme": "ink" }"#).unwrap();
+        std::fs::write(&tmp, r#"{ "defaultProvider": "ink" }"#).unwrap();
         std::fs::rename(&tmp, &global).unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "ink" }"#)
+            Some(r#"{ "defaultProvider": "ink" }"#)
         );
     }
 
@@ -584,12 +587,12 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 let _ = current;
-                Some(r#"{ "theme": "beehive" }"#.to_string())
+                Some(r#"{ "defaultProvider": "beehive" }"#.to_string())
             })
             .unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "beehive" }"#)
+            Some(r#"{ "defaultProvider": "beehive" }"#)
         );
         assert_eq!(storage.read(SettingsScope::Project).unwrap(), None);
     }
@@ -606,7 +609,7 @@ mod tests {
         let storage = FileSettingsStorage::new(cwd.path(), relative.clone());
         let written = storage.with_lock(SettingsScope::Global, &mut |current| {
             assert_eq!(current, None);
-            Some(r#"{ "theme": "beehive" }"#.to_string())
+            Some(r#"{ "defaultProvider": "beehive" }"#.to_string())
         });
         let read = storage.with_lock(SettingsScope::Global, &mut |current| {
             assert!(current.unwrap().contains("beehive"));

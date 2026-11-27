@@ -81,8 +81,6 @@ pub struct RuntimeConfig {
     pub no_skills: bool,
     pub prompt_templates: Vec<PathBuf>,
     pub no_prompt_templates: bool,
-    pub themes: Vec<PathBuf>,
-    pub no_themes: bool,
     pub no_context_files: bool,
     pub autonomous: Option<AutonomousConfig>,
     pub execution_mode: Option<AppMode>,
@@ -248,7 +246,6 @@ pub fn runtime_config_from_args(
     };
     let skills = resolve_cli_path(&parsed.skills);
     let prompt_templates = resolve_cli_path(&parsed.prompt_templates);
-    let themes = resolve_cli_path(&parsed.themes);
     RuntimeConfig {
         cwd,
         agent_dir,
@@ -264,8 +261,6 @@ pub fn runtime_config_from_args(
         no_skills: parsed.no_skills,
         prompt_templates,
         no_prompt_templates: parsed.no_prompt_templates,
-        themes,
-        no_themes: parsed.no_themes,
         no_context_files: parsed.no_context_files,
         autonomous: AutonomousConfig::from_args(parsed),
         execution_mode: (app_mode != AppMode::Daemon).then_some(app_mode),

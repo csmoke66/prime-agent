@@ -6,7 +6,7 @@ use crate::chat::{ChatEntry, StatusKind, WorkingState};
 use crate::theme::{ColorMode, Theme};
 
 fn view() -> AgentView {
-    AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
+    AgentView::new(Theme::new(ColorMode::TrueColor))
 }
 
 /// A view with a long transcript and tail content an eager compose would

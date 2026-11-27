@@ -180,7 +180,6 @@ fn view_options(socket: &Path, session_dir: &Path, config: serde_json::Value) ->
         socket_path: socket.to_path_buf(),
         cwd: std::env::temp_dir(),
         session_dir: Some(session_dir.to_path_buf()),
-        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: None,
         scope: None,

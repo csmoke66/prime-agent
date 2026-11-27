@@ -20,10 +20,10 @@ fn document(storage: &dyn SettingsStorage) -> Value {
 #[test]
 fn project_settings_cannot_select_executable_configuration() {
     let (storage, mut manager) = fixture(
-        r#"{"theme":"global","sessionDir":"/trusted/sessions","shellPath":"/trusted/shell","shellCommandPrefix":"trusted", "npmCommand":["trusted-npm"],"packages":["trusted-package"],"mcpServers":{"trusted":{"command":"trusted"}},"mcpCatalogSources":["trusted.json"]}"#,
+        r#"{"defaultProvider":"global","sessionDir":"/trusted/sessions","shellPath":"/trusted/shell","shellCommandPrefix":"trusted", "npmCommand":["trusted-npm"],"packages":["trusted-package"],"mcpServers":{"trusted":{"command":"trusted"}},"mcpCatalogSources":["trusted.json"]}"#,
     );
     let project = json!({
-        "theme": "project",
+        "defaultProvider": "project",
         "sessionDir": "/attacker/session-artifacts",
         "shellPath": "/attacker/shell",
         "shellCommandPrefix": "attacker",
@@ -38,7 +38,7 @@ fn project_settings_cannot_select_executable_configuration() {
     manager.reload().unwrap();
     let reopened = manager.reopen();
     for effective in [manager.settings(), reopened.settings()] {
-        assert_eq!(effective.theme.as_deref(), Some("project"));
+        assert_eq!(effective.default_provider.as_deref(), Some("project"));
         assert_eq!(effective.session_dir.as_deref(), Some("/trusted/sessions"));
         assert_eq!(effective.shell_path.as_deref(), Some("/trusted/shell"));
         assert_eq!(effective.shell_command_prefix.as_deref(), Some("trusted"));
@@ -89,7 +89,7 @@ fn project_packages_stay_inert_after_a_project_write() {
 
 #[test]
 fn model_switch_preserves_a_document_that_failed_to_load() {
-    for content in ["{\"theme\":\"light\",}", "\u{feff}{\"theme\":\"light\"}"] {
+    for content in ["{\"defaultProvider\":\"light\",}", "\u{feff}{\"defaultProvider\":\"light\"}"] {
         let (storage, mut manager) = fixture(content);
         manager
             .set_default_model_and_provider("openai", "model")
@@ -108,12 +108,12 @@ fn model_switch_preserves_a_document_that_failed_to_load() {
 
 #[test]
 fn chat_detail_save_changes_only_the_requested_setting() {
-    let (storage, mut manager) = fixture(r#"{"theme":"light","pluginSetting":{"keep":true}}"#);
+    let (storage, mut manager) = fixture(r#"{"defaultProvider":"light","pluginSetting":{"keep":true}}"#);
     manager.set_chat_detail("details").unwrap();
     assert_eq!(
         document(storage.as_ref()),
         json!({
-            "theme":"light", "pluginSetting":{"keep":true}, "chatDetail":"details"
+            "defaultProvider":"light", "pluginSetting":{"keep":true}, "chatDetail":"details"
         })
     );
 }
@@ -121,16 +121,16 @@ fn chat_detail_save_changes_only_the_requested_setting() {
 #[test]
 fn stale_managers_preserve_other_writers_and_explicit_same_value_choices() {
     let (storage, mut first) =
-        fixture(r#"{"theme":"light","telemetry":{"enabled":false,"futureSetting":"keep"}}"#);
+        fixture(r#"{"defaultProvider":"light","telemetry":{"enabled":false,"futureSetting":"keep"}}"#);
     let mut second = SettingsManager::from_storage(storage.clone());
-    second.set_theme("dark".into()).unwrap();
-    first.set_theme("light".into()).unwrap();
+    second.set_default_provider("dark".into()).unwrap();
+    first.set_default_provider("light".into()).unwrap();
     first.set_telemetry_enabled(true).unwrap();
     second.set_quiet_startup(true).unwrap();
     assert_eq!(
         document(storage.as_ref()),
         json!({
-            "theme":"light", "quietStartup":true,
+            "defaultProvider":"light", "quietStartup":true,
             "telemetry":{"enabled":true,"futureSetting":"keep"}
         })
     );
@@ -138,12 +138,12 @@ fn stale_managers_preserve_other_writers_and_explicit_same_value_choices() {
 
 #[test]
 fn saves_preserve_a_document_corrupted_after_load() {
-    let (storage, mut manager) = fixture(r#"{"theme":"light"}"#);
+    let (storage, mut manager) = fixture(r#"{"defaultProvider":"light"}"#);
     for content in ["{bad", "[]", "null"] {
         storage
             .with_lock(SettingsScope::Global, &mut |_| Some(content.into()))
             .unwrap();
-        assert!(manager.set_theme("dark".into()).is_err());
+        assert!(manager.set_default_provider("dark".into()).is_err());
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
             Some(content)
@@ -158,7 +158,7 @@ fn saves_preserve_a_document_corrupted_after_load() {
     assert_eq!(
         document(storage.as_ref()),
         json!({
-            "external":"keep", "theme":"dark", "quietStartup":true
+            "external":"keep", "defaultProvider":"dark", "quietStartup":true
         })
     );
 }
@@ -182,9 +182,9 @@ fn resource_save_preserves_a_document_corrupted_after_load() {
 
 #[test]
 fn clearing_a_setting_removes_only_that_key() {
-    let (storage, mut manager) = fixture(r#"{"enabledModels":["old"],"theme":"light"}"#);
+    let (storage, mut manager) = fixture(r#"{"enabledModels":["old"],"defaultProvider":"light"}"#);
     manager.set_enabled_models(None).unwrap();
-    assert_eq!(document(storage.as_ref()), json!({"theme":"light"}));
+    assert_eq!(document(storage.as_ref()), json!({"defaultProvider":"light"}));
 }
 
 #[test]
@@ -193,24 +193,24 @@ fn resource_save_survives_an_unrelated_later_save() {
     manager.set_packages(vec![json!("first")]);
     let mut other = SettingsManager::from_storage(storage.clone());
     other.set_packages(vec![json!("second")]);
-    manager.set_theme("dark".into()).unwrap();
+    manager.set_default_provider("dark".into()).unwrap();
     assert_eq!(
         document(storage.as_ref()),
-        json!({"packages":["second"],"theme":"dark"})
+        json!({"packages":["second"],"defaultProvider":"dark"})
     );
 }
 
 #[test]
 fn harness_refinements_persist_without_clobbering_other_settings() {
     let (storage, mut manager) =
-        fixture(r#"{"theme":"light","autoRefine":{"turnInterval":3},"future":{"keep":true}}"#);
+        fixture(r#"{"defaultProvider":"light","autoRefine":{"turnInterval":3},"future":{"keep":true}}"#);
     assert!(manager.get_harness_refinements());
     manager.set_harness_refinements(false).unwrap();
     assert!(!manager.reopen().get_harness_refinements());
     assert_eq!(
         document(storage.as_ref()),
         json!({
-            "theme":"light", "autoRefine":{"turnInterval":3}, "future":{"keep":true}, "harnessRefinements":false
+            "defaultProvider":"light", "autoRefine":{"turnInterval":3}, "future":{"keep":true}, "harnessRefinements":false
         })
     );
     manager.set_harness_refinements(true).unwrap();

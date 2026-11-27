@@ -1,7 +1,6 @@
 //! Resource resolution wiring: the package manager resolves configured
 //! packages, settings arrays, auto-discovery, and bundled skills; the loader
-//! consumes the enabled paths (skills and prompts join the session). Theme
-//! loading is a downstream seam.
+//! consumes the enabled paths (skills and prompts join the session).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -182,7 +181,6 @@ pub(crate) fn resolve_session_resources(
     let mut source_infos: SourceInfoIndex = Vec::new();
     index_source_infos(&mut source_infos, &resolved.skills);
     index_source_infos(&mut source_infos, &resolved.prompts);
-    index_source_infos(&mut source_infos, &resolved.themes);
 
     let enabled_prompts = as_strings(&enabled_paths(&resolved.prompts));
     // Skill loading is first-wins by name, and bundled skills win every name

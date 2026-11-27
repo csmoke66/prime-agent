@@ -161,7 +161,7 @@ fn main_impl(args: &[String], runtime: &dyn mode::Runtime) -> Result<i32, String
     if parsed.export.is_some() {
         // The TS product only reaches the export subsystem through the `session
         // export <file> [output]` rewrite (a standalone `--export` exits above).
-        return session_export::run(&parsed, &crate::config::get_agent_dir());
+        return session_export::run(&parsed);
     }
 
     if matches!(

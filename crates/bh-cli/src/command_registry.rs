@@ -180,7 +180,7 @@ pub const COMMAND_SPECS: &[CommandSpec] = &[
         "package <install|remove|list|update>",
         "Manage capability packages",
     )
-    .description("Packages can provide skills, prompts, and themes."),
+    .description("Packages can provide skills and prompts."),
     CommandSpec::new(
         &["package", "install"],
         "package install <source> [--local]",
@@ -377,8 +377,6 @@ const TOP_LEVEL_OPTION_GROUPS: &[OptionGroup] = &[
                 "-np, --no-prompt-templates",
                 "Disable prompt template discovery",
             ),
-            ("--theme <path>", "Load a theme (repeatable)"),
-            ("--no-themes", "Disable theme discovery"),
             (
                 "-nc, --no-context-files",
                 "Disable AGENTS.md and CLAUDE.md discovery",

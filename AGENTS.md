@@ -153,7 +153,7 @@ The product is Beehive; the repo is csmoke66/beehive. Use Beehive naming everywh
 (binary `beehive`, `BEEHIVE_*` environment variables, `~/.beehive`).
 
 Persisted data written by older builds stays readable: a few old spellings are accepted as
-serde aliases (theme `prime`, package manifest key `pi`, MCP catalog source/readiness
+serde aliases (package manifest key `pi`, MCP catalog source/readiness
 `prime`/`prime-restricted`). Keep those aliases read-only; always write the Beehive spelling.
 
 ## Surface contract (must not change)

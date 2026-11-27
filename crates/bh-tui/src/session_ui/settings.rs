@@ -368,7 +368,6 @@ impl SessionUi {
             values.quiet_startup = settings.quiet_startup();
             values.tree_filter_mode = settings.tree_filter_mode();
             values.warnings_anthropic_extra_usage = settings.warnings_anthropic_extra_usage();
-            values.theme = settings.theme().unwrap_or_else(|| "beehive".to_string());
             // The tier row preselects the saved default instead of the struct default.
             values.default_service_tier = settings.default_service_tier();
         } else {
@@ -387,15 +386,9 @@ impl SessionUi {
             values.mermaid = "streaming".to_string();
             values.tree_filter_mode = "user-only".to_string();
             values.warnings_anthropic_extra_usage = true;
-            values.theme = "beehive".to_string();
             // No settings seam: the tier row reads "default", never a blank value.
             values.default_service_tier = "default".to_string();
         }
-        // This surface ships the builtin themes.
-        values.available_themes = bh_types::themes::BUILTIN_THEME_NAMES
-            .iter()
-            .map(ToString::to_string)
-            .collect();
         let rows = crate::settings_menu::settings_menu_rows(&values);
         let mut menu = crate::settings_menu::SettingsMenu::new(rows);
         if let (Some(settings), Some(file)) = (
@@ -433,14 +426,6 @@ impl SessionUi {
             | crate::settings_menu::SettingsMenuAction::SubmenuClosed => {}
             crate::settings_menu::SettingsMenuAction::Cancel => {
                 view.settings_menu = None;
-            }
-            crate::settings_menu::SettingsMenuAction::PreviewTheme { name } => {
-                // Switch live without persisting.
-                view.theme = crate::app::load_theme(&name);
-            }
-            crate::settings_menu::SettingsMenuAction::RestoreTheme { name } => {
-                // Preview the row's theme back.
-                view.theme = crate::app::load_theme(&name);
             }
             crate::settings_menu::SettingsMenuAction::Change { id, value } => {
                 self.apply_settings_change(id, &value, view).await;
@@ -970,15 +955,6 @@ impl SessionUi {
             "thinking" => {
                 self.apply_thinking_level(value, view).await;
             }
-            "theme" => {
-                if let Some(settings) = &self.client_settings {
-                    if let Err(error) = settings.set_theme(value) {
-                        self.error_row(&format!("{error:#}"), view);
-                        return;
-                    }
-                }
-                view.theme = crate::app::load_theme(value);
-            }
             other => {
                 self.error_row(&format!("Unknown setting: {other}"), view);
             }
@@ -1111,7 +1087,7 @@ impl SessionUi {
     /// The reload box replaces the editor while the daemon reload runs; the
     /// run loop folds the outcome in when it lands.
     pub(super) fn handle_reload_command(&mut self, view: &mut AgentView) -> Result<()> {
-        view.reload_box = Some("Reloading keybindings, skills, prompts, themes...".to_string());
+        view.reload_box = Some("Reloading keybindings, skills, prompts...".to_string());
         self.dirty = true;
         let client = self.client.clone();
         let active_session_id = self.active_session_id.clone();
@@ -1132,7 +1108,7 @@ impl SessionUi {
         Ok(())
     }
 
-    /// Drop the box, re-read the user keybindings and theme, refresh the model
+    /// Drop the box, re-read the user keybindings, refresh the model
     /// catalog, and surface the status row.
     pub(crate) async fn apply_reload_outcome(&mut self, outcome: ReloadNote, view: &mut AgentView) {
         self.reload = None;
@@ -1147,20 +1123,13 @@ impl SessionUi {
                 let mut keybindings = view.editor.keybindings().clone();
                 keybindings.reload();
                 view.editor.set_keybindings(keybindings);
-                // An unknown theme name keeps the current theme (the startup loader's
-                // fallback).
-                if let Some(settings) = &self.client_settings {
-                    if let Some(name) = settings.theme() {
-                        view.theme = crate::app::load_theme(&name);
-                    }
-                }
                 // The model catalog re-fetch lands through the run loop's channel.
                 self.spawn_model_catalog_refresh();
                 // The same refresh re-fetches the slash-command catalog (skills may have
                 // changed).
                 self.spawn_command_catalog_refresh();
                 // Tracked, so a back-to-back status rewrites it in place.
-                self.note("Reloaded keybindings, skills, prompts, themes", view);
+                self.note("Reloaded keybindings, skills, prompts", view);
             }
             Err(error) => {
                 self.error_row(&format!("Reload failed: {error}"), view);

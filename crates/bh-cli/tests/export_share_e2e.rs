@@ -293,7 +293,6 @@ async fn tui_export_and_share_surface() {
         show_images: false,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

@@ -163,7 +163,6 @@ fn chat_options(socket: PathBuf, cwd: PathBuf) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -243,7 +242,6 @@ async fn the_roundtrip_reentry_renders_the_same_transcript() {
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
-        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: (!first_outcome.session_id.is_empty())
             .then(|| first_outcome.session_id.clone())
@@ -401,7 +399,6 @@ async fn a_post_turn_sojourn_reentry_still_serves_the_held_packs() {
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
-        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: (!first_outcome.session_id.is_empty())
             .then(|| first_outcome.session_id.clone())

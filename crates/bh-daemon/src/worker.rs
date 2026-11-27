@@ -813,7 +813,6 @@ impl Worker {
         let exports = crate::session_export::ExportCommands::new(
             std::sync::Arc::clone(&engine),
             Arc::clone(&core),
-            config.agent_dir.clone(),
         );
         // The session-scoped ACP MCP manager: auth storage construction is
         // blocking, so the builder runs off the async runtime.

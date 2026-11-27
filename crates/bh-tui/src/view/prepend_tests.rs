@@ -3,7 +3,7 @@ use crate::chat::{AssistantMessage, MessageBlock};
 use crate::theme::{ColorMode, Theme};
 
 fn view() -> AgentView {
-    AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
+    AgentView::new(Theme::new(ColorMode::TrueColor))
 }
 
 fn assistant_entry(text: &str) -> ChatEntry {

@@ -138,7 +138,6 @@ pub(crate) fn options(selection: ModelSelection) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -343,10 +342,7 @@ fn the_headless_settle_names_every_stuck_member() {
 /// daemon's hello advertises the `factory_activity` lane).
 #[test]
 fn the_startup_placeholder_carries_the_dock_a_fresh_session_mounts() {
-    let mut view = AgentView::new(crate::theme::Theme::builtin(
-        "beehive",
-        crate::theme::ColorMode::TrueColor,
-    ));
+    let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
     apply_startup_chrome(&mut view, &options(ModelSelection::default()));
     let rows: Vec<String> = view
         .render_dock(100)

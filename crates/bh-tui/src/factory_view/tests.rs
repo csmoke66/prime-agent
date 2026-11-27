@@ -12,7 +12,7 @@ use crate::theme::{ColorMode, Theme};
 use serde_json::json;
 
 fn theme() -> Theme {
-    Theme::builtin("beehive", ColorMode::TrueColor)
+    Theme::new(ColorMode::TrueColor)
 }
 
 fn kb() -> KeybindingsManager {

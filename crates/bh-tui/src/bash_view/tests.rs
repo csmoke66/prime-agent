@@ -12,7 +12,7 @@ fn kb() -> KeybindingsManager {
 }
 
 fn theme() -> Theme {
-    Theme::builtin("beehive", ColorMode::TrueColor)
+    Theme::new(ColorMode::TrueColor)
 }
 
 /// Enter on row `id`'s list row: its detail opens.

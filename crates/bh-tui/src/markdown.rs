@@ -45,8 +45,7 @@ pub struct MarkdownStyle {
 
 impl Default for MarkdownStyle {
     fn default() -> Self {
-        Self::from_theme(&crate::theme::Theme::builtin(
-            "beehive",
+        Self::from_theme(&crate::theme::Theme::new(
             crate::theme::ColorMode::TrueColor,
         ))
     }

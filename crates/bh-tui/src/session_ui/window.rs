@@ -794,9 +794,7 @@ mod tests {
                 }),
             })
             .is_ok());
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor,
         ));
         session.rebuild_transcript(&mut view).await;
         assert_ne!(session.window.epoch, old_epoch);
@@ -821,10 +819,7 @@ mod tests {
             Some("tail".to_string()),
             BackfillSeam::Preserve,
         );
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
-        ));
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
         let empty = LoadedPage {
             entries: Vec::new(),
             seam: BackfillSeam::Preserve,
@@ -880,10 +875,7 @@ mod tests {
             Some("tail".to_string()),
             BackfillSeam::RetryOutcome,
         );
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
-        ));
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
         let page = LoadedPage {
             entries,
             seam,
@@ -937,10 +929,7 @@ mod tests {
             Some("tail".to_string()),
             BackfillSeam::Preserve,
         );
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
-        ));
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
         view.push_entry(crate::snapshot::transcript_to_entries(&[user("later")]).remove(0));
         let anchor_page = TranscriptPage::End {
             before: Some("e2".to_string()),
@@ -988,10 +977,8 @@ mod tests {
                 Some("t0".to_string()),
                 BackfillSeam::Preserve,
             );
-            let mut view = AgentView::new(crate::theme::Theme::builtin(
-                "beehive",
-                crate::theme::ColorMode::TrueColor,
-            ));
+            let mut view =
+                AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
             view.splash_suppressed = true;
             for entry in entries("tail") {
                 view.push_entry(entry);

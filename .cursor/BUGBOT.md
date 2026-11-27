@@ -68,4 +68,4 @@ either changes.
 
 ## Naming
 
-- The product is Beehive (binary `beehive`, `BEEHIVE_*` env, `~/.beehive`). Flag any other product name in new code, docs, or user-visible strings. Old spellings may only appear as read-only serde aliases for persisted data (theme `prime`, manifest key `pi`, MCP catalog `prime`/`prime-restricted`); new data is always written with the Beehive spelling.
+- The product is Beehive (binary `beehive`, `BEEHIVE_*` env, `~/.beehive`). Flag any other product name in new code, docs, or user-visible strings. Old spellings may only appear as read-only serde aliases for persisted data (manifest key `pi`, MCP catalog `prime`/`prime-restricted`); new data is always written with the Beehive spelling.

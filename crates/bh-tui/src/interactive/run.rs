@@ -232,7 +232,7 @@ async fn run_interactive_surface(
 
     // The view and the terminal surface come up BEFORE the session attach: the pane paints the
     // startup chrome immediately, and the transcript renders when the snapshot lands.
-    let theme = crate::app::load_theme(&options.theme);
+    let theme = crate::app::load_theme();
     let mut view = AgentView::new(theme);
     view.code_block_indent = options.code_block_indent.clone();
     // The file-completion provider browses the SESSION cwd, not the process cwd: the completion

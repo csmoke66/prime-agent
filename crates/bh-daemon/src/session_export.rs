@@ -14,24 +14,15 @@ use crate::protocol::{response_failure, response_success, DaemonResponse};
 use crate::worker::SessionCore;
 
 /// The `export_*` command set: the engine (system prompt), the session store
-/// (entries), the settings dirs (theme resolution), the session cwd.
+/// (entries), the session cwd.
 pub(crate) struct ExportCommands {
     engine: Arc<dyn SessionEngine>,
     core: Arc<Mutex<SessionCore>>,
-    agent_dir: PathBuf,
 }
 
 impl ExportCommands {
-    pub(crate) fn new(
-        engine: Arc<dyn SessionEngine>,
-        core: Arc<Mutex<SessionCore>>,
-        agent_dir: PathBuf,
-    ) -> Self {
-        ExportCommands {
-            engine,
-            core,
-            agent_dir,
-        }
+    pub(crate) fn new(engine: Arc<dyn SessionEngine>, core: Arc<Mutex<SessionCore>>) -> Self {
+        ExportCommands { engine, core }
     }
 
     /// `export_html`: render the session to a standalone HTML file; the
@@ -50,15 +41,12 @@ impl ExportCommands {
     async fn export_html_impl(&self, output_path: Option<&str>) -> Result<String> {
         // The store snapshot under the core lock: the std guard is not `Send`, so the
         // engine reads below await outside the lock.
-        let (header, entries, leaf_id, session_file, theme_name) = {
+        let (header, entries, leaf_id, session_file) = {
             let core = self.core.lock().unwrap();
             let store = core
                 .store
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Session is still initializing"))?;
-            let theme_name = self
-                .resolved_theme_name(&core)
-                .context("resolving the export theme")?;
             let header = serde_json::to_value(&store.header)?;
             let header = match header {
                 Value::Object(map) => {
@@ -82,7 +70,6 @@ impl ExportCommands {
                 entries,
                 store.leaf_id().map(str::to_string),
                 store.path.clone(),
-                theme_name,
             )
         };
         // The tools read comes first: an absent session builds here (the TS state
@@ -97,25 +84,7 @@ impl ExportCommands {
             tools,
             rendered_tools,
         };
-        bh_core::export_html::export_session_to_html(
-            &data,
-            theme_name.as_deref(),
-            &self.agent_dir,
-            &session_file,
-            output_path,
-        )
-    }
-
-    /// The session's configured theme name (TS `settingsManager.getTheme()`)
-    /// resolved against the session's cwd and the agent dir.
-    fn resolved_theme_name(&self, core: &SessionCore) -> Result<Option<String>> {
-        let cwd = if core.cwd.is_empty() {
-            std::env::current_dir().unwrap_or_default()
-        } else {
-            PathBuf::from(&core.cwd)
-        };
-        let settings = bh_core::settings::SettingsManager::create(&cwd, &self.agent_dir);
-        Ok(settings.get_theme().map(str::to_string))
+        bh_core::export_html::export_session_to_html(&data, &session_file, output_path)
     }
 
     /// `export_jsonl`: the current branch re-chained linearly into a JSONL
@@ -247,7 +216,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let core = Arc::new(Mutex::new(core_with_session(dir.path())));
         let engine: Arc<dyn SessionEngine> = Arc::new(crate::engine::ScriptedEngine::default());
-        let exports = ExportCommands::new(engine, core, dir.path().join("agent"));
+        let exports = ExportCommands::new(engine, core);
         let out = dir.path().join("export.html");
         let payload = json!({ "outputPath": out.display().to_string() });
         let response = exports.export_html(&payload).await;
@@ -270,7 +239,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let core = Arc::new(Mutex::new(core_with_session(dir.path())));
         let engine: Arc<dyn SessionEngine> = Arc::new(crate::engine::ScriptedEngine::default());
-        let exports = ExportCommands::new(engine, core, dir.path().join("agent"));
+        let exports = ExportCommands::new(engine, core);
         let response = exports.export_jsonl(&json!({}));
         assert!(response.success, "export failed: {:?}", response.error);
         let path = response
@@ -301,8 +270,7 @@ mod tests {
         let mut core = core_with_session(dir.path());
         core.store = None;
         let engine: Arc<dyn SessionEngine> = Arc::new(crate::engine::ScriptedEngine::default());
-        let exports =
-            ExportCommands::new(engine, Arc::new(Mutex::new(core)), dir.path().join("agent"));
+        let exports = ExportCommands::new(engine, Arc::new(Mutex::new(core)));
         let response = exports.export_html(&json!({})).await;
         assert!(!response.success);
         assert_eq!(

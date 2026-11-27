@@ -46,7 +46,6 @@ const TAB_LAYOUT: &[TabLayout] = &[
     TabLayout {
         name: "Display",
         ids: &[
-            "theme",
             "terminal-progress",
             "clear-on-shrink",
             "show-images",
@@ -149,7 +148,7 @@ mod tabs_tests {
     use super::*;
 
     fn theme() -> crate::theme::Theme {
-        crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::Color256)
+        crate::theme::Theme::new(crate::theme::ColorMode::Color256)
     }
 
     #[test]

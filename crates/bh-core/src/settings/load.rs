@@ -22,7 +22,6 @@ const KNOWN_FIELDS: &[&str] = &[
     "transport",
     "steeringMode",
     "followUpMode",
-    "theme",
     "compaction",
     "autoRefine",
     "harnessRefinements",
@@ -42,7 +41,6 @@ const KNOWN_FIELDS: &[&str] = &[
     "packages",
     "skills",
     "prompts",
-    "themes",
     "enableSkillCommands",
     "bundledSkills",
     "webSearchProvider",
@@ -152,9 +150,9 @@ mod tests {
 
     #[test]
     fn clean_document_strict_parses() {
-        let value: Value = serde_json::json!({ "theme": "beehive", "rlmMaxDepth": 4 });
+        let value: Value = serde_json::json!({ "defaultProvider": "openai", "rlmMaxDepth": 4 });
         let settings = from_value_lenient(&value);
-        assert_eq!(settings.theme.as_deref(), Some("beehive"));
+        assert_eq!(settings.default_provider.as_deref(), Some("openai"));
         assert_eq!(settings.rlm_max_depth, Some(4));
     }
 

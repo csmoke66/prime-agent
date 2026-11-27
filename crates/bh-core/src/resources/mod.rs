@@ -1,7 +1,7 @@
 //! Project context files (AGENTS.md/CLAUDE.md discovery) and the resource
 //! loader: skills, prompt templates, agents files, and system-prompt
 //! sources, resolved from configured packages, settings, auto-discovery,
-//! and bundled skills through the package manager. Theme loading lives in bh-tui.
+//! and bundled skills through the package manager.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -89,8 +89,7 @@ pub struct LoadedResources {
     pub append_system_prompt: Vec<String>,
 }
 
-/// Resource loading options (the TS `DefaultResourceLoaderOptions` surface, minus the theme
-/// machinery).
+/// Resource loading options (the TS `DefaultResourceLoaderOptions` surface).
 #[derive(Default)]
 pub struct ResourceLoaderOptions {
     pub cwd: PathBuf,

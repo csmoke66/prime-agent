@@ -249,14 +249,6 @@ impl ClientSettings for CliClientSettings {
         Ok(())
     }
 
-    fn theme(&self) -> Option<String> {
-        self.manager().get_theme().map(str::to_string)
-    }
-
-    fn set_theme(&self, theme: &str) -> Result<()> {
-        self.manager().set_theme(theme.to_string())
-    }
-
     fn default_service_tier(&self) -> String {
         // The wire name of the persisted default tier; "default" when
         // unset or unreadable.
@@ -643,7 +635,6 @@ mod tests {
         assert!(settings.warnings_anthropic_extra_usage());
         assert_eq!(settings.tool_output_reminder_percent(), 20);
 
-        settings.set_theme("dark").expect("theme");
         settings.set_idle_eviction_minutes("off").expect("idle");
         settings.set_tree_filter_mode("all").expect("tree filter");
         settings.set_show_images(false).expect("show images");
@@ -657,7 +648,6 @@ mod tests {
             .set_tool_output_reminder_percent(35)
             .expect("tool-output reminder");
 
-        assert_eq!(settings.theme().as_deref(), Some("dark"));
         assert_eq!(settings.idle_eviction_minutes(), "off");
         assert_eq!(settings.tree_filter_mode(), "all");
         assert!(!settings.show_images());
@@ -671,7 +661,6 @@ mod tests {
         let content =
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
         let value: serde_json::Value = serde_json::from_str(&content).expect("parse");
-        assert_eq!(value["theme"], "dark");
         assert_eq!(value["idleEvictionMinutes"], "off");
         assert_eq!(value["treeFilterMode"], "all");
         assert_eq!(value["providerBlockDelivery"], "route");
@@ -699,7 +688,10 @@ mod tests {
             std::fs::read_to_string(agent_dir.join("settings.json")).expect("settings file");
         let value: serde_json::Value = serde_json::from_str(&content).expect("parse");
         assert_eq!(value["factory"]["enabled"], true);
-        assert_eq!(value["theme"], "dark", "the write leaves the other keys");
+        assert_eq!(
+            value["idleEvictionMinutes"], "off",
+            "the write leaves the other keys"
+        );
         settings
             .set_factory_enabled(false)
             .expect("factory disabled");

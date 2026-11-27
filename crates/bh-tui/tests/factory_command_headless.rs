@@ -189,12 +189,6 @@ impl bh_tui::client_settings::ClientSettings for RecordingSettings {
         Ok(())
     }
 
-    fn theme(&self) -> Option<String> {
-        None
-    }
-    fn set_theme(&self, _theme: &str) -> Result<()> {
-        Ok(())
-    }
     fn show_images(&self) -> bool {
         true
     }

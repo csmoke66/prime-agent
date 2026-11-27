@@ -18,7 +18,7 @@ const TABLE_SESSION: &str = concat!(
 fn frame_text(session: &str, width: u16, height: u16) -> Vec<String> {
     let entries = parse_jsonl(session).expect("session parses");
     let mut stream = JsonlSessionStream::from_entries(entries);
-    let mut view = AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor));
+    let mut view = AgentView::new(Theme::new(ColorMode::TrueColor));
     while let bh_tui::session::SessionEvent::Item(item) = stream.poll().expect("poll") {
         view.push(item);
     }

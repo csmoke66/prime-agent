@@ -1,0 +1,1 @@
+- Removed themes: Beehive always uses its one palette, and the `--theme`/`--no-themes` flags, the `theme`/`themes` settings, the settings-menu Theme row, and theme resources in packages are gone (old settings files that still carry `theme` keep loading).

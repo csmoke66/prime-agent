@@ -453,8 +453,6 @@ async fn export_html(state: &Arc<RpcState>, payload: &Value) -> Result<ResponseD
     drop(handle);
     let path = bh_core::export_html::export_session_to_html(
         &data,
-        None,
-        &state.agent_dir,
         &session_file,
         output_path
             .as_deref()

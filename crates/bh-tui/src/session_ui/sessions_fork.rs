@@ -338,7 +338,6 @@ impl SessionUi {
             session: SessionSelection::New,
             initial_message: None,
             telemetry_disabled: self.telemetry_disabled,
-            theme: String::new(),
             code_block_indent: self.code_block_indent.clone(),
             show_images: self.show_images,
             fullscreen_mouse: self.fullscreen_mouse,

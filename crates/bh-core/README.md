@@ -40,8 +40,8 @@ owns the attempt, the wait, and the model switch.
 Session HTML export (`export_html`): the standalone viewer file for
 `/export` and `session export` - the embedded product template
 (assets/export-html, vendored marked/highlight.js attributed in its
-NOTICE.md) plus the theme-to-CSS resolution over the bundled theme data
-(bh-types) and custom themes under `<agent-dir>/themes/`, the tools
+NOTICE.md) plus the palette-to-CSS resolution over the bundled palette
+(bh-types), the tools
 section mapping (`tools_section`: the session's tool registry to the
 template's name/description/parameters list), and the custom-tool
 pre-render pipeline (`ToolHtmlRenderer`/`pre_render_custom_tools` +
@@ -49,7 +49,7 @@ pre-render pipeline (`ToolHtmlRenderer`/`pre_render_custom_tools` +
 renderer produces line-oriented output, ANSI converts to inline-styled
 HTML at the export step), and the two entry points
 (`export_session_to_html` for the daemon worker's `export_html`
-command, `export_from_file` for the CLI). Terminal theme rendering stays
+command, `export_from_file` for the CLI). Terminal palette rendering stays
 bh-tui's; tool renderers live with the session's tool surface;
 the share-viewer flow (gist creation) is the caller's.
 

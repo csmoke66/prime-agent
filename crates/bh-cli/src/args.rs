@@ -156,8 +156,6 @@ pub struct Args {
     pub skills: Vec<String>,
     pub prompt_templates: Vec<String>,
     pub no_prompt_templates: bool,
-    pub themes: Vec<String>,
-    pub no_themes: bool,
     pub no_context_files: bool,
     pub autonomous: bool,
     pub autonomous_gates: Option<Vec<String>>,
@@ -354,13 +352,8 @@ pub fn parse_args(args: &[String]) -> Args {
                 let value = require_value!(arg);
                 result.prompt_templates.push(value);
             }
-            "--theme" => {
-                let value = require_value!(arg);
-                result.themes.push(value);
-            }
             "--no-skills" | "-ns" => result.no_skills = true,
             "--no-prompt-templates" | "-np" => result.no_prompt_templates = true,
-            "--no-themes" => result.no_themes = true,
             "--no-context-files" | "-nc" => result.no_context_files = true,
             "--autonomous" => result.autonomous = true,
             "--autonomous-gate" => {

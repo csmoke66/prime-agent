@@ -309,14 +309,6 @@ impl SettingsManager {
     /// # Errors
     ///
     /// Returns an error when the global settings file cannot be written.
-    pub fn set_theme(&mut self, theme: String) -> Result<()> {
-        self.global.theme = Some(theme);
-        self.save_global(&["theme"])
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error when the global settings file cannot be written.
     pub fn set_default_thinking_level(&mut self, level: ThinkingLevelSetting) -> Result<()> {
         self.global.default_thinking_level = Some(level);
         self.save_global(&["defaultThinkingLevel"])
@@ -433,14 +425,13 @@ impl SettingsManager {
         self.merged = deep_merge(&self.global, &self.project);
     }
 
-    /// Replace one resource-path array (`skills`/`prompts`/`themes`) in the global settings file.
+    /// Replace one resource-path array (`skills`/`prompts`) in the global settings file.
     pub fn set_global_resource_array(&mut self, field: &str, values: Vec<String>) {
         let array: Vec<serde_json::Value> =
             values.into_iter().map(serde_json::Value::String).collect();
         match field {
             "skills" => self.global.skills = Some(strings(&array)),
             "prompts" => self.global.prompts = Some(strings(&array)),
-            "themes" => self.global.themes = Some(strings(&array)),
             _ => return,
         }
         self.persist_scope_field(
@@ -458,7 +449,6 @@ impl SettingsManager {
         match field {
             "skills" => self.project.skills = Some(strings(&array)),
             "prompts" => self.project.prompts = Some(strings(&array)),
-            "themes" => self.project.themes = Some(strings(&array)),
             _ => return,
         }
         self.persist_scope_field(
@@ -660,11 +650,6 @@ impl SettingsManager {
         self.merged
             .follow_up_mode
             .unwrap_or(QueueModeSetting::OneAtATime)
-    }
-
-    #[must_use]
-    pub fn get_theme(&self) -> Option<&str> {
-        self.merged.theme.as_deref()
     }
 
     #[must_use]
@@ -1248,12 +1233,12 @@ mod tests {
             Arc::new(super::super::storage::InMemorySettingsStorage::default());
         storage
             .with_lock(SettingsScope::Global, &mut |_| {
-                Some(r#"{ "defaultProvider": 42, "theme": "beehive" }"#.into())
+                Some(r#"{ "defaultProvider": 42, "rlmMaxDepth": 4 }"#.into())
             })
             .unwrap();
         let manager = SettingsManager::from_storage(storage);
         assert_eq!(manager.get_default_provider(), None);
-        assert_eq!(manager.get_theme(), Some("beehive"));
+        assert_eq!(manager.get_rlm_max_depth(), Some(4));
     }
 
     #[test]

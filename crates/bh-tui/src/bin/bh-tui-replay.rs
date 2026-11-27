@@ -30,9 +30,6 @@ use bh_tui::view::AgentView;
 struct Args {
     /// Path to the session JSONL file (defaults to the newest session).
     session: Option<String>,
-    /// Theme: beehive | dark | light.
-    #[arg(long, default_value = "beehive")]
-    theme: String,
     /// Headless single-frame dump at this size, e.g. 80x24.
     #[arg(long)]
     frame: Option<String>,
@@ -92,7 +89,7 @@ fn replay() -> Result<()> {
             .split_once('x')
             .and_then(|(w, h)| Some((w.parse::<u16>().ok()?, h.parse::<u16>().ok()?)))
             .context("--frame expects WxH, e.g. 80x24")?;
-        let theme = Theme::builtin(&args.theme, ColorMode::TrueColor);
+        let theme = Theme::new(ColorMode::TrueColor);
         let mut view = AgentView::new(theme);
         let mut stream: Box<dyn SessionStream> = Box::new(stream);
         while let bh_tui::session::SessionEvent::Item(item) = stream.poll()? {
@@ -110,7 +107,6 @@ fn replay() -> Result<()> {
     }
 
     let options = AppOptions {
-        theme: args.theme.clone(),
         panic_after_frame: args.panic_exit,
         ..Default::default()
     };

@@ -493,7 +493,7 @@ mod tests {
     }
 
     fn theme() -> Theme {
-        Theme::builtin("beehive", ColorMode::TrueColor)
+        Theme::new(ColorMode::TrueColor)
     }
 
     fn flat(row: &Line) -> String {

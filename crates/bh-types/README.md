@@ -39,12 +39,11 @@ Daemon wire mechanics shared by the serving side (bh-daemon) and clients (bh-tui
   log-file discovery, `--since`/`--until` window parsing, and report
   rendering belong to bh-cli; the notice polling, rotation-safe
   incremental reads, and dismissal horizons belong to bh-tui.
-- `themes`: the bundled theme definition files (`beehive`/`dark`/`light`) as
-  pure data, shared by the TUI's theme loader (bh-tui renders terminal
-  colors from them) and the session HTML exporter (bh-core resolves them
-  into CSS variables). Everything built on top of the files — terminal
-  color rendering, export CSS generation, custom-theme discovery — belongs
-  to the consuming crates.
+- `themes`: the bundled Beehive palette file as pure data, shared by the
+  TUI's palette loader (bh-tui renders terminal colors from it) and the
+  session HTML exporter (bh-core resolves it into CSS variables).
+  Everything built on top of the file — terminal color rendering, export
+  CSS generation — belongs to the consuming crates.
 
 Platform contracts (`platform`): the cross-crate transport, process-identity, socket-identity, and home-dir helpers, plus the suspend-to-background signal control (`process::{stop_own_process_group, ignore_sigint_for_suspend, restore_default_sigint}`: the TUI's TS-`handleCtrlZ` cycle — SIGTSTP to the own process group, SIGINT ignored for the stopped window and restored on the SIGCONT resume; unsafe lives behind this wall because bh-tui opts into the workspace `unsafe_code` forbid) (`platform::dirs::home_dir`: `HOME`, then on Windows `USERPROFILE` / `HOMEDRIVE`+`HOMEPATH` - Node `os.homedir()` parity, returning `None` so each caller owns its fallback). bh-types is the only crate every transport consumer can depend on (bh-tui depends on bh-types alone), so the shared trait vocabulary and its cfg-gated platform implementations live here: AF_UNIX on Unix, named pipes (`\.\pipe\`, `platform/windows_pipe.rs`) on Windows. Remaining platform areas (process control, perms, ...) are implemented per platform behind the same traits, not re-plumbed in callers.
 

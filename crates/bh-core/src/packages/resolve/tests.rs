@@ -130,7 +130,6 @@ fn resolve_without_configured_sources_returns_only_auto_resources() {
     let mut fixture = Fixture::new();
     let result = fixture.manager.resolve().unwrap();
     assert!(result.prompts.is_empty());
-    assert!(result.themes.is_empty());
     assert!(result.skills.iter().all(|r| {
         r.metadata.source == MetadataSource::Auto && r.metadata.origin == ResourceOrigin::TopLevel
     }));
@@ -247,23 +246,18 @@ fn resolves_symlinked_user_and_project_resources_once() {
     let shared_skills = shared.join("skills");
     skill_md(&shared_skills, "shared-skill", "Shared skill");
     write(&shared.join("prompts").join("shared.md"), "Shared prompt");
-    write(&shared.join("themes").join("shared.json"), "{}");
     let project_dir = fixture.manager.cwd().join(crate::settings::CONFIG_DIR_NAME);
     std::fs::create_dir_all(&project_dir).unwrap();
     symlink(&shared_skills, fixture.agent_dir.join("skills")).unwrap();
     symlink(shared.join("prompts"), fixture.agent_dir.join("prompts")).unwrap();
-    symlink(shared.join("themes"), fixture.agent_dir.join("themes")).unwrap();
     symlink(shared_skills, project_dir.join("skills")).unwrap();
     symlink(shared.join("prompts"), project_dir.join("prompts")).unwrap();
-    symlink(shared.join("themes"), project_dir.join("themes")).unwrap();
 
     let result = fixture.manager.resolve().unwrap();
     assert_eq!(result.skills.len(), 1);
     assert_eq!(result.prompts.len(), 1);
-    assert_eq!(result.themes.len(), 1);
     assert_eq!(result.skills[0].metadata.scope, SourceScope::Project);
     assert_eq!(result.prompts[0].metadata.scope, SourceScope::Project);
-    assert_eq!(result.themes[0].metadata.scope, SourceScope::Project);
 
     match previous_home {
         Some(home) => std::env::set_var("HOME", home),
@@ -455,21 +449,6 @@ fn parent_gitignore_does_not_apply_to_auto_discovery() {
 }
 
 #[test]
-fn top_level_filters_themes_with_glob_patterns() {
-    let mut fixture = Fixture::new();
-    let themes_dir = fixture.agent_dir.join("themes");
-    for name in ["dark.json", "light.json", "funky.json"] {
-        write(&themes_dir.join(name), "{}");
-    }
-    fixture.set_user_array("themes", serde_json::json!(["themes", "!funky.json"]));
-
-    let result = fixture.manager.resolve().unwrap();
-    assert!(is_enabled(&result.themes, "dark.json"));
-    assert!(is_enabled(&result.themes, "light.json"));
-    assert!(is_disabled(&result.themes, "funky.json"));
-}
-
-#[test]
 fn top_level_filters_prompts_with_exclusion_pattern() {
     let mut fixture = Fixture::new();
     let prompts_dir = fixture.agent_dir.join("prompts");
@@ -574,31 +553,12 @@ fn user_filters_layer_on_top_of_manifest_filters() {
         "source": pkg_dir.display().to_string(),
         "skills": [],
         "prompts": ["!**/bar.md"],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
     assert!(is_enabled(&result.prompts, "foo.md"));
     assert!(is_disabled(&result.prompts, "bar.md"));
     assert!(!has_path(&result.prompts, "baz.md"));
-}
-
-#[test]
-fn package_filters_filter_themes() {
-    let mut fixture = Fixture::new();
-    let pkg_dir = fixture.temp_dir.join("theme-pkg");
-    write(&pkg_dir.join("themes").join("nice.json"), "{}");
-    write(&pkg_dir.join("themes").join("ugly.json"), "{}");
-    fixture.set_user_packages(serde_json::json!([{
-        "source": pkg_dir.display().to_string(),
-        "skills": [],
-        "prompts": [],
-        "themes": ["!ugly.json"],
-    }]));
-
-    let result = fixture.manager.resolve().unwrap();
-    assert!(is_enabled(&result.themes, "nice.json"));
-    assert!(is_disabled(&result.themes, "ugly.json"));
 }
 
 #[test]
@@ -612,7 +572,6 @@ fn package_filters_combine_include_and_exclude_patterns() {
         "source": pkg_dir.display().to_string(),
         "skills": [],
         "prompts": ["**/alpha.md", "**/beta.md", "!**/beta.md"],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
@@ -631,7 +590,6 @@ fn package_filters_work_with_direct_paths() {
         "source": pkg_dir.display().to_string(),
         "skills": [],
         "prompts": ["prompts/one.md"],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
@@ -650,7 +608,6 @@ fn force_include_overrides_exclude_in_package_filters() {
         "source": pkg_dir.display().to_string(),
         "skills": [],
         "prompts": ["!**/*.md", "+prompts/beta.md"],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
@@ -670,7 +627,6 @@ fn force_include_multiple_resources() {
         "source": pkg_dir.display().to_string(),
         "skills": ["!**/*", "+skills/skill-a", "+skills/skill-c"],
         "prompts": [],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
@@ -724,24 +680,6 @@ fn force_include_in_manifest_patterns() {
 }
 
 #[test]
-fn force_include_themes() {
-    let mut fixture = Fixture::new();
-    let themes_dir = fixture.agent_dir.join("themes");
-    for name in ["dark.json", "light.json", "special.json"] {
-        write(&themes_dir.join(name), "{}");
-    }
-    fixture.set_user_array(
-        "themes",
-        serde_json::json!(["themes", "!themes/*.json", "+themes/special.json"]),
-    );
-
-    let result = fixture.manager.resolve().unwrap();
-    assert!(is_disabled(&result.themes, "dark.json"));
-    assert!(is_disabled(&result.themes, "light.json"));
-    assert!(is_enabled(&result.themes, "special.json"));
-}
-
-#[test]
 fn force_include_prompts() {
     let mut fixture = Fixture::new();
     let prompts_dir = fixture.agent_dir.join("prompts");
@@ -762,17 +700,17 @@ fn force_include_prompts() {
 #[test]
 fn force_exclude_top_level_resources() {
     let mut fixture = Fixture::new();
-    let themes_dir = fixture.agent_dir.join("themes");
-    write(&themes_dir.join("alpha.json"), "{}");
-    write(&themes_dir.join("beta.json"), "{}");
+    let prompts_dir = fixture.agent_dir.join("prompts");
+    write(&prompts_dir.join("alpha.md"), "{}");
+    write(&prompts_dir.join("beta.md"), "{}");
     fixture.set_user_array(
-        "themes",
-        serde_json::json!(["themes", "+themes/alpha.json", "-themes/alpha.json"]),
+        "prompts",
+        serde_json::json!(["prompts", "+prompts/alpha.md", "-prompts/alpha.md"]),
     );
 
     let result = fixture.manager.resolve().unwrap();
-    assert!(is_disabled(&result.themes, "alpha.json"));
-    assert!(is_enabled(&result.themes, "beta.json"));
+    assert!(is_disabled(&result.prompts, "alpha.md"));
+    assert!(is_enabled(&result.prompts, "beta.md"));
 }
 
 #[test]
@@ -785,7 +723,6 @@ fn force_exclude_in_package_filters() {
         "source": pkg_dir.display().to_string(),
         "skills": [],
         "prompts": ["prompts/*.md", "+prompts/alpha.md", "-prompts/alpha.md"],
-        "themes": [],
     }]));
 
     let result = fixture.manager.resolve().unwrap();
@@ -869,7 +806,6 @@ fn offline_mode_skips_installing_missing_sources() {
         .skills
         .iter()
         .chain(&result.prompts)
-        .chain(&result.themes)
         .any(|r| r.metadata.origin == ResourceOrigin::Package));
 
     match previous {
@@ -908,7 +844,6 @@ fn on_missing_skip_leaves_the_source_out() {
         .skills
         .iter()
         .chain(&result.prompts)
-        .chain(&result.themes)
         .all(|r| r.metadata.origin != ResourceOrigin::Package));
 }
 

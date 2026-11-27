@@ -913,10 +913,8 @@ mod backfill_tests {
                 session.session_file.as_deref().map(std::path::Path::new),
                 Some(dir.path().join("s1.jsonl").as_path())
             );
-            let mut view = AgentView::new(crate::theme::Theme::builtin(
-                "beehive",
-                crate::theme::ColorMode::TrueColor,
-            ));
+            let mut view =
+                AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
             view.harness_browser = Some(HarnessBrowser::loading());
             session.harness_work = HarnessWork::Reading(tokio::spawn(std::future::pending()));
 
@@ -951,10 +949,8 @@ mod backfill_tests {
             let dir = tempfile::tempdir().unwrap();
             let socket = dir.path().join("panel.sock");
             let (mut session, server) = mock_session(&socket, mpsc::unbounded_channel().0).await;
-            let mut view = AgentView::new(crate::theme::Theme::builtin(
-                "beehive",
-                crate::theme::ColorMode::TrueColor,
-            ));
+            let mut view =
+                AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
             session.open_agents_view_panel(
                 crate::interactive::SessionPanel::Shells { shell_id: None },
                 true,
@@ -993,8 +989,7 @@ mod backfill_tests {
                 {"id": "s2", "command": "sleep 600", "status": "running"},
             ]});
             for preloaded in [true, false] {
-                let theme =
-                    || crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor);
+                let theme = || crate::theme::Theme::new(crate::theme::ColorMode::TrueColor);
                 let mut view = AgentView::new(theme());
                 session.bash_activities = if preloaded {
                     shells.clone()
@@ -1131,9 +1126,7 @@ mod backfill_tests {
         )
         .await
         .unwrap();
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor,
         ));
         session.rebuild_view(&mut view, &RebuildKind::Rebind);
         let warnings: Vec<String> = view

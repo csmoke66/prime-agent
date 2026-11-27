@@ -36,7 +36,6 @@ pub(super) fn child_run(route: &str, socket: PathBuf) {
                     socket_path: options.socket_path.clone(),
                     cwd: options.cwd.clone(),
                     session_dir: options.session_dir.clone(),
-                    theme: options.theme.clone(),
                     version: options.version.clone(),
                     anchor_session_id: (!outcome.session_id.is_empty())
                         .then(|| outcome.session_id.clone()),
@@ -73,7 +72,6 @@ pub(super) fn child_run(route: &str, socket: PathBuf) {
                     socket_path: options.socket_path.clone(),
                     cwd: options.cwd.clone(),
                     session_dir: options.session_dir.clone(),
-                    theme: options.theme.clone(),
                     version: options.version.clone(),
                     anchor_session_id: None,
                     scope: None,
@@ -119,7 +117,7 @@ pub(super) fn child_run(route: &str, socket: PathBuf) {
                 },
             ];
             let selector = bh_tui::config_selector::ConfigSelector::new(rows);
-            let theme = bh_tui::app::load_theme("beehive");
+            let theme = bh_tui::app::load_theme();
             let options = bh_tui::config_selector::ConfigSelectorOptions {
                 theme,
                 keybindings: bh_tui::keybindings::KeybindingsManager::new(),
@@ -201,7 +199,6 @@ fn child_options(socket: PathBuf) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

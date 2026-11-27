@@ -93,7 +93,7 @@ UI_ANIM=0
 if [ "$UI_TTY" = 1 ] && [ "$VERBOSE" != 1 ]; then UI_ANIM=1; fi
 UI_COLOR=0
 if [ "$UI_TTY" = 1 ] && [ -z "${NO_COLOR:-}" ]; then UI_COLOR=1; fi
-# The beehive theme's palette (crates/bh-types/themes/beehive.json), 24-bit.
+# The Beehive palette (crates/bh-types/themes/beehive.json), 24-bit.
 C_BOLD="" C_DIM="" C_ACCENT="" C_WARN="" C_RESET=""
 if [ "$UI_COLOR" = 1 ]; then
   esc="$(printf '\033')"

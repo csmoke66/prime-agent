@@ -557,10 +557,7 @@ mod tests {
         ui_tx
             .send(UiInput::Timestamp(timing_tx))
             .expect("queued marker");
-        let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "beehive",
-            crate::theme::ColorMode::TrueColor,
-        ));
+        let mut view = AgentView::new(crate::theme::Theme::new(crate::theme::ColorMode::TrueColor));
         let mut renderer = Renderer::Headless {
             width: 80,
             height: 24,

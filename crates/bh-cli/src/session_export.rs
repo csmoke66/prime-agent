@@ -5,12 +5,12 @@ use crate::args::Args;
 
 /// Run the export and print the TS output: the written path on success
 /// (`Exported to: ...`), the error message on failure.
-pub fn run(parsed: &Args, agent_dir: &std::path::Path) -> Result<i32, String> {
+pub fn run(parsed: &Args) -> Result<i32, String> {
     let Some(input) = parsed.export.as_deref() else {
         return Err("--export requires a value".to_string());
     };
     let output = parsed.messages.first().map(String::as_str);
-    match bh_core::export_html::export_from_file(std::path::Path::new(input), output, agent_dir) {
+    match bh_core::export_html::export_from_file(std::path::Path::new(input), output) {
         Ok(path) => {
             println!("Exported to: {path}");
             Ok(0)
@@ -53,9 +53,7 @@ mod tests {
         .expect("write session");
         let out = dir.path().join("exported.html");
         let parsed = parsed_with(Some(input.to_str().unwrap()), &[out.to_str().unwrap()]);
-        let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(&agent_dir).expect("agent dir");
-        let code = run(&parsed, &agent_dir).expect("export runs");
+        let code = run(&parsed).expect("export runs");
         assert_eq!(code, 0);
         assert!(out.exists());
     }
@@ -63,9 +61,8 @@ mod tests {
     /// A missing input file surfaces the TS error (through the main entry's `Error: ...` prefix).
     #[test]
     fn missing_file_errors() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
         let parsed = parsed_with(Some("/nonexistent/session.jsonl"), &[]);
-        let error = run(&parsed, &dir.path().join("agent")).expect_err("missing file must fail");
+        let error = run(&parsed).expect_err("missing file must fail");
         assert!(error.starts_with("File not found:"), "unexpected: {error}");
     }
 }

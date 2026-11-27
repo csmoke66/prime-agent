@@ -340,7 +340,6 @@ pub struct InteractiveOptions {
     /// The `terminal.fullscreenMouse` setting, default true: whether the fullscreen surface
     /// enables SGR mouse tracking and wheel-scrolls the transcript.
     pub fullscreen_mouse: bool,
-    pub theme: String,
     /// The chat markdown fenced-code indent (`markdown.codeBlockIndent`, default two spaces).
     pub code_block_indent: String,
     /// The `/tree` selector's initial filter mode (the `treeFilterMode` setting, default view).
@@ -401,7 +400,6 @@ impl std::fmt::Debug for InteractiveOptions {
             .field("no_session", &self.no_session)
             .field("session", &self.session)
             .field("initial_message", &self.initial_message)
-            .field("theme", &self.theme)
             .field("code_block_indent", &self.code_block_indent)
             .field("version", &self.version)
             .field("onboarding", &self.onboarding)

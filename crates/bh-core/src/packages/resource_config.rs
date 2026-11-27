@@ -1,5 +1,5 @@
 //! Resource configuration (TS `config-selector.ts` data layer): the grouped
-//! view of every resolved skill/prompt/theme and the settings mutation that
+//! view of every resolved skill/prompt and the settings mutation that
 //! flips one resource's enablement. The UI lives in bh-tui / bh-cli; this
 //! module owns the grouping rules and the settings writes.
 
@@ -50,7 +50,6 @@ pub fn resource_type_label(resource_type: ResourceType) -> &'static str {
     match resource_type {
         ResourceType::Skills => "Skills",
         ResourceType::Prompts => "Prompts",
-        ResourceType::Themes => "Themes",
     }
 }
 
@@ -109,7 +108,7 @@ fn display_name(path: &Path, resource_type: ResourceType) -> String {
 
 /// The grouped view of a full resolution (TS `buildGroups`): items grouped by
 /// origin/scope/source, subgroups per resource kind in
-/// skills/prompts/themes order, items sorted by display name.
+/// skills/prompts order, items sorted by display name.
 #[must_use]
 pub fn build_groups(resolved: &ResolvedPaths) -> Vec<ResourceGroup> {
     let mut groups: Vec<ResourceGroup> = Vec::new();
@@ -163,9 +162,6 @@ pub fn build_groups(resolved: &ResolvedPaths) -> Vec<ResourceGroup> {
     }
     for resource in &resolved.prompts {
         add(resource, ResourceType::Prompts);
-    }
-    for resource in &resolved.themes {
-        add(resource, ResourceType::Themes);
     }
     // Groups: packages first, then user before project, then source label
     // (enum declaration order gives the TS ordering).
@@ -314,7 +310,7 @@ fn toggle_package_resource(
     updated.push(serde_json::Value::String(written.clone()));
     if let Some(object) = entry.as_object_mut() {
         object.insert(array_key.to_string(), serde_json::Value::Array(updated));
-        let has_filters = ["skills", "prompts", "themes"]
+        let has_filters = ["skills", "prompts"]
             .iter()
             .any(|key| object.contains_key(*key));
         if !has_filters {
@@ -339,7 +335,6 @@ fn resource_array(
     match resource_type {
         ResourceType::Skills => scope.skills.as_deref(),
         ResourceType::Prompts => scope.prompts.as_deref(),
-        ResourceType::Themes => scope.themes.as_deref(),
     }
 }
 
@@ -347,7 +342,6 @@ fn resource_array_key(resource_type: ResourceType) -> &'static str {
     match resource_type {
         ResourceType::Skills => "skills",
         ResourceType::Prompts => "prompts",
-        ResourceType::Themes => "themes",
     }
 }
 
@@ -439,7 +433,6 @@ mod tests {
             {
                 ResourceType::Skills => paths.skills.push(item),
                 ResourceType::Prompts => paths.prompts.push(item),
-                ResourceType::Themes => paths.themes.push(item),
             }
         }
         paths

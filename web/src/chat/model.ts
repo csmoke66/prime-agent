@@ -397,11 +397,11 @@ export function applySessionEvent(s: SessionData, event: any): SessionData {
 }
 
 /** Sequence guard: `ok` folds the event; `replay` drops a duplicate; `gap` demands a resync. */
-export function sequenceVerdict(last: number, sequence: number | undefined): "ok" | "replay" | "gap" {
+/** Like the TUI: drop events at or below the last seen sequence. The daemon's per-worker counter also
+ * numbers events this client never receives, so a skipped number is normal, never a reason to re-attach. */
+export function sequenceVerdict(last: number, sequence: number | undefined): "ok" | "replay" {
   if (sequence === undefined || sequence === 0) return "ok";
-  if (sequence <= last) return "replay";
-  if (last > 0 && sequence > last + 1) return "gap";
-  return "ok";
+  return sequence <= last ? "replay" : "ok";
 }
 
 // ---------- slash commands ----------

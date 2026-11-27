@@ -141,11 +141,6 @@ export function detachSession(): void {
   if (id && wire.status === "ready") void wire.request({ type: "detach", activeSessionId: id }).catch(() => undefined);
 }
 
-function resync(): void {
-  const id = get().activeSessionId;
-  if (id) void attachSession(id);
-}
-
 export function refreshState(): void {
   if (stateRefreshTimer !== null) return;
   stateRefreshTimer = window.setTimeout(async () => {
@@ -221,7 +216,6 @@ export function handleFrame(frame: Frame): void {
     case "session_event": {
       const verdict = sequenceVerdict(get().data.lastSequence, frame.meta?.sequence);
       if (verdict === "replay") return;
-      if (verdict === "gap") return resync();
       patchData((d) => {
         const next = applySessionEvent(d, frame.event);
         const sequence = frame.meta?.sequence;

@@ -43,10 +43,10 @@ describe("applySessionEvent", () => {
 });
 
 describe("sequenceVerdict", () => {
-  it("drops replays and flags gaps", () => {
+  it("drops replays and accepts skipped numbers without re-attaching", () => {
     expect(sequenceVerdict(5, 5)).toBe("replay");
     expect(sequenceVerdict(5, 6)).toBe("ok");
-    expect(sequenceVerdict(5, 8)).toBe("gap");
+    expect(sequenceVerdict(5, 8)).toBe("ok");
     expect(sequenceVerdict(0, 3)).toBe("ok");
   });
 });

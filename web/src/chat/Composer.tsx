@@ -231,9 +231,9 @@ export function Composer() {
     if (event.key === "c" && event.ctrlKey && streaming && area.current?.selectionStart === area.current?.selectionEnd) { event.preventDefault(); void abort(); }
   };
 
-  const border = bash ? "border-success/60" : dragging ? "border-primary" : "border-grid/60 focus-within:border-primary-soft";
+  const border = bash ? "border-success/60" : dragging ? "border-primary" : "border-line focus-within:border-primary";
   return (
-    <div className="border-t border-grid/30 bg-surface px-2 pb-1.5 pt-1.5">
+    <div className="border-t border-line bg-surface px-2 pb-1.5 pt-1.5">
       <div className="w-full">
         <div
           className={`relative rounded border bg-panel transition-colors ${border}`}
@@ -242,11 +242,11 @@ export function Composer() {
           onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files); }}
         >
           {suggestions.length ? (
-            <ul role="listbox" className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-auto rounded border border-grid/50 bg-surface p-0.5 shadow-xl">
+            <ul role="listbox" className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-auto rounded border border-line bg-surface p-0.5 shadow-xl">
               {suggestions.map((s, i) => (
                 <li key={s.label} role="option" aria-selected={i === selected}>
                   <button type="button" className={`flex w-full items-baseline gap-3 rounded px-2 py-0.5 text-left text-[12px] ${i === selected ? "bg-selected" : ""}`} onMouseEnter={() => setSelected(i)} onMouseDown={(e) => { e.preventDefault(); accept(s); }}>
-                    <span className="font-mono text-primary-soft">{s.label}</span>
+                    <span className="font-mono text-primary">{s.label}</span>
                     {s.detail ? <span className="truncate text-xs text-dim">{s.detail}</span> : null}
                   </button>
                 </li>
@@ -257,14 +257,14 @@ export function Composer() {
             <div className="flex flex-wrap gap-2 px-3 pt-3">
               {images.map((image, i) => (
                 <div key={i} className="group relative">
-                  <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? "attachment"} className="h-16 w-16 rounded-lg border border-grid/50 object-cover" />
+                  <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name ?? "attachment"} className="h-16 w-16 rounded-lg border border-line object-cover" />
                   <button type="button" aria-label="Remove image" className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-error text-[11px] text-white" onClick={() => setImages(images.filter((_, j) => j !== i))}>×</button>
                 </div>
               ))}
             </div>
           ) : null}
           <div className="flex items-end gap-1 p-1">
-            {!bash ? <span className="mb-1.5 ml-1 select-none font-mono font-bold text-primary-soft" aria-hidden>❯</span> : null}
+            {!bash ? <span className="mb-1.5 ml-1 select-none font-mono font-bold text-primary" aria-hidden>❯</span> : null}
             {bash ? <span className="mb-1.5 ml-1 font-mono text-success" title={bash.excludeFromContext ? "Output excluded from context" : "Output joins the context"}>{bash.excludeFromContext ? "!!" : "!"}</span> : null}
             <textarea
               ref={area}

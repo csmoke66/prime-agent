@@ -25,10 +25,10 @@ export function Images({ blocks }: { blocks: Block[] }) {
       {images.map((image, i) =>
         image.data ? (
           <a key={i} href={`data:${image.mimeType};base64,${image.data}`} target="_blank" rel="noreferrer">
-            <img src={`data:${image.mimeType};base64,${image.data}`} alt="attachment" className="max-h-72 max-w-full rounded-lg border border-grid/50 object-contain" />
+            <img src={`data:${image.mimeType};base64,${image.data}`} alt="attachment" className="max-h-72 max-w-full rounded-lg border border-line object-contain" />
           </a>
         ) : (
-          <div key={i} className="rounded-lg border border-dashed border-grid/60 px-3 py-2 text-xs text-dim">
+          <div key={i} className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-dim">
             image{image.widthPx ? ` ${image.widthPx}×${image.heightPx}` : ""}
             {image.elidedBytes ? ` · ${Math.round(image.elidedBytes / 1365)} KB not loaded` : ""}
           </div>
@@ -45,7 +45,7 @@ export function DiffView({ diff }: { diff: string }) {
     <pre className="bh-pre overflow-x-auto !p-0 text-[12px] leading-[1.45]">
       {lines.map((line, i) => {
         const c = line[0];
-        const cls = c === "+" ? "bg-[#0f2a14] text-[#7ee787]" : c === "-" ? "bg-[#331218] text-[#ff9aa2]" : "text-muted";
+        const cls = c === "+" ? "bg-[#0f2415] text-[#8fcf9b]" : c === "-" ? "bg-[#2a1214] text-[#e59aa0]" : "text-muted";
         return (
           <div key={i} className={`px-2 ${cls}`}>
             {line || " "}
@@ -67,9 +67,9 @@ export const diffStats = (diff: string) => {
 };
 
 const STATE_STYLE = {
-  running: { bar: "border-primary-soft", bg: "bg-tool-pending", label: "running", tone: "text-primary-soft" },
-  done: { bar: "border-success/70", bg: "bg-tool-success", label: "ok", tone: "text-success" },
-  error: { bar: "border-error", bg: "bg-tool-error", label: "error", tone: "text-error" },
+  running: { bar: "border-primary/40", bg: "bg-tool-pending", label: "running", tone: "text-primary" },
+  done: { bar: "border-line", bg: "bg-tool-success", label: "ok", tone: "text-success" },
+  error: { bar: "border-error/40", bg: "bg-tool-error", label: "error", tone: "text-error" },
 } as const;
 
 export const fmtMs = (ms: unknown): string | null => (typeof ms === "number" ? (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`) : null);
@@ -94,10 +94,10 @@ function Frame({
 }) {
   const st = STATE_STYLE[state];
   return (
-    <div className={`my-0.5 rounded-r border-l-2 ${st.bar} ${st.bg}`}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-2 py-1 text-left font-mono text-[12px] hover:bg-white/[0.03]">
+    <div className={`my-1.5 overflow-hidden rounded-md border ${st.bar} ${st.bg}`}>
+      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[12px] hover:bg-white/[0.03]">
         {state === "running" ? <span className="bh-spin shrink-0" aria-label="running" /> : <span className={`w-3 shrink-0 text-center ${st.tone}`} aria-hidden>{state === "error" ? "✕" : "✓"}</span>}
-        <span className="shrink-0 font-semibold text-primary-soft">{name}</span>
+        <span className="shrink-0 font-semibold text-fg">{name}</span>
         <span className="min-w-0 flex-1 truncate text-fg/90">{title}</span>
         <span className="flex shrink-0 items-center gap-2 text-[11px] text-dim">
           {meta}
@@ -105,7 +105,7 @@ function Frame({
           <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
         </span>
       </button>
-      {open ? <div className="border-t border-grid/25 px-2 py-1.5">{children}</div> : null}
+      {open ? <div className="border-t border-line px-2.5 py-2">{children}</div> : null}
     </div>
   );
 }
@@ -203,7 +203,7 @@ function DiffSummary({ diffs, totals, expanded }: { diffs: { path: string; diff:
       </button>
       {open
         ? [...byPath].map(([path, edits]) => (
-            <div key={path} className="mt-1 overflow-hidden rounded border border-grid/40">
+            <div key={path} className="mt-1 overflow-hidden rounded border border-line">
               <div className="bg-panel px-2 py-0.5 font-mono text-xs text-muted">{path}</div>
               {edits.map((d, i) => (
                 <DiffView key={i} diff={d} />

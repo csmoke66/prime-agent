@@ -13,7 +13,7 @@ import { destructiveKind, destructiveLabel, openEntry, runDestructive } from "./
 import { KernelBash } from "./Shells";
 
 const Section = ({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) => (
-  <section className="border-b border-grid/25 px-3 py-2.5">
+  <section className="border-b border-line px-3 py-2.5">
     <h3 className="bh-section-title mb-1.5 flex items-center justify-between">{title}{right}</h3>
     {children}
   </section>
@@ -107,7 +107,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
 
       <Section title="Context">
         <div className="h-1.5 overflow-hidden rounded-full bg-panel" role="meter" aria-valuenow={pct ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label="Context used">
-          <div className={`h-full ${pct !== null && pct > 85 ? "bg-error" : pct !== null && pct > 65 ? "bg-warning" : "bg-primary-soft"}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
+          <div className={`h-full ${pct !== null && pct > 85 ? "bg-error" : pct !== null && pct > 65 ? "bg-warning" : "bg-primary"}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
         </div>
         <div className="mt-1 flex justify-between text-dim"><span>{pct === null ? "unknown" : `${pct.toFixed(0)}% used`}</span>{usage ? <span>{formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}</span> : null}</div>
       </Section>

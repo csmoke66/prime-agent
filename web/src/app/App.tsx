@@ -11,6 +11,7 @@ import { ResizeHandle } from "./ResizeHandle";
 import { Sidebar } from "./Sidebar";
 import { clampWidth, setLayout, useLayout } from "./layout";
 import { usePalette, useGlobalShortcuts } from "./shortcuts";
+import { IconInspector, IconSearch, IconSidebar, Logo } from "./icons";
 import { useChat } from "../chat/store";
 
 const useNarrow = () => {
@@ -50,30 +51,30 @@ export function App() {
   const showSidebar = narrow ? drawer === "sidebar" : layout.sidebarOpen;
   const showInspector = inSession && (narrow ? drawer === "inspector" : layout.inspectorOpen);
   const sidebar = <Sidebar onNavigate={() => setDrawer(null)} />;
-  const iconBtn = "grid h-6 min-w-6 place-items-center rounded px-1 text-muted hover:bg-selected hover:text-fg";
+  const iconBtn = "grid h-7 w-7 place-items-center rounded-md text-muted transition-colors hover:bg-selected hover:text-fg aria-pressed:text-fg";
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-8 shrink-0 items-center gap-2 border-b border-grid/30 bg-surface px-2">
-        <button className={iconBtn} aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)" aria-pressed={showSidebar} onClick={() => (narrow ? setDrawer(showSidebar ? null : "sidebar") : setLayout({ sidebarOpen: !layout.sidebarOpen }))}>&#x2630;</button>
-        <button className="flex items-center gap-1.5 font-semibold tracking-tight" onClick={() => navigate({ name: "sessions" })}>
-          <span className="text-primary-soft">&#x2B22;</span> Beehive
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-bg px-2">
+        <button className={iconBtn} aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)" aria-pressed={showSidebar} onClick={() => (narrow ? setDrawer(showSidebar ? null : "sidebar") : setLayout({ sidebarOpen: !layout.sidebarOpen }))}><IconSidebar /></button>
+        <button className="flex items-center gap-2 rounded px-1.5 py-1 text-[13px] font-semibold tracking-tight hover:bg-selected" title="Home (g h)" onClick={() => navigate({ name: "sessions" })}>
+          <Logo size={16} /> Beehive
         </button>
-        {inSession && sessionName ? <span className="hidden min-w-0 truncate text-muted sm:block">/ {sessionName}</span> : null}
-        <button className="bh-btn ml-auto !border-transparent !bg-transparent whitespace-nowrap text-muted" onClick={() => usePalette.setState({ open: true })} aria-label="Open command palette">
-          <span className="hidden sm:inline">Search</span> <kbd className="bh-kbd hidden sm:inline">Ctrl K</kbd><span className="sm:hidden">&#x2315;</span>
+        {inSession && sessionName ? <span className="hidden min-w-0 items-center gap-2 truncate text-[13px] text-muted sm:flex"><span className="text-grid">/</span><span className="truncate text-fg">{sessionName}</span></span> : null}
+        <button className="ml-auto flex h-7 items-center gap-2 rounded-md border border-line bg-surface px-2 text-[12px] text-muted transition-colors hover:border-grid hover:text-fg" onClick={() => usePalette.setState({ open: true })} aria-label="Open command palette" title="Command palette (Ctrl+K)">
+          <IconSearch /> <span className="hidden sm:inline">Search or run…</span> <kbd className="bh-kbd hidden sm:inline">Ctrl K</kbd>
         </button>
-        <span className="whitespace-nowrap text-[11px] text-dim">
-          <span className={status === "ready" ? "text-success" : "text-warning bh-pulse"}>&#x25CF;</span> <span className="hidden sm:inline">{status}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap px-2 text-[12px] text-dim" title={`Daemon connection: ${status}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status === "ready" ? "bg-success" : "bg-primary bh-pulse"}`} /> <span className="hidden sm:inline">{status}</span>
         </span>
         {inSession ? (
-          <button className={iconBtn} aria-label="Toggle inspector" title="Toggle inspector (Ctrl+I)" aria-pressed={showInspector} onClick={() => (narrow ? setDrawer(showInspector ? null : "inspector") : setLayout({ inspectorOpen: !layout.inspectorOpen }))}>&#x25E7;</button>
+          <button className={iconBtn} aria-label="Toggle inspector" title="Toggle inspector (Ctrl+I)" aria-pressed={showInspector} onClick={() => (narrow ? setDrawer(showInspector ? null : "inspector") : setLayout({ inspectorOpen: !layout.inspectorOpen }))}><IconInspector /></button>
         ) : null}
       </header>
       <div className="relative flex min-h-0 flex-1">
         {showSidebar && !narrow ? (
           <>
-            <div className="shrink-0 border-r border-grid/30" style={{ width: layout.sidebarWidth }}>{sidebar}</div>
+            <div className="shrink-0 border-r border-line" style={{ width: layout.sidebarWidth }}>{sidebar}</div>
             <ResizeHandle side="right" width={layout.sidebarWidth} label="Resize sidebar" onResize={(w) => setLayout({ sidebarWidth: clampWidth(w) })} />
           </>
         ) : null}
@@ -89,12 +90,12 @@ export function App() {
         {showInspector && route.name === "session" && !narrow ? (
           <>
             <ResizeHandle side="left" width={layout.inspectorWidth} label="Resize inspector" onResize={(w) => setLayout({ inspectorWidth: clampWidth(w) })} />
-            <div className="shrink-0 border-l border-grid/30" style={{ width: layout.inspectorWidth }}><Inspector activeSessionId={route.activeSessionId} /></div>
+            <div className="shrink-0 border-l border-line" style={{ width: layout.inspectorWidth }}><Inspector activeSessionId={route.activeSessionId} /></div>
           </>
         ) : null}
         {narrow && drawer ? (
-          <div className="absolute inset-0 z-40 flex bg-black/50" onMouseDown={(e) => e.target === e.currentTarget && setDrawer(null)}>
-            <div className={`bh-fade-in h-full w-[86%] max-w-sm border-grid/30 bg-surface shadow-2xl ${drawer === "sidebar" ? "border-r" : "ml-auto border-l"}`}>
+          <div className="absolute inset-0 z-40 flex bg-black/60 backdrop-blur-[1px]" onMouseDown={(e) => e.target === e.currentTarget && setDrawer(null)}>
+            <div className={`bh-fade-in h-full w-[86%] max-w-sm border-line bg-surface shadow-2xl ${drawer === "sidebar" ? "border-r" : "ml-auto border-l"}`}>
               {drawer === "sidebar" ? sidebar : route.name === "session" ? <Inspector activeSessionId={route.activeSessionId} /> : null}
             </div>
           </div>

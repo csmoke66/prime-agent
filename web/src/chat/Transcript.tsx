@@ -8,7 +8,7 @@ const keys = new WeakMap<object, number>();
 let nextKey = 0;
 const keyOf = (m: Msg): string | number => m.key ?? (keys.get(m) ?? (keys.set(m, ++nextKey), nextKey));
 
-const THINKING_COLOR: Record<string, string> = { off: "text-dim", minimal: "text-info", low: "text-info", medium: "text-primary-soft", high: "text-warning", xhigh: "text-error", max: "text-error" };
+const THINKING_COLOR: Record<string, string> = { off: "text-dim", minimal: "text-info", low: "text-info", medium: "text-muted", high: "text-muted", xhigh: "text-error", max: "text-error" };
 
 function Collapsible({ title, open: initial, children, tone = "text-muted" }: { title: ReactNode; open: boolean; children: ReactNode; tone?: string }) {
   const [override, setOverride] = useState<boolean | null>(null);
@@ -19,7 +19,7 @@ function Collapsible({ title, open: initial, children, tone = "text-muted" }: { 
         <span className={`w-2.5 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
         {title}
       </button>
-      {open ? <div className="mt-0.5 border-l border-grid/40 pl-2.5">{children}</div> : null}
+      {open ? <div className="mt-0.5 border-l border-line pl-2.5">{children}</div> : null}
     </div>
   );
 }
@@ -29,20 +29,20 @@ function UserRow({ message }: { message: Msg }) {
   const text = textOfContent(blocks);
   const skill = parseSkillBlock(text);
   return (
-    <div className="bh-fade-in mb-1 mt-3 border-l-2 border-primary-soft bg-user-msg">
+    <div className="bh-fade-in mb-2 mt-4 rounded-md border border-line bg-user-msg">
       <div className="flex gap-2 px-2.5 py-1.5">
-        <span className="select-none font-mono font-bold text-primary-soft" aria-hidden>❯</span>
+        <span className="select-none font-mono font-bold text-primary" aria-hidden>❯</span>
         <div className="min-w-0 flex-1">
         {skill ? (
           <>
-            <Collapsible title={<>skill <b className="font-mono">{skill.name}</b></>} open={false} tone="text-primary-soft">
+            <Collapsible title={<>skill <b className="font-mono">{skill.name}</b></>} open={false} tone="text-muted">
               <div className="mb-1 font-mono text-[11px] text-dim">{skill.location}</div>
               <Markdown text={skill.content} className="text-sm" />
             </Collapsible>
             {skill.userMessage ? <div className="whitespace-pre-wrap break-words">{skill.userMessage}</div> : null}
           </>
         ) : text.startsWith("/") ? (
-          <div className="whitespace-pre-wrap break-words"><span className="font-semibold text-primary-soft">{text.split(/\s/)[0]}</span>{text.slice(text.split(/\s/)[0].length)}</div>
+          <div className="whitespace-pre-wrap break-words"><span className="font-semibold text-fg">{text.split(/\s/)[0]}</span>{text.slice(text.split(/\s/)[0].length)}</div>
         ) : (
           <div className="whitespace-pre-wrap break-words">{text}</div>
         )}
@@ -101,15 +101,15 @@ function BashRow({ m }: { m: Msg }) {
   const [open, setOpen] = useState(false);
   const failed = m.exitCode !== 0 && m.exitCode != null;
   return (
-    <div className={`my-0.5 rounded-r border-l-2 ${failed ? "border-error bg-tool-error" : "border-success/70 bg-tool-success"}`}>
+    <div className={`my-1.5 overflow-hidden rounded-md border ${failed ? "border-error/40 bg-tool-error" : "border-line bg-tool-success"}`}>
       <button type="button" className="flex w-full items-center gap-2 px-2 py-1 text-left font-mono text-[12px]" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="font-semibold text-success">!</span>
+        <span className="font-semibold text-muted">!</span>
         <code className="min-w-0 flex-1 truncate">{m.command}</code>
         {m.excludeFromContext ? <span className="text-[11px] text-dim">not in context</span> : null}
         <span className={`text-[11px] ${failed ? "text-error" : "text-dim"}`}>{m.cancelled ? "cancelled" : m.exitCode != null ? `exit ${m.exitCode}` : ""}</span>
       </button>
       {open || (m.output && m.output.length < 400) ? (
-        <pre className="bh-pre max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-grid/25 !rounded-none px-2 text-[12px] text-muted">{m.output}{m.truncated && m.fullOutputPath ? `\n[truncated — full output: ${m.fullOutputPath}]` : ""}</pre>
+        <pre className="bh-pre max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-line !rounded-none px-2 text-[12px] text-muted">{m.output}{m.truncated && m.fullOutputPath ? `\n[truncated — full output: ${m.fullOutputPath}]` : ""}</pre>
       ) : null}
     </div>
   );
@@ -153,13 +153,13 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
     );
   if (type === "refinement_outcome")
     return (
-      <div className="my-1 ml-[1.15rem] rounded border-l-2 border-primary/60 bg-panel px-2 py-1 text-[13px]">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-primary-soft">Refinement</div>
+      <div className="my-1 ml-[1.15rem] rounded-md border border-line bg-panel px-2 py-1 text-[13px]">
+        <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Refinement</div>
         <Markdown text={text} />
       </div>
     );
   return (
-    <div className="my-1 ml-[1.15rem] rounded border-l-2 border-grid/60 bg-panel px-2 py-1 text-[13px]">
+    <div className="my-1 ml-[1.15rem] rounded border-l-2 border-line bg-panel px-2 py-1 text-[13px]">
       <div className="mb-1 text-[11px] font-semibold text-muted">[{type}]</div>
       <Markdown text={text} />
     </div>
@@ -169,7 +169,7 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
 function SummaryRow({ title, m }: { title: string; m: Msg }) {
   return (
     <div className="my-2 border-y border-primary/30 bg-panel/60 px-2 py-0.5">
-      <Collapsible title={<span className="text-primary-soft">◆ {title}{m.tokensBefore ? ` · ${m.tokensBefore.toLocaleString()} tokens before` : ""}</span>} open={false}>
+      <Collapsible title={<span className="text-muted">◆ {title}{m.tokensBefore ? ` · ${m.tokensBefore.toLocaleString()} tokens before` : ""}</span>} open={false}>
         {m.customInstructions ? <div className="mb-1 text-xs text-dim">focus: {m.customInstructions}</div> : null}
         <Markdown text={String(m.summary ?? "")} className="text-sm" />
       </Collapsible>
@@ -210,14 +210,14 @@ function Working({ data }: { data: SessionData }) {
   return (
     <div className="space-y-1 pl-[1.15rem]">
       {userBash?.running ? (
-        <div className="overflow-hidden rounded border-l-2 border-primary-soft bg-tool-pending">
-          <div className="flex items-center gap-2 px-3 py-2 text-[13px]"><span className="bh-pulse text-primary-soft">$</span><code className="flex-1 truncate font-mono">{userBash.command}</code></div>
-          {userBash.output ? <pre className="bh-pre max-h-72 overflow-auto whitespace-pre-wrap border-t border-grid/30 px-3 py-2 text-[12px] text-muted">{userBash.output}</pre> : null}
+        <div className="overflow-hidden rounded border-l-2 border-primary bg-tool-pending">
+          <div className="flex items-center gap-2 px-3 py-2 text-[13px]"><span className="bh-pulse text-primary">$</span><code className="flex-1 truncate font-mono">{userBash.command}</code></div>
+          {userBash.output ? <pre className="bh-pre max-h-72 overflow-auto whitespace-pre-wrap border-t border-line px-3 py-2 text-[12px] text-muted">{userBash.output}</pre> : null}
         </div>
       ) : null}
       {compaction?.active ? (
-        <div className="rounded border-l-2 border-primary-soft bg-panel px-2 py-1 text-[13px]">
-          <div className="bh-pulse text-primary-soft">◆ Compacting context… <span className="text-dim">({compaction.reason})</span></div>
+        <div className="rounded border-l-2 border-primary bg-panel px-2 py-1 text-[13px]">
+          <div className="bh-pulse text-primary">◆ Compacting context… <span className="text-dim">({compaction.reason})</span></div>
           {compaction.summary ? <div className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-muted">{compaction.summary}</div> : null}
         </div>
       ) : null}

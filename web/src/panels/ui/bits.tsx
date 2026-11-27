@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 export function Spinner({ label }: { label?: string }) {
   return (
     <span className="inline-flex items-center gap-2 text-muted" role="status">
-      <span className="bh-pulse text-primary-soft">&#x2B22;</span>
+      <span className="bh-pulse text-primary">&#x2B22;</span>
       {label ? <span className="text-sm">{label}</span> : <span className="sr-only">Loading</span>}
     </span>
   );
@@ -28,12 +28,12 @@ export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
 }
 
 const TONES = {
-  neutral: "border-grid/60 text-muted",
+  neutral: "border-line text-muted",
   success: "border-success/50 text-success",
   warning: "border-warning/50 text-warning",
   error: "border-error/50 text-error",
   info: "border-info/50 text-info",
-  primary: "border-primary/60 text-primary-soft",
+  primary: "border-primary/60 text-primary",
 } as const;
 export type Tone = keyof typeof TONES;
 
@@ -46,7 +46,7 @@ export function Badge({ tone = "neutral", children, title }: { tone?: Tone; chil
 }
 
 export function StatusDot({ tone }: { tone: Tone }) {
-  const color = { neutral: "bg-dim", success: "bg-success", warning: "bg-warning", error: "bg-error", info: "bg-info", primary: "bg-primary-soft" }[tone];
+  const color = { neutral: "bg-dim", success: "bg-success", warning: "bg-warning", error: "bg-error", info: "bg-info", primary: "bg-primary" }[tone];
   return <span aria-hidden className={`inline-block size-2 shrink-0 rounded-full ${color} ${tone === "success" || tone === "info" ? "bh-pulse" : ""}`} />;
 }
 
@@ -83,7 +83,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 
 export function Tabs<T extends string>({ tabs, active, onChange }: { tabs: readonly { id: T; label: string }[]; active: T; onChange: (id: T) => void }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-grid/40 pb-1">
+    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-line pb-1">
       {tabs.map((tab) => (
         <button
           key={tab.id}

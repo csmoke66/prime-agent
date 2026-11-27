@@ -80,10 +80,10 @@ export function CommandPalette() {
   let lastGroup = "";
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 p-3 pt-[12vh] backdrop-blur-[2px] bh-fade-in" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label="Command palette" onKeyDown={onKeyDown} className="flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-grid/50 bg-surface shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label="Command palette" onKeyDown={onKeyDown} className="flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
         <input
           autoFocus
-          className="border-b border-grid/40 bg-transparent px-4 py-3 text-base outline-none placeholder:text-dim"
+          className="border-b border-line bg-transparent px-4 py-3 text-base outline-none placeholder:text-dim"
           placeholder="Type a command, session or page…"
           aria-label="Command palette search"
           role="combobox"

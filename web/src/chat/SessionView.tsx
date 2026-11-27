@@ -15,7 +15,7 @@ function ToastStack() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-12 z-50 flex flex-col items-center gap-2" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={`bh-fade-in rounded border bg-surface px-2.5 py-1 text-[12px] shadow-lg ${t.kind === "error" ? "border-error/50 text-error" : t.kind === "warning" ? "border-warning/50 text-warning" : "border-grid/50"}`}>{t.text}</div>
+        <div key={t.id} className={`bh-fade-in rounded border bg-surface px-2.5 py-1 text-[12px] shadow-lg ${t.kind === "error" ? "border-error/50 text-error" : t.kind === "warning" ? "border-warning/50 text-warning" : "border-line"}`}>{t.text}</div>
       ))}
     </div>
   );

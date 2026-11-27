@@ -46,7 +46,7 @@ export function ImportPanel({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Import session" subtitle="Choose a session .jsonl file to import and resume." size="sm" onClose={onClose}>
       <div
-        className={`grid place-items-center gap-2 rounded-xl border-2 border-dashed px-4 py-10 text-center transition-colors ${drag ? "border-primary bg-selected" : "border-grid/60"}`}
+        className={`grid place-items-center gap-2 rounded-xl border-2 border-dashed px-4 py-10 text-center transition-colors ${drag ? "border-primary bg-selected" : "border-line"}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); const file = e.dataTransfer.files[0]; if (file) void importFile(file); }}

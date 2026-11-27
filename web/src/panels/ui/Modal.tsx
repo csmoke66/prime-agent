@@ -63,11 +63,11 @@ export function Modal({ title, subtitle, onClose, children, footer, variant = "m
         onKeyDown={onKeyDown}
         className={
           drawer
-            ? `bh-fade-in flex h-full w-full ${SIZES[size]} flex-col border-l border-grid/50 bg-surface shadow-2xl`
-            : `flex max-h-[92vh] w-full ${SIZES[size]} flex-col rounded-t-2xl border border-grid/50 bg-surface shadow-2xl sm:rounded-2xl`
+            ? `bh-fade-in flex h-full w-full ${SIZES[size]} flex-col border-l border-line bg-surface shadow-2xl`
+            : `flex max-h-[92vh] w-full ${SIZES[size]} flex-col rounded-t-2xl border border-line bg-surface shadow-2xl sm:rounded-2xl`
         }
       >
-        <header className="flex items-start gap-3 border-b border-grid/40 px-4 py-3">
+        <header className="flex items-start gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="truncate text-base font-semibold tracking-tight">{title}</h2>
             {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
@@ -76,7 +76,7 @@ export function Modal({ title, subtitle, onClose, children, footer, variant = "m
           <button className="bh-btn px-2! py-1!" onClick={onClose} aria-label="Close dialog">&#x2715;</button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
-        {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-grid/40 px-4 py-3">{footer}</footer> : null}
+        {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-4 py-3">{footer}</footer> : null}
       </div>
     </div>
   );

@@ -85,7 +85,7 @@ export function TreePanel({ activeSessionId, onClose }: { activeSessionId: strin
                   >
                     {folded.has(node.id) ? "▸" : "▾"}
                   </button>
-                  <span className={`size-1.5 shrink-0 rounded-full ${onPath ? "bg-primary-soft" : "bg-grid"}`} />
+                  <span className={`size-1.5 shrink-0 rounded-full ${onPath ? "bg-primary" : "bg-grid"}`} />
                   <button
                     className={`min-w-0 flex-1 truncate text-left text-sm ${entryRole(entry) === "user" || entry.message?.role === "user" ? "text-fg" : "text-muted"}`}
                     title={messageText(entry) || describeEntry(entry)}

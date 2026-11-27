@@ -13,17 +13,16 @@ import { useSavedSessions } from "../panels/savedSessions";
 import { toast, errorText } from "../panels/toasts";
 import { relativeTime, shortPath } from "../panels/ui/format";
 import { setLayout } from "./layout";
+import { IconChevronsLeft, IconHeartbeat, IconPlus, IconSettings } from "./icons";
 
-const PULSE = ["◇", "◈", "◆", "◈"];
-
-function StatusGlyph({ status, tick }: { status: RosterEntry["status"]; tick: number }) {
-  if (status === "running") return <span className="w-3 shrink-0 text-center text-fg" aria-label="running">{PULSE[tick % 4]}</span>;
-  return <span className={`w-3 shrink-0 text-center ${status === "idle" ? "text-warning" : "text-dim"}`} aria-label={status}>&bull;</span>;
+function StatusGlyph({ status }: { status: RosterEntry["status"] }) {
+  if (status === "running") return <span className="grid h-4 w-3 shrink-0 place-items-center" role="img" aria-label="running"><span className="bh-spin" /></span>;
+  const dot = status === "idle" ? "bg-success/80" : "border border-grid";
+  return <span className="grid h-4 w-3 shrink-0 place-items-center" role="img" aria-label={status}><span className={`h-1.5 w-1.5 rounded-full ${dot}`} /></span>;
 }
 
 type RowProps = {
   node: AgentNode;
-  tick: number;
   searching: boolean;
   active: boolean;
   collapsed: boolean;
@@ -34,7 +33,7 @@ type RowProps = {
   onMode: (mode: "name" | "group" | null) => void;
 };
 
-function Row({ node, tick, searching, active, collapsed, renaming, group, onToggle, onOpen, onMode }: RowProps) {
+function Row({ node, searching, active, collapsed, renaming, group, onToggle, onOpen, onMode }: RowProps) {
   const entry = node.entry;
   const s = entry.summary;
   const subs = descendantCount(node);
@@ -42,16 +41,16 @@ function Row({ node, tick, searching, active, collapsed, renaming, group, onTogg
   const queued = Number(s.queuedCount ?? 0);
   const destructive = destructiveLabel(entry);
   const dim = entry.status === "inactive";
-  const meta = [activityLabel(entry), modelLabel(s).replace(/^[^/]*\//, ""), relativeTime(s.lastActivityAt ?? s.modified ?? s.created)].filter(Boolean).join(" · ");
+  const meta = [activityLabel(entry), relativeTime(s.lastActivityAt ?? s.modified ?? s.created)].filter(Boolean).join(" · ");
   return (
     <li role="treeitem" aria-selected={active} aria-expanded={node.children.length ? !collapsed : undefined}>
       <div
-        className={`group relative flex cursor-pointer items-start gap-1 border-l-2 py-1 pr-1.5 ${active ? "border-primary-soft bg-selected" : "border-transparent hover:bg-selected/60"} ${dim && !active ? "opacity-60 hover:opacity-100" : ""}`}
+        className={`group relative flex cursor-pointer items-start gap-1 border-l-2 py-1.5 pr-1.5 ${active ? "border-primary bg-selected" : "border-transparent hover:bg-selected/60"} ${dim && !active ? "opacity-60 hover:opacity-100" : ""}`}
         style={{ paddingLeft: searching ? 6 : 4 + node.depth * 12 }}
         onClick={onOpen}
       >
         <button className={`mt-0.5 w-3 shrink-0 text-[10px] text-dim ${node.children.length && !searching ? "" : "invisible"}`} aria-label={collapsed ? "Expand subagents" : "Collapse subagents"} onClick={(e) => { e.stopPropagation(); onToggle(); }}>{collapsed ? "▸" : "▾"}</button>
-        <span className="mt-px"><StatusGlyph status={entry.status} tick={tick} /></span>
+        <span className="mt-px"><StatusGlyph status={entry.status} /></span>
         <div className="min-w-0 flex-1">
           {renaming ? (
             <InlineRename
@@ -65,9 +64,9 @@ function Row({ node, tick, searching, active, collapsed, renaming, group, onTogg
           ) : (
             <div className="flex items-center gap-1.5">
               <span className={`truncate text-[13px] ${active ? "font-medium text-fg" : "text-fg/90"}`} title={sessionTitle(entry)} onDoubleClick={(e) => { e.stopPropagation(); onMode("name"); }}>{sessionTitle(entry)}</span>
-              {goal === "active" ? <span className="shrink-0 text-[11px] text-success" title="Goal active">◎</span> : null}
-              {queued > 0 ? <span className="shrink-0 rounded bg-warning/15 px-1 text-[10px] text-warning" title="Queued / inbox messages">{queued}</span> : null}
-              {subs > 0 ? <span className={`shrink-0 rounded px-1 text-[10px] ${entry.status === "running" ? "bg-success/15 text-success" : "bg-grid/30 text-muted"}`} title={`${subs} subagents`}>{subs}</span> : null}
+              {goal === "active" ? <span className="shrink-0 text-[11px] text-primary" title="Goal active">◎</span> : null}
+              {queued > 0 ? <span className="shrink-0 rounded bg-primary-muted px-1 text-[10px] text-primary" title="Queued / inbox messages">{queued}</span> : null}
+              {subs > 0 ? <span className={`shrink-0 rounded px-1 text-[10px] ${entry.status === "running" ? "bg-primary-muted text-primary" : "bg-line text-muted"}`} title={`${subs} subagents`}>{subs}</span> : null}
             </div>
           )}
           <div className="truncate text-[11px] text-dim" title={`${s.cwd ?? ""}`}>{node.depth === 0 && s.cwd ? `${shortPath(s.cwd, 1)} · ` : ""}{meta}</div>
@@ -99,14 +98,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [folded, setFolded] = useState<Set<string>>(new Set(["status:inactive"]));
   const [editing, setEditing] = useState<{ id: string; mode: "name" | "group" } | null>(null);
   const [showShells, setShowShells] = useState(false);
-  const [tick, setTick] = useState(0);
-  const activeId = route.name === "session" ? route.activeSessionId : "";
+    const activeId = route.name === "session" ? route.activeSessionId : "";
 
   useEffect(() => retainRoster(), []);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((n) => n + 1), 350);
-    return () => window.clearInterval(id);
-  }, []);
 
   useEffect(() => {
     const q = query.trim();
@@ -151,7 +145,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <Row
         key={id}
         node={node}
-        tick={tick}
         searching={flat}
         active={Boolean(activeId) && entry.summary.activeSessionId === activeId}
         collapsed={collapsed.has(id)}
@@ -165,8 +158,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-surface" aria-label="Sessions and agents">
-      <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-2">
+    <aside className="flex h-full min-h-0 flex-col bg-bg" aria-label="Sessions and agents">
+      <div className="flex items-center gap-1.5 px-2 pb-2 pt-2">
         <input
           className="bh-input !py-1"
           placeholder={content ? "Search message text…" : "Filter agents…"}
@@ -175,13 +168,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
         />
-        <button className={`bh-btn !px-1.5 ${content ? "!border-primary text-primary-soft" : ""}`} title="Search message text" aria-pressed={content} onClick={() => setContent(!content)}>¶</button>
+        <button className={`bh-btn !px-1.5 ${content ? "!border-primary text-primary" : ""}`} title="Search inside message text" aria-label="Search message text" aria-pressed={content} onClick={() => setContent(!content)}>¶</button>
+        <button className="bh-btn bh-btn-primary !px-1.5" title="New session" aria-label="New session" onClick={() => { openPanel("new"); onNavigate?.(); }}><IconPlus /></button>
       </div>
-      <div className="flex items-center gap-1.5 px-2 pb-2">
-        <button className="bh-btn bh-btn-primary flex-1 justify-center" onClick={() => { openPanel("new"); onNavigate?.(); }}>+ New session</button>
-        <button className="bh-btn" title="Import a session file" onClick={() => openPanel("import")}>Import</button>
-      </div>
-      <div className="flex items-center justify-between border-y border-grid/25 px-2 py-1 text-[11px] text-dim">
+      <div className="flex items-center justify-between border-b border-line px-3 pb-1.5 text-[11px] text-dim">
         <span>{counts.running} running &middot; {counts.total} total</span>
         {saved.state.loading ? <span className="bh-pulse">scanning saved…</span> : saved.state.remaining > 0 ? <button className="hover:text-fg" onClick={() => void saved.loadMore()}>+{saved.state.remaining} more</button> : null}
       </div>
@@ -204,15 +194,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           })
         )}
       </div>
-      <div className="border-t border-grid/25">
+      <div className="border-t border-line">
         <button className="bh-section-title flex w-full items-center gap-1 px-2 py-1.5 text-left hover:text-muted" aria-expanded={showShells} onClick={() => setShowShells(!showShells)}>
           <span className="w-3 text-[10px]">{showShells ? "▾" : "▸"}</span>Persistent shells
         </button>
         {showShells ? <div className="max-h-56 overflow-y-auto px-2 pb-2"><PersistentShells /></div> : null}
-        <div className="flex items-center gap-1 border-t border-grid/25 px-2 py-1.5">
-          <button className="bh-btn !border-transparent !bg-transparent" onClick={() => openPanel("heartbeats")}>Heartbeats</button>
-          <button className="bh-btn !border-transparent !bg-transparent" onClick={() => openPanel("settings")}>Settings</button>
-          <button className="bh-btn ml-auto !border-transparent !bg-transparent" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={() => setLayout({ sidebarOpen: false })}>«</button>
+        <div className="flex items-center gap-1 border-t border-line px-2 py-1.5">
+          <button className="bh-btn !border-transparent !bg-transparent text-muted" onClick={() => openPanel("heartbeats")}><IconHeartbeat /> Heartbeats</button>
+          <button className="bh-btn !border-transparent !bg-transparent text-muted" aria-label="Settings" onClick={() => openPanel("settings")}><IconSettings /> Settings</button>
+          <button className="bh-btn ml-auto !border-transparent !bg-transparent text-muted" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar" onClick={() => setLayout({ sidebarOpen: false })}><IconChevronsLeft /></button>
         </div>
       </div>
     </aside>

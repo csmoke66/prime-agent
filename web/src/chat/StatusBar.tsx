@@ -26,13 +26,13 @@ function Menu({ label, button, children }: { label: string; button: ReactNode; c
   return (
     <div ref={ref} className="relative">
       <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} className="rounded px-1.5 py-0.5 text-xs hover:bg-selected" onClick={() => setOpen(!open)}>{button}</button>
-      {open ? <div role="menu" className="bh-fade-in absolute bottom-full right-0 z-30 mb-1 min-w-44 rounded border border-grid/50 bg-surface p-0.5 shadow-xl sm:left-0 sm:right-auto">{children(() => setOpen(false))}</div> : null}
+      {open ? <div role="menu" className="bh-fade-in absolute bottom-full right-0 z-30 mb-1 min-w-44 rounded border border-line bg-surface p-0.5 shadow-xl sm:left-0 sm:right-auto">{children(() => setOpen(false))}</div> : null}
     </div>
   );
 }
 
 const Item = ({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) => (
-  <button type="button" role="menuitemradio" aria-checked={!!active} className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected ${active ? "text-primary-soft" : ""}`} onClick={onClick}>
+  <button type="button" role="menuitemradio" aria-checked={!!active} className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected ${active ? "text-primary" : ""}`} onClick={onClick}>
     <span className="w-3">{active ? "✓" : ""}</span>{children}
   </button>
 );
@@ -40,7 +40,7 @@ const Item = ({ active, onClick, children }: { active?: boolean; onClick: () => 
 export function SessionSettings({ onClose }: { onClose: () => void }) {
   const state = useChat((s) => s.data.state);
   const row = (label: string, control: ReactNode) => (
-    <div className="flex items-center justify-between gap-4 border-b border-grid/20 py-2 text-sm"><span>{label}</span>{control}</div>
+    <div className="flex items-center justify-between gap-4 border-b border-line py-2 text-sm"><span>{label}</span>{control}</div>
   );
   const select = (value: string, options: [string, string][], onChange: (v: string) => void) => (
     <select className="bh-input !w-auto" value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
@@ -79,10 +79,10 @@ export function StatusBar() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-0.5 gap-y-0 border-t border-grid/30 bg-bg px-1.5 py-0.5 font-mono text-[11px] text-muted">
+      <div className="flex flex-wrap items-center gap-x-0.5 gap-y-0 border-t border-line bg-bg px-1.5 py-0.5 font-mono text-[11px] text-muted">
         <button type="button" className="max-w-[14rem] truncate rounded px-1.5 py-0.5 font-medium text-fg hover:bg-selected" title="Select model (Ctrl+L)" onClick={() => setPicker(true)}>{modelLabel(state)}</button>
         {reasoning ? (
-          <Menu label="Thinking level" button={<span>thinking: <b className="font-medium text-primary-soft">{state.thinkingLevel ?? "off"}</b></span>}>
+          <Menu label="Thinking level" button={<span>thinking: <b className="font-medium text-fg">{state.thinkingLevel ?? "off"}</b></span>}>
             {(close) => levels.map((level) => <Item key={level} active={level === state.thinkingLevel} onClick={() => { void setThinking(level); close(); }}>{level}</Item>)}
           </Menu>
         ) : null}

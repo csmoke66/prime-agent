@@ -27,8 +27,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-3 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`bh-fade-in flex max-h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-grid/50 bg-surface shadow-2xl outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}>
-        <div className="flex items-center gap-2 border-b border-grid/30 px-4 py-2.5">
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`bh-fade-in flex max-h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-2xl outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}>
+        <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
           <h2 className="flex-1 text-sm font-semibold">{title}</h2>
           <button className="bh-btn !px-2 !py-0.5" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -80,7 +80,7 @@ export function ModelPicker({ onClose }: { onClose: () => void }) {
               <button className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-selected ${active ? "bg-selected" : ""}`} onClick={() => { void setModel(m.provider, m.id); onClose(); }}>
                 <span className="w-24 shrink-0 truncate text-xs text-dim">{m.provider}</span>
                 <span className="min-w-0 flex-1 truncate">{m.name ?? m.id}</span>
-                {m.reasoning ? <span className="text-[11px] text-primary-soft">reasoning</span> : null}
+                {m.reasoning ? <span className="text-[11px] text-primary">reasoning</span> : null}
                 {m.contextWindow ? <span className="text-[11px] text-dim">{Math.round(m.contextWindow / 1000)}k</span> : null}
                 {active ? <span className="text-success">✓</span> : null}
               </button>
@@ -104,8 +104,8 @@ export function QueuePanel() {
     { lane: "followUp", label: "Next", items: queue.followUps },
   ];
   return (
-    <div className="border-t border-grid/30 bg-surface px-2 pt-1.5">
-      <div className="max-h-28 w-full overflow-y-auto rounded border border-grid/40 bg-panel p-1 text-[12px]">
+    <div className="border-t border-line bg-surface px-2 pt-1.5">
+      <div className="max-h-28 w-full overflow-y-auto rounded border border-line bg-panel p-1 text-[12px]">
         <div className="mb-1 flex items-center gap-2 text-xs text-muted">
           <span className="font-medium">Queued ({count})</span>
           {queue.starting ? <span className="truncate text-dim">starting: {queue.starting}</span> : null}
@@ -164,7 +164,7 @@ export function GoalBar() {
   const tone = goal.status === "active" ? "text-success" : goal.status === "paused" ? "text-warning" : goal.status === "error" || goal.status === "budget_limited" ? "text-error" : "text-muted";
   const act = (text: string) => void sendPrompt(text, "steer");
   return (
-    <div className="border-b border-grid/30 bg-surface px-2.5 py-1 text-[11px]">
+    <div className="border-b border-line bg-surface px-2.5 py-1 text-[11px]">
       <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
         <span className={`font-medium ${tone}`}>◎ goal · {String(goal.status).replace("_", " ")}</span>
         <span className="min-w-0 flex-1 truncate text-muted" title={goal.objective}>{goal.objective}</span>
@@ -187,7 +187,7 @@ export function SidePane() {
   return (
     <div className="border-t border-primary/40 bg-panel px-2.5 py-1.5">
       <div className="w-full">
-        <div className="mb-1 flex items-center text-xs text-primary-soft">
+        <div className="mb-1 flex items-center text-xs text-primary">
           <span className="flex-1 font-medium">/btw — side conversation (not added to the session)</span>
           <button className="bh-btn !px-2 !py-0.5" onClick={() => void closeSidePane()}>Close (Esc)</button>
         </div>

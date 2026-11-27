@@ -191,7 +191,7 @@ function Toaster() {
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2" aria-live="polite">
       {toasts.map((t) => (
-        <button key={t.id} onClick={() => dismiss(t.id)} className={`bh-fade-in pointer-events-auto rounded-xl border px-3 py-2 text-left text-sm shadow-lg ${t.tone === "error" ? "border-error/50 bg-tool-error text-error" : t.tone === "success" ? "border-success/50 bg-tool-success" : "border-grid/60 bg-panel"}`}>
+        <button key={t.id} onClick={() => dismiss(t.id)} className={`bh-fade-in pointer-events-auto rounded-xl border px-3 py-2 text-left text-sm shadow-lg ${t.tone === "error" ? "border-error/50 bg-tool-error text-error" : t.tone === "success" ? "border-success/50 bg-tool-success" : "border-line bg-panel"}`}>
           {t.text}
         </button>
       ))}

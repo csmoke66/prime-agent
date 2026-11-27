@@ -262,6 +262,20 @@ refused, never overwritten.",
     ])
     .examples(&["factory export review-sweep --out shared-review-sweep.MACHINE.md"]),
     CommandSpec::new(
+        &["web"],
+        "web [--port <n>] [--host <ip>] [--open]",
+        "Serve the browser UI for the running daemon",
+    )
+    .description(
+        "Starts a local web server (127.0.0.1 by default) that mirrors the TUI in a browser. \
+The printed URL carries a per-launch access token; open that URL, not the bare address.",
+    )
+    .options(&[
+        "--port <n>   Listen port (default 7878, or a free port when busy)",
+        "--host <ip>  Listen address (default 127.0.0.1)",
+        "--open       Open the URL in the default browser",
+    ]),
+    CommandSpec::new(
         &["prompt"],
         "prompt [--model <selector>] [--cwd <dir>] [--json]",
         "Print the assembled system prompt with its layer breakdown",

@@ -1054,6 +1054,13 @@ const WEB_SEARCH_PROVIDER_CHANGED: EventRule = EventRule {
     )],
 };
 
+/// Adoption of `beehive web`: whether the launch asked to open the browser.
+const WEB_UI_STARTED: EventRule = EventRule {
+    name: "web ui started",
+    since: 2,
+    properties: &[("open_browser", required(boolean()))],
+};
+
 /// Every catalogued event, flattened.
 #[must_use]
 pub fn catalog() -> Vec<&'static EventRule> {
@@ -1063,6 +1070,7 @@ pub fn catalog() -> Vec<&'static EventRule> {
         &GLOBAL_MODEL_SETTINGS_CHANGED,
         &SESSION_PROMPT_SEGMENTS_CHANGED,
         &WEB_SEARCH_PROVIDER_CHANGED,
+        &WEB_UI_STARTED,
         &AGENT_STARTED,
         &AGENT_RUN_COMPLETED,
         &AGENT_SESSION_ENDED,

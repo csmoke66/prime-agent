@@ -1,0 +1,1 @@
+- Added `beehive web`, a browser UI that mirrors the TUI (sessions, chat, agents view, settings) for the running daemon, served on 127.0.0.1 behind a per-launch access token.

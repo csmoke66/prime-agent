@@ -10,6 +10,10 @@ check:
 # ci.yml workflow jobs. They fail loudly when the tool is missing instead of
 # silently skipping the gate.
 
+# Frontend bundle: type-check, build, and refresh the committed assets embedded by bh-web.
+web:
+	cd web && npm ci && npm run build
+
 deny:
 	@command -v cargo-deny >/dev/null 2>&1 || { echo "cargo-deny not installed (cargo install cargo-deny --locked)"; exit 1; }
 	cargo deny --all-features --workspace check advisories licenses

@@ -1092,6 +1092,33 @@ const WEB_UI_STARTED: EventRule = EventRule {
     properties: &[("open_browser", required(boolean()))],
 };
 
+/// Adoption of the browser credential flows (`beehive web`): the flow kind and how it ended.
+const WEB_CREDENTIAL_FLOW_FINISHED: EventRule = EventRule {
+    name: "web credential flow finished",
+    since: 2,
+    properties: &[
+        (
+            "flow",
+            required(enum_rule(
+                &[
+                    "provider_key",
+                    "provider_login",
+                    "provider_logout",
+                    "mcp_login",
+                    "mcp_paste",
+                    "mcp_key",
+                    "mcp_logout",
+                ],
+                "provider_key",
+            )),
+        ),
+        (
+            "outcome",
+            required(enum_rule(&["status", "error", "cancelled"], "status")),
+        ),
+    ],
+};
+
 /// Every catalogued event, flattened.
 #[must_use]
 pub fn catalog() -> Vec<&'static EventRule> {
@@ -1102,6 +1129,7 @@ pub fn catalog() -> Vec<&'static EventRule> {
         &SESSION_PROMPT_SEGMENTS_CHANGED,
         &WEB_SEARCH_PROVIDER_CHANGED,
         &WEB_UI_STARTED,
+        &WEB_CREDENTIAL_FLOW_FINISHED,
         &AGENT_STARTED,
         &AGENT_RUN_COMPLETED,
         &AGENT_SESSION_ENDED,

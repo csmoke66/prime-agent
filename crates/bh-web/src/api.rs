@@ -25,7 +25,7 @@ fn bad_request(message: &str) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, message.to_string())
 }
 
-fn exports_dir(state: &AppState) -> PathBuf {
+pub(crate) fn exports_dir(state: &AppState) -> PathBuf {
     state.scratch.join("exports")
 }
 
@@ -34,7 +34,7 @@ fn uploads_dir(state: &AppState) -> PathBuf {
 }
 
 /// A file name that is safe to join onto a directory: no separators, no dot-only names.
-fn plain_file_name(name: &str) -> Option<&str> {
+pub(crate) fn plain_file_name(name: &str) -> Option<&str> {
     let ok = !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0']);
     ok.then_some(name)
 }

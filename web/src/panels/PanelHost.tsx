@@ -172,7 +172,7 @@ function Onboarding() {
   useEffect(() => {
     if (sessionStorage.getItem("bh.onboardingShown") === "1") return;
     let live = true;
-    rest.authProviders().then(
+    rest.authProviders("login").then(
       ({ providers }) => {
         if (!live || providers.some((p) => p.configured)) return;
         sessionStorage.setItem("bh.onboardingShown", "1");

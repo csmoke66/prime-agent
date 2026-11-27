@@ -97,15 +97,18 @@ async fn run(args: WebArgs) -> Result<()> {
     if args.open {
         bh_core::platform::browser::open_in_browser(&url);
     }
+    let agent_dir = crate::config::get_agent_dir();
+    let host = crate::web_host::CliWebHost::new(cwd.clone(), agent_dir.clone());
     bh_web::serve(
         listener,
         bh_web::WebOptions {
             socket_path,
-            agent_dir: crate::config::get_agent_dir(),
+            agent_dir,
             cwd,
             token,
             allowed_hosts: allowed_hosts(addr),
         },
+        host,
     )
     .await
 }

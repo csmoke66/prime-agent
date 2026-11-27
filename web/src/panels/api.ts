@@ -52,7 +52,7 @@ export const rest = {
     if (!response.ok) throw new Error(await response.text());
     return response.text();
   },
-  keybindings: () => send<{ bindings: Record<string, string[]> }>("/keybindings"),
+  keybindings: () => send<Record<string, unknown>>("/keybindings"),
   authProviders: (mode: "login" | "logout") => send<{ providers: AuthProvider[] }>(`/auth/providers?mode=${mode}`),
   startFlow: (request: FlowRequest) => send<{ flowId: number }>("/auth/flows", json("POST", request)),
   pollFlow: (flowId: number, since: number) => send<{ events: FlowEvent[]; next: number }>(`/auth/flows/${flowId}?since=${since}`),

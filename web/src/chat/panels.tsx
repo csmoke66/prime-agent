@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Markdown } from "./markdown";
 import { queueOf, type SideTurn } from "./model";
+import { matches } from "../app/keybindings";
 import {
   abortAndSendQueued,
   clearQueue,
@@ -63,7 +64,7 @@ export function ModelPicker({ onClose }: { onClose: () => void }) {
   const [scoped, setScoped] = useState(scopedKeys.length > 0);
   useEffect(() => {
     if (!scopedKeys.length) return;
-    const onKey = (e: KeyboardEvent) => { if (e.altKey && e.code === "KeyS") { e.preventDefault(); setScoped((v) => !v); } };
+    const onKey = (e: KeyboardEvent) => { if (matches(e, "app.model.toggleScope")) { e.preventDefault(); setScoped((v) => !v); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [scopedKeys.length]);

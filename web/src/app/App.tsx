@@ -12,6 +12,7 @@ import { Sidebar } from "./Sidebar";
 import { clampWidth, setLayout, useLayout } from "./layout";
 import { usePalette, useGlobalShortcuts } from "./shortcuts";
 import { useChat } from "../chat/store";
+import { loadKeybindings, matches } from "./keybindings";
 
 const useNarrow = () => {
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 767px)").matches);
@@ -32,12 +33,20 @@ export function App() {
   const sessionName = useChat((s) => s.data.state.sessionName);
   const [drawer, setDrawer] = useState<"sidebar" | "inspector" | null>(null);
   useGlobalShortcuts();
+  useEffect(() => { void loadKeybindings(); }, []);
   useEffect(() => {
     wire.connect();
     return () => wire.close();
   }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (route.name === "session" && matches(e, "app.subagents.focus")) {
+        e.preventDefault();
+        if (narrow) setDrawer("inspector");
+        else setLayout({ inspectorOpen: true });
+        window.setTimeout(() => document.querySelector<HTMLElement>("[data-activity-focus] button")?.focus(), 80);
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
       if (e.key.toLowerCase() === "b") { e.preventDefault(); narrow ? setDrawer((d) => (d === "sidebar" ? null : "sidebar")) : setLayout({ sidebarOpen: !useLayout.getState().sidebarOpen }); }
       if (e.key.toLowerCase() === "i" && route.name === "session") { e.preventDefault(); narrow ? setDrawer((d) => (d === "inspector" ? null : "inspector")) : setLayout({ inspectorOpen: !useLayout.getState().inspectorOpen }); }

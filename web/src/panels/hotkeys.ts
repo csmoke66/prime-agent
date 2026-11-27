@@ -1,6 +1,7 @@
 // Web-UI shortcuts plus the TUI bindings that keep their meaning in the browser (from
 // crates/bh-tui/src/keybindings/definitions.rs). Shown by `/hotkeys`.
-export type HotkeyGroup = { title: string; keys: { keys: string; action: string }[] };
+import type { KeyAction } from "../app/keybindings";
+export type HotkeyGroup = { title: string; keys: { keys: string; action: string; id?: KeyAction }[] };
 
 export const HOTKEYS: HotkeyGroup[] = [
   {
@@ -19,15 +20,19 @@ export const HOTKEYS: HotkeyGroup[] = [
     keys: [
       { keys: "Enter", action: "Send message" },
       { keys: "Shift+Enter", action: "New line" },
-      { keys: "Alt+Enter", action: "Queue follow-up message" },
-      { keys: "Ctrl+L", action: "Open model selector" },
-      { keys: "Alt+M / Shift+Alt+M", action: "Cycle scoped model" },
-      { keys: "Ctrl+O", action: "Cycle conversation detail / expand tools" },
-      { keys: "Ctrl+S", action: "Stash or restore draft prompt" },
-      { keys: "Alt+↑ / Alt+↓", action: "Select older / newer pending message" },
-      { keys: "Ctrl+Alt+↑ / ↓", action: "Move selected pending message earlier / later" },
-      { keys: "Ctrl+V", action: "Paste image from clipboard" },
-      { keys: "Alt+A", action: "Focus activity" },
+      { keys: "Alt+Enter", action: "Queue follow-up message", id: "app.message.followUp" },
+      { keys: "Ctrl+L", action: "Open model selector", id: "app.model.select" },
+      { keys: "Alt+M", action: "Cycle to the next scoped model", id: "app.model.cycleForward" },
+      { keys: "Shift+Alt+M", action: "Cycle to the previous scoped model", id: "app.model.cycleBackward" },
+      { keys: "Alt+S", action: "Toggle model selector scope", id: "app.model.toggleScope" },
+      { keys: "Ctrl+O", action: "Cycle conversation detail / expand tools", id: "app.tools.expand" },
+      { keys: "Ctrl+S", action: "Stash or restore draft prompt", id: "app.prompt.stash" },
+      { keys: "Alt+↑", action: "Select older pending message (Enter saves the edit)", id: "app.message.navigateOlder" },
+      { keys: "Alt+↓", action: "Select newer pending message or the draft", id: "app.message.navigateNewer" },
+      { keys: "Ctrl+Alt+↑", action: "Move selected pending message earlier", id: "app.message.moveEarlier" },
+      { keys: "Ctrl+Alt+↓", action: "Move selected pending message later", id: "app.message.moveLater" },
+      { keys: "Ctrl+V", action: "Paste image from clipboard", id: "app.clipboard.pasteImage" },
+      { keys: "Alt+A", action: "Open the inspector on subagents", id: "app.subagents.focus" },
     ],
   },
   {

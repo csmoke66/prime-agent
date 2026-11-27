@@ -130,7 +130,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
 
       {kids.length ? (
         <Section title="Subagents" right={<span className="font-normal normal-case tracking-normal">{kids.length}</span>}>
-          <ul className="space-y-0.5">
+          <ul className="space-y-0.5" data-activity-focus>
             {kids.map((k) => (
               <li key={k.entry.agentId} style={{ paddingLeft: (k.depth - (node?.depth ?? 0) - 1) * 10 }}>
                 <button className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-selected" onClick={() => void openEntry(k.entry, (id) => navigate({ name: "session", activeSessionId: id }))}>

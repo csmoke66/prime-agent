@@ -20,3 +20,14 @@ export function Logo({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+export const IconTextSearch = icon(<><path d="M2 4h12M2 8h5M2 12h5" /><circle cx="11" cy="10.5" r="2" /><path d="m12.5 12 1.5 1.5" /></>);
+export const IconClock = icon(<><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></>);
+export const IconBranch = icon(<><circle cx="4" cy="3.5" r="1.5" /><circle cx="4" cy="12.5" r="1.5" /><circle cx="12" cy="8" r="1.5" /><path d="M4 5v6M4 8h6.5" /></>);
+export const IconTarget = icon(<><circle cx="8" cy="8" r="5.5" /><circle cx="8" cy="8" r="2" /></>);
+export const IconUp = icon(<path d="m4 10 4-4 4 4" />);
+export const IconDown = icon(<path d="m4 6 4 4 4-4" />);
+export const IconEdit = icon(<path d="M3 13h2.5L13 5.5 10.5 3 3 10.5zM9 4.5 11.5 7" />);
+export const IconRestore = icon(<path d="M3 8h8a2.5 2.5 0 0 1 0 5H8M5.5 5.5 3 8l2.5 2.5" />);
+export const IconX = icon(<path d="m4 4 8 8M12 4l-8 8" />);
+export const IconMore = icon(<><circle cx="3.5" cy="8" r="0.8" fill="currentColor" /><circle cx="8" cy="8" r="0.8" fill="currentColor" /><circle cx="12.5" cy="8" r="0.8" fill="currentColor" /></>);

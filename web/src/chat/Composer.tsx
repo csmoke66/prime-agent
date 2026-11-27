@@ -233,10 +233,10 @@ export function Composer() {
 
   const border = bash ? "border-success/60" : dragging ? "border-primary" : "border-line focus-within:border-primary";
   return (
-    <div className="border-t border-line bg-surface px-2 pb-1.5 pt-1.5">
+    <div className="bh-composer border-t border-line bg-surface px-2 pb-1.5 pt-1.5">
       <div className="w-full">
         <div
-          className={`relative rounded border bg-panel transition-colors ${border}`}
+          className={`bh-composer-box relative rounded border bg-panel transition-colors ${border}`}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files); }}

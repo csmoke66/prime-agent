@@ -14,7 +14,7 @@ function Collapsible({ title, open: initial, children, tone = "text-muted" }: { 
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? initial;
   return (
-    <div className="my-0.5">
+    <div>
       <button type="button" className={`flex items-center gap-1.5 font-mono text-[11px] ${tone} hover:text-fg`} aria-expanded={open} onClick={() => setOverride(!open)}>
         <span className={`w-2.5 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
         {title}
@@ -58,9 +58,9 @@ function AssistantBody({ message, results, data, detail, streaming }: { message:
   const blocks: Block[] = Array.isArray(message.content) ? message.content : [];
   const error = message.stopReason === "error" ? message.errorMessage : message.stopReason === "aborted" ? "Interrupted" : null;
   return (
-    <div className="bh-fade-in my-0.5 pl-[1.15rem]">
+    <div className="bh-fade-in relative my-1.5 flex flex-col gap-1.5 pl-[1.15rem]">
       {blocks.map((block, i) => {
-        if (block.type === "text") return block.text ? <div key={i} className="my-1"><Markdown text={block.text} /></div> : null;
+        if (block.type === "text") return block.text ? <div key={i}><Markdown text={block.text} /></div> : null;
         if (block.type === "thinking")
           return block.thinking ? (
             <Collapsible key={i} title={<span className={THINKING_COLOR[level] ?? "text-muted"}>thinking</span>} open={detail >= 1 || (streaming && i === blocks.length - 1)}>
@@ -73,7 +73,7 @@ function AssistantBody({ message, results, data, detail, streaming }: { message:
         }
         return null;
       })}
-      {error ? <div className={`mt-1 rounded border px-2 py-1 text-[12px] ${message.stopReason === "error" ? "border-error/40 bg-tool-error text-error" : "border-warning/30 text-warning"}`}>{error}</div> : null}
+      {error ? <div className={`rounded border px-2 py-1 text-[12px] ${message.stopReason === "error" ? "border-error/40 bg-tool-error text-error" : "border-warning/30 text-warning"}`}>{error}</div> : null}
       {!streaming && message.role === "assistant" && assistantText(message) ? <CopyButton text={assistantText(message)} /> : null}
     </div>
   );
@@ -84,7 +84,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="text-[11px] text-dim opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
+      className="absolute right-0 top-0 rounded bg-bg/80 px-1 text-[11px] text-dim opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
       onClick={() => void navigator.clipboard?.writeText(text).then(() => { setDone(true); window.setTimeout(() => setDone(false), 1200); })}
     >
       {done ? "Copied" : "Copy"}
@@ -94,7 +94,7 @@ function CopyButton({ text }: { text: string }) {
 
 function StatusRow({ kind, children }: { kind: string; children: ReactNode }) {
   const cls = kind === "error" ? "text-error" : kind === "warning" ? "text-warning" : "text-muted";
-  return <div className={`bh-fade-in my-1 whitespace-pre-wrap break-words pl-[1.15rem] font-mono text-[11.5px] ${cls}`}>{children}</div>;
+  return <div className={`bh-fade-in my-1.5 whitespace-pre-wrap break-words pl-[1.15rem] font-mono text-[11.5px] ${cls}`}>{children}</div>;
 }
 
 function BashRow({ m }: { m: Msg }) {
@@ -182,7 +182,7 @@ const Row = memo(function Row({ m, results, data, detail }: { m: Msg; results: M
     case "user":
       return <UserRow message={m} />;
     case "assistant":
-      return <div className="group"><AssistantBody message={m} results={results} data={data} detail={detail} streaming={false} /></div>;
+      return <div className="group relative"><AssistantBody message={m} results={results} data={data} detail={detail} streaming={false} /></div>;
     case "toolResult":
       return null;
     case "bashExecution":

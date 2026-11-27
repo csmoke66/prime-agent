@@ -11,6 +11,7 @@ import { retainRoster, useRoster } from "./rosterStore";
 import { activityLabel, buildForest, flatten, modelLabel, sessionTitle, type AgentNode, type RosterEntry } from "./roster";
 import { destructiveKind, destructiveLabel, openEntry, runDestructive } from "./useAgentActions";
 import { KernelBash } from "./Shells";
+import { StatusGlyph } from "../app/StatusGlyph";
 
 const Section = ({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) => (
   <section className="border-b border-line px-3 py-2.5">
@@ -19,7 +20,7 @@ const Section = ({ title, children, right }: { title: string; children: ReactNod
   </section>
 );
 
-const STATUS_COLOR = { running: "text-success", idle: "text-warning", inactive: "text-dim" } as const;
+const STATUS_COLOR = { running: "text-success", idle: "text-success", inactive: "text-dim" } as const;
 
 /** Right-hand inspector for the open session: context, goal, queue, subagents, messaging, shells, reply. */
 export function Inspector({ activeSessionId }: { activeSessionId: string }) {
@@ -134,7 +135,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
             {kids.map((k) => (
               <li key={k.entry.agentId} style={{ paddingLeft: (k.depth - (node?.depth ?? 0) - 1) * 10 }}>
                 <button className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-selected" onClick={() => void openEntry(k.entry, (id) => navigate({ name: "session", activeSessionId: id }))}>
-                  <span className={STATUS_COLOR[k.entry.status]}>{k.entry.status === "running" ? "◈" : "•"}</span>
+                  <StatusGlyph status={k.entry.status} />
                   <span className="min-w-0 flex-1 truncate">{sessionTitle(k.entry)}</span>
                   <span className="shrink-0 text-dim">{activityLabel(k.entry)}</span>
                 </button>

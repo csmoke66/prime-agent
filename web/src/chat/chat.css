@@ -26,3 +26,6 @@
 .hljs-title, .hljs-section, .hljs-title.function_ { color: #d4d4d8; }
 .hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable { color: #c9a3a8; }
 .hljs-deletion { color: #d06f82; } .hljs-meta { color: #a1a1aa; }
+
+.bh-queue + .bh-composer { border-top: 0; padding-top: 0; }
+.bh-queue + .bh-composer .bh-composer-box { border-top-left-radius: 0; border-top-right-radius: 0; }

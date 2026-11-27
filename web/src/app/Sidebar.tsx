@@ -13,13 +13,8 @@ import { useSavedSessions } from "../panels/savedSessions";
 import { toast, errorText } from "../panels/toasts";
 import { relativeTime, shortPath } from "../panels/ui/format";
 import { setLayout } from "./layout";
-import { IconChevronsLeft, IconHeartbeat, IconPlus, IconSettings } from "./icons";
-
-function StatusGlyph({ status }: { status: RosterEntry["status"] }) {
-  if (status === "running") return <span className="grid h-4 w-3 shrink-0 place-items-center" role="img" aria-label="running"><span className="bh-spin" /></span>;
-  const dot = status === "idle" ? "bg-success/80" : "border border-grid";
-  return <span className="grid h-4 w-3 shrink-0 place-items-center" role="img" aria-label={status}><span className={`h-1.5 w-1.5 rounded-full ${dot}`} /></span>;
-}
+import { IconBranch, IconChevronsLeft, IconClock, IconHeartbeat, IconPlus, IconSettings, IconTarget, IconTextSearch } from "./icons";
+import { StatusGlyph } from "./StatusGlyph";
 
 type RowProps = {
   node: AgentNode;
@@ -64,9 +59,9 @@ function Row({ node, searching, active, collapsed, renaming, group, onToggle, on
           ) : (
             <div className="flex items-center gap-1.5">
               <span className={`truncate text-[13px] ${active ? "font-medium text-fg" : "text-fg/90"}`} title={sessionTitle(entry)} onDoubleClick={(e) => { e.stopPropagation(); onMode("name"); }}>{sessionTitle(entry)}</span>
-              {goal === "active" ? <span className="shrink-0 text-[11px] text-primary" title="Goal active">◎</span> : null}
-              {queued > 0 ? <span className="shrink-0 rounded bg-primary-muted px-1 text-[10px] text-primary" title="Queued / inbox messages">{queued}</span> : null}
-              {subs > 0 ? <span className={`shrink-0 rounded px-1 text-[10px] ${entry.status === "running" ? "bg-primary-muted text-primary" : "bg-line text-muted"}`} title={`${subs} subagents`}>{subs}</span> : null}
+              {goal === "active" ? <span className="shrink-0 text-primary" title="Goal active" aria-label="Goal active"><IconTarget /></span> : null}
+              {queued > 0 ? <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted" title={`${queued} queued message${queued === 1 ? "" : "s"}`} aria-label={`${queued} queued`}><IconClock />{queued}</span> : null}
+              {subs > 0 ? <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted" title={`${subs} subagent${subs === 1 ? "" : "s"}`} aria-label={`${subs} subagents`}><IconBranch />{subs}</span> : null}
             </div>
           )}
           <div className="truncate text-[11px] text-dim" title={`${s.cwd ?? ""}`}>{node.depth === 0 && s.cwd ? `${shortPath(s.cwd, 1)} · ` : ""}{meta}</div>
@@ -168,7 +163,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
         />
-        <button className={`bh-btn !px-1.5 ${content ? "!border-primary text-primary" : ""}`} title="Search inside message text" aria-label="Search message text" aria-pressed={content} onClick={() => setContent(!content)}>¶</button>
+        <button className={`bh-btn !px-1.5 ${content ? "!border-primary text-primary" : "text-muted"}`} title={content ? "Searching message text — click to filter by name" : "Search inside message text"} aria-label="Search message text" aria-pressed={content} onClick={() => setContent(!content)}><IconTextSearch /></button>
         <button className="bh-btn bh-btn-primary !px-1.5" title="New session" aria-label="New session" onClick={() => { openPanel("new"); onNavigate?.(); }}><IconPlus /></button>
       </div>
       <div className="flex items-center justify-between border-b border-line px-3 pb-1.5 text-[11px] text-dim">

@@ -94,7 +94,7 @@ function Frame({
 }) {
   const st = STATE_STYLE[state];
   return (
-    <div className={`my-1.5 overflow-hidden rounded-md border ${st.bar} ${st.bg}`}>
+    <div className={`overflow-hidden rounded-md border ${st.bar} ${st.bg}`}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[12px] hover:bg-white/[0.03]">
         {state === "running" ? <span className="bh-spin shrink-0" aria-label="running" /> : <span className={`w-3 shrink-0 text-center ${st.tone}`} aria-hidden>{state === "error" ? "✕" : "✓"}</span>}
         <span className="shrink-0 font-semibold text-fg">{name}</span>
@@ -111,7 +111,7 @@ function Frame({
 }
 
 const OutputBlock = ({ text, error }: { text: string; error?: boolean }) =>
-  text.trim() ? <pre className={`bh-pre max-h-96 overflow-auto whitespace-pre-wrap break-words text-[12px] leading-5 ${error ? "text-error" : "text-muted"}`}>{text}</pre> : null;
+  text.trim() ? <pre className={`bh-pre max-h-80 overflow-auto whitespace-pre-wrap break-words text-[12px] leading-5 ${error ? "text-error" : "text-muted"}`}>{text}</pre> : null;
 
 /** Open state: a per-card override wins, otherwise the conversation detail level decides. */
 function useOpen(initial: boolean, detail: DetailLevel, levelOpens: DetailLevel): [boolean, () => void] {
@@ -197,7 +197,7 @@ function DiffSummary({ diffs, totals, expanded }: { diffs: { path: string; diff:
   const byPath = new Map<string, string[]>();
   for (const d of diffs) byPath.set(d.path, [...(byPath.get(d.path) ?? []), d.diff]);
   return (
-    <div className="mb-0.5 ml-3 border-l-2 border-primary/40 pl-2">
+    <div className="ml-3 border-l-2 border-primary/40 pl-2">
       <button type="button" className="text-xs text-muted hover:text-fg" onClick={() => setOverride(!open)} aria-expanded={open}>
         {open ? "▾" : "▸"} {byPath.size} file{byPath.size === 1 ? "" : "s"} edited <span className="text-success">+{totals.added}</span> <span className="text-error">−{totals.removed}</span>
       </button>

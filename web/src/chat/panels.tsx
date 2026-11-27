@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IconDown, IconEdit, IconRestore, IconTarget, IconUp, IconX } from "../app/icons";
 import { Markdown } from "./markdown";
 import { queueOf, type SideTurn } from "./model";
 import {
@@ -99,26 +100,26 @@ export function QueuePanel() {
   const [editing, setEditing] = useState<{ lane: "steering" | "followUp"; index: number; text: string } | null>(null);
   const count = queue.steering.length + queue.followUps.length;
   if (!count && !queue.starting) return null;
-  const lanes: { lane: "steering" | "followUp"; label: string; items: string[] }[] = [
-    { lane: "steering", label: "Steer", items: queue.steering },
-    { lane: "followUp", label: "Next", items: queue.followUps },
+  const lanes: { lane: "steering" | "followUp"; label: string; hint: string; items: string[] }[] = [
+    { lane: "steering", label: "Steer", hint: "Delivered after the current tool call", items: queue.steering },
+    { lane: "followUp", label: "Next", hint: "Sent when the agent finishes this turn", items: queue.followUps },
   ];
   return (
-    <div className="border-t border-line bg-surface px-2 pt-1.5">
-      <div className="max-h-28 w-full overflow-y-auto rounded border border-line bg-panel p-1 text-[12px]">
-        <div className="mb-1 flex items-center gap-2 text-xs text-muted">
-          <span className="font-medium">Queued ({count})</span>
-          {queue.starting ? <span className="truncate text-dim">starting: {queue.starting}</span> : null}
+    <div className="bh-queue border-t border-line bg-surface px-2 pt-1.5">
+      <div className="max-h-28 w-full overflow-y-auto rounded-t border border-b-0 border-line bg-panel px-1 py-0.5 text-[12px]">
+        <div className="flex items-center gap-2 px-1.5 text-[11px] text-dim">
+          <span className="font-medium text-muted">Queued · {count}</span>
+          {queue.starting ? <span className="truncate">starting: {queue.starting}</span> : null}
           <span className="flex-1" />
-          <button className="bh-btn !px-2 !py-0.5 text-xs" title="Abort and send the queue now" onClick={() => void abortAndSendQueued()}>Send now</button>
-          <button className="bh-btn bh-btn-danger !px-2 !py-0.5 text-xs" onClick={() => void clearQueue()}>Clear</button>
+          <button className="bh-ghost" title="Interrupt the agent and deliver the queue now" onClick={() => void abortAndSendQueued()}>Send now</button>
+          <button className="bh-ghost bh-ghost-danger" title="Discard every queued message" onClick={() => void clearQueue()}>Clear queue</button>
         </div>
-        {lanes.map(({ lane, label, items }) =>
+        {lanes.map(({ lane, label, hint, items }) =>
           items.map((text, index) => {
             const isEditing = editing?.lane === lane && editing.index === index;
             return (
-              <div key={`${lane}-${index}-${text}`} className="flex items-center gap-2 rounded px-1.5 hover:bg-selected/60">
-                <span className={`w-12 shrink-0 font-mono text-[10px] uppercase ${lane === "steering" ? "text-warning" : "text-info"}`}>{label}</span>
+              <div key={`${lane}-${index}-${text}`} className="group flex items-center gap-2 rounded px-1.5 hover:bg-selected focus-within:bg-selected">
+                <span title={hint} className={`w-10 shrink-0 font-mono text-[10px] uppercase ${lane === "steering" ? "text-warning" : "text-info"}`}>{label}</span>
                 {isEditing ? (
                   <input
                     autoFocus
@@ -137,12 +138,12 @@ export function QueuePanel() {
                 ) : (
                   <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
                 )}
-                <span className="flex shrink-0 gap-0.5 text-xs">
-                  <IconBtn label="Move earlier" disabled={index === 0} onClick={() => void mutateQueued(lane, index, text, { type: "move", direction: -1 })}>↑</IconBtn>
-                  <IconBtn label="Move later" disabled={index === items.length - 1} onClick={() => void mutateQueued(lane, index, text, { type: "move", direction: 1 })}>↓</IconBtn>
-                  <IconBtn label="Edit" onClick={() => setEditing({ lane, index, text })}>✎</IconBtn>
-                  <IconBtn label="Restore into the composer" onClick={async () => { if ((await mutateQueued(lane, index, text, { type: "delete" })) === "applied") insertIntoComposer(text); }}>⤴</IconBtn>
-                  <IconBtn label="Delete" onClick={() => void mutateQueued(lane, index, text, { type: "delete" })}>✕</IconBtn>
+                <span className="flex shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 max-sm:opacity-100">
+                  <IconBtn label="Move earlier" disabled={index === 0} onClick={() => void mutateQueued(lane, index, text, { type: "move", direction: -1 })}><IconUp /></IconBtn>
+                  <IconBtn label="Move later" disabled={index === items.length - 1} onClick={() => void mutateQueued(lane, index, text, { type: "move", direction: 1 })}><IconDown /></IconBtn>
+                  <IconBtn label="Edit" onClick={() => setEditing({ lane, index, text })}><IconEdit /></IconBtn>
+                  <IconBtn label="Move back into the composer" onClick={async () => { if ((await mutateQueued(lane, index, text, { type: "delete" })) === "applied") insertIntoComposer(text); }}><IconRestore /></IconBtn>
+                  <IconBtn label="Delete" danger onClick={() => void mutateQueued(lane, index, text, { type: "delete" })}><IconX /></IconBtn>
                 </span>
               </div>
             );
@@ -153,26 +154,44 @@ export function QueuePanel() {
   );
 }
 
-const IconBtn = ({ label, onClick, children, disabled }: { label: string; onClick: () => void; children: ReactNode; disabled?: boolean }) => (
-  <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick} className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-grid/40 hover:text-fg disabled:opacity-30">{children}</button>
+const IconBtn = ({ label, onClick, children, disabled, danger }: { label: string; onClick: () => void; children: ReactNode; disabled?: boolean; danger?: boolean }) => (
+  <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick} className={`grid h-6 w-6 place-items-center rounded text-muted hover:bg-grid/40 disabled:opacity-30 ${danger ? "hover:text-error" : "hover:text-fg"} [&>svg]:h-3.5 [&>svg]:w-3.5`}>{children}</button>
 );
 
 export function GoalBar() {
   const goal = useChat((s) => s.data.state.goal);
+  const [open, setOpen] = useState(false);
   if (!goal || (!goal.objective && !goal.active)) return null;
   const budget = goal.tokenBudget ? Math.min(100, Math.round((goal.tokensUsed / goal.tokenBudget) * 100)) : null;
   const tone = goal.status === "active" ? "text-success" : goal.status === "paused" ? "text-warning" : goal.status === "error" || goal.status === "budget_limited" ? "text-error" : "text-muted";
   const act = (text: string) => void sendPrompt(text, "steer");
+  const usage = budget !== null ? `${budget}% of ${goal.tokenBudget.toLocaleString()} tokens` : `${(goal.tokensUsed ?? 0).toLocaleString()} tokens`;
+  const actions = (
+    <>
+      {goal.status === "active" ? <button className="bh-ghost" title="Pause the goal (/goal pause)" onClick={() => act("/goal pause")}>Pause goal</button> : null}
+      {goal.status === "paused" || goal.status === "budget_limited" ? <button className="bh-ghost" title="Resume the goal (/goal resume)" onClick={() => act("/goal resume")}>Resume goal</button> : null}
+      <button className="bh-ghost bh-ghost-danger" title="Remove the goal (/goal clear)" onClick={() => act("/goal clear")}>Clear goal</button>
+    </>
+  );
   return (
-    <div className="border-b border-line bg-surface px-2.5 py-1 text-[11px]">
-      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
-        <span className={`font-medium ${tone}`}>◎ goal · {String(goal.status).replace("_", " ")}</span>
-        <span className="min-w-0 flex-1 truncate text-muted" title={goal.objective}>{goal.objective}</span>
-        {budget !== null ? <span className="text-dim">{budget}% of {goal.tokenBudget.toLocaleString()} tokens</span> : <span className="text-dim">{(goal.tokensUsed ?? 0).toLocaleString()} tokens</span>}
-        {goal.status === "active" ? <button className="bh-btn !px-2 !py-0.5" onClick={() => act("/goal pause")}>Pause</button> : null}
-        {goal.status === "paused" || goal.status === "budget_limited" ? <button className="bh-btn !px-2 !py-0.5" onClick={() => act("/goal resume")}>Resume</button> : null}
-        <button className="bh-btn bh-btn-danger !px-2 !py-0.5" onClick={() => act("/goal clear")}>Clear</button>
+    <div className="border-b border-line/70 px-3 py-1 text-[11px]">
+      <div className="flex w-full items-center gap-2">
+        <button type="button" className={`flex shrink-0 items-center gap-1 font-medium ${tone}`} aria-expanded={open} title="Goal details" onClick={() => setOpen(!open)}>
+          <IconTarget /> goal · {String(goal.status).replace("_", " ")}
+        </button>
+        <span className="hidden min-w-0 flex-1 truncate text-muted sm:block" title={goal.objective}>{goal.objective}</span>
+        <span className="hidden shrink-0 text-dim sm:block">{usage}</span>
+        <span className="hidden shrink-0 items-center sm:flex">{actions}</span>
+        <span className="flex-1 sm:hidden" />
+        <button type="button" className="bh-ghost sm:hidden" aria-label="Goal details" onClick={() => setOpen(!open)}>{open ? "Hide" : "Details"}</button>
       </div>
+      {open ? (
+        <div className="mt-1 space-y-1 sm:hidden">
+          <div className="text-muted">{goal.objective}</div>
+          <div className="text-dim">{usage}</div>
+          <div className="-ml-1 flex gap-1">{actions}</div>
+        </div>
+      ) : null}
       {goal.lastError ? <div className="mt-1 w-full text-error">{goal.lastError}</div> : null}
     </div>
   );

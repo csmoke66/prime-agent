@@ -153,8 +153,13 @@ export function refreshState(): void {
     const id = get().activeSessionId;
     if (!id || get().attach !== "ready") return;
     try {
-      const state = await wire.call({ type: "get_connection_state", activeSessionId: id });
-      if (state && get().activeSessionId === id) patchData((d) => ({ ...d, state: { ...d.state, ...state } }));
+      // Context usage is not part of the connection state; like the TUI tray, re-read it from the stats.
+      const [state, stats] = await Promise.all([
+        wire.call({ type: "get_connection_state", activeSessionId: id }),
+        wire.call<{ contextUsage?: unknown }>({ type: "get_session_stats", activeSessionId: id }).catch(() => null),
+      ]);
+      if (get().activeSessionId !== id) return;
+      patchData((d) => ({ ...d, state: { ...d.state, ...(state ?? {}), ...(stats ? { contextUsage: stats.contextUsage ?? null } : {}) } }));
     } catch {
       /* the next event refreshes again */
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCount, spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
+import { contextPercent, formatCount, spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
 
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 
@@ -92,5 +92,12 @@ describe("formatCount", () => {
   it("shows an unknown count (null after compaction) instead of throwing", () => {
     expect(formatCount(null)).toBe("?");
     expect(formatCount(1234)).toBe((1234).toLocaleString());
+  });
+});
+
+describe("contextPercent", () => {
+  it("is unknown (not 0%) when the tokens are null after a compaction", () => {
+    expect(contextPercent({ contextUsage: { tokens: null, contextWindow: 1_000_000 } })).toBeNull();
+    expect(contextPercent({ contextUsage: { tokens: 250_000, contextWindow: 1_000_000 } })).toBe(25);
   });
 });

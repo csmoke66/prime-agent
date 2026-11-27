@@ -37,7 +37,7 @@ function totalOf(n: TreeNode): { tokens: number; cost: number } {
 
 function treeLines(n: TreeNode, depth: number, all: boolean, out: string[]): void {
   const t = totalOf(n);
-  const ctx = n.contextUsage?.contextWindow ? `${(((n.contextUsage.tokens ?? 0) / n.contextUsage.contextWindow) * 100).toFixed(0)}% ctx` : "";
+  const ctx = n.contextUsage?.contextWindow && n.contextUsage.tokens != null ? `${(((n.contextUsage.tokens ?? 0) / n.contextUsage.contextWindow) * 100).toFixed(0)}% ctx` : "";
   const name = n.label || n.id || "session";
   out.push(`${"  ".repeat(depth)}${depth ? "└ " : ""}${name}${n.deleted ? " (deleted)" : ""}  ${n.status ?? ""}  ${formatTokens(t.tokens)} tok  ${formatCost(t.cost)}  ${ctx}`.trimEnd());
   const children = n.children ?? [];

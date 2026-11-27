@@ -110,7 +110,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
         <div className="h-1.5 overflow-hidden rounded-full bg-panel" role="meter" aria-valuenow={pct ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label="Context used">
           <div className={`h-full ${pct !== null && pct > 85 ? "bg-error" : pct !== null && pct > 65 ? "bg-warning" : "bg-primary"}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
         </div>
-        <div className="mt-1 flex justify-between text-dim"><span>{pct === null ? "unknown" : `${pct.toFixed(0)}% used`}</span>{usage ? <span>{formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}</span> : null}</div>
+        <div className="mt-1 flex justify-between text-dim"><span>{pct === null ? "unknown until the next reply" : `${pct.toFixed(0)}% used`}</span>{usage?.contextWindow ? <span>{usage.tokens == null ? "?" : formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}</span> : null}</div>
       </Section>
 
       {goal && (goal.objective || goal.active) ? (

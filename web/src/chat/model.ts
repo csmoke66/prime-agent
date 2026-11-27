@@ -184,7 +184,8 @@ export function modelLabel(state: Record<string, any>): string {
 
 export function contextPercent(state: Record<string, any>): number | null {
   const usage = state.contextUsage;
-  if (!usage || !usage.contextWindow) return null;
+  // `tokens` is null right after a compaction until the next reply reports usage: unknown, not 0%.
+  if (!usage || !usage.contextWindow || usage.tokens == null) return null;
   return (usage.tokens / usage.contextWindow) * 100;
 }
 

@@ -1,5 +1,6 @@
 //! The auth gate and the daemon bridge, against a fake daemon on a Unix socket.
 
+use std::future::Future;
 use std::net::SocketAddr;
 
 use bh_web::{
@@ -22,15 +23,15 @@ struct FakeHost {
 }
 
 impl WebHost for FakeHost {
-    async fn provider_rows(&self, mode: AuthMode) -> Vec<ProviderRow> {
-        vec![ProviderRow {
+    fn provider_rows(&self, mode: AuthMode) -> impl Future<Output = Vec<ProviderRow>> + Send {
+        std::future::ready(vec![ProviderRow {
             id: "anthropic".into(),
             name: format!("{mode:?}"),
             auth_type: AuthType::Oauth,
             status: None,
             configured: false,
             available: true,
-        }]
+        }])
     }
 
     async fn run_flow(&self, request: FlowRequest, ui: FlowUi) -> FlowOutcome {
@@ -54,9 +55,11 @@ impl WebHost for FakeHost {
         Ok(())
     }
 
-    async fn share_gist(&self, file: &std::path::Path) -> Result<ShareLinks, String> {
-        let html = std::fs::read_to_string(file).map_err(|error| error.to_string())?;
-        Ok(ShareLinks { gist_url: format!("gist:{html}"), preview_url: "preview".into() })
+    fn share_gist(&self, file: &std::path::Path) -> impl Future<Output = Result<ShareLinks, String>> + Send {
+        std::future::ready(std::fs::read_to_string(file).map_err(|error| error.to_string()).map(|html| ShareLinks {
+            gist_url: format!("gist:{html}"),
+            preview_url: "preview".into(),
+        }))
     }
 }
 

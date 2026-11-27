@@ -9,6 +9,7 @@ import { CommandPalette } from "./CommandPalette";
 import { Home } from "./Home";
 import { ResizeHandle } from "./ResizeHandle";
 import { Sidebar } from "./Sidebar";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { clampWidth, setLayout, useLayout } from "./layout";
 import { usePalette, useGlobalShortcuts } from "./shortcuts";
 import { IconInspector, IconSearch, IconSidebar, Logo } from "./icons";
@@ -83,11 +84,12 @@ export function App() {
       <div className="relative flex min-h-0 flex-1">
         {showSidebar && !narrow ? (
           <>
-            <div className="shrink-0 border-r border-line" style={{ width: layout.sidebarWidth }}>{sidebar}</div>
+            <div className="shrink-0 border-r border-line" style={{ width: layout.sidebarWidth }}><ErrorBoundary>{sidebar}</ErrorBoundary></div>
             <ResizeHandle side="right" width={layout.sidebarWidth} label="Resize sidebar" onResize={(w) => setLayout({ sidebarWidth: clampWidth(w) })} />
           </>
         ) : null}
         <main className="min-w-0 flex-1">
+          <ErrorBoundary resetKey={route.name === "session" ? route.activeSessionId : route.name}>
           {status !== "ready" ? (
             <div className="grid h-full place-items-center text-muted">Connecting to the Beehive daemon&hellip;</div>
           ) : route.name === "session" ? (
@@ -95,11 +97,12 @@ export function App() {
           ) : (
             <Home />
           )}
+          </ErrorBoundary>
         </main>
         {showInspector && route.name === "session" && !narrow ? (
           <>
             <ResizeHandle side="left" width={layout.inspectorWidth} label="Resize inspector" onResize={(w) => setLayout({ inspectorWidth: clampWidth(w) })} />
-            <div className="shrink-0 border-l border-line" style={{ width: layout.inspectorWidth }}><Inspector activeSessionId={route.activeSessionId} /></div>
+            <div className="shrink-0 border-l border-line" style={{ width: layout.inspectorWidth }}><ErrorBoundary resetKey={route.activeSessionId}><Inspector activeSessionId={route.activeSessionId} /></ErrorBoundary></div>
           </>
         ) : null}
         {narrow && drawer ? (

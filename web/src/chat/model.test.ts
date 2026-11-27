@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
+import { formatCount, spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
 
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 
@@ -85,5 +85,12 @@ describe("agent message rows", () => {
   it("turns python receipts into sent and queued rows", () => {
     const rows = _sentMessages({ sentAgentMessages: [{ id: "m1", message: "Ping", deliveryStatus: "delivered", target: { sessionName: "Worker" } }, { message: "Later", deliveryStatus: "queued", target: { sessionId: "s" } }, { id: "bad" }] });
     expect(rows).toEqual([{ direction: "sent", who: "Worker", message: "Ping", id: "m1" }, { direction: "queued", who: "s", message: "Later", id: undefined }]);
+  });
+});
+
+describe("formatCount", () => {
+  it("shows an unknown count (null after compaction) instead of throwing", () => {
+    expect(formatCount(null)).toBe("?");
+    expect(formatCount(1234)).toBe((1234).toLocaleString());
   });
 });

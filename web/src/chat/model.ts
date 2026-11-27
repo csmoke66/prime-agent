@@ -196,6 +196,11 @@ export function formatTokens(count: number): string {
   return `${Math.round(count / 1_000_000)}M`;
 }
 
+/** A token count for display; the daemon reports `null` while a count is unknown (e.g. right after compaction). */
+export function formatCount(value: number | null | undefined): string {
+  return value == null ? "?" : value.toLocaleString();
+}
+
 export function formatCost(total: number): string {
   if (total === 0) return "$0";
   if (total < 0.01) return `$${total.toFixed(4)}`;

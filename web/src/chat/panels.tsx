@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconDown, IconEdit, IconRestore, IconTarget, IconUp, IconX } from "../app/icons";
 import { Markdown } from "./markdown";
-import { queueOf, type SideTurn } from "./model";
+import { formatCount, queueOf, type SideTurn } from "./model";
 import { matches } from "../app/keybindings";
 import { clampLevel, orderModels, supportedLevels, type CatalogModel } from "./modelPicker";
 import { rest } from "../panels/api";
@@ -207,7 +207,7 @@ export function GoalBar() {
   const budget = goal.tokenBudget ? Math.min(100, Math.round((goal.tokensUsed / goal.tokenBudget) * 100)) : null;
   const tone = goal.status === "active" ? "text-success" : goal.status === "paused" ? "text-warning" : goal.status === "error" || goal.status === "budget_limited" ? "text-error" : "text-muted";
   const act = (text: string) => void sendPrompt(text, "steer");
-  const usage = budget !== null ? `${budget}% of ${goal.tokenBudget.toLocaleString()} tokens` : `${(goal.tokensUsed ?? 0).toLocaleString()} tokens`;
+  const usage = budget !== null ? `${budget}% of ${formatCount(goal.tokenBudget)} tokens` : `${formatCount(goal.tokensUsed ?? 0)} tokens`;
   const actions = (
     <>
       {goal.status === "active" ? <button className="bh-ghost" title="Pause the goal (/goal pause)" onClick={() => act("/goal pause")}>Pause goal</button> : null}

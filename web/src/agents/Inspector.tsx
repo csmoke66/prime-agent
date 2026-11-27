@@ -5,7 +5,7 @@ import { Badge, ConfirmButton, ErrorLine, Spinner } from "../panels/ui/bits";
 import { fmtCost, fmtDuration, relativeTime } from "../panels/ui/format";
 import { openPanel } from "../panels/store";
 import { toast, errorText } from "../panels/toasts";
-import { contextPercent, formatTokens, queueOf } from "../chat/model";
+import { formatCount, contextPercent, formatTokens, queueOf } from "../chat/model";
 import { useChat } from "../chat/store";
 import { retainRoster, useRoster } from "./rosterStore";
 import { activityLabel, buildForest, flatten, modelLabel, sessionTitle, type AgentNode, type RosterEntry } from "./roster";
@@ -116,7 +116,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
       {goal && (goal.objective || goal.active) ? (
         <Section title="Goal" right={<Badge tone={goal.status === "active" ? "success" : goal.status === "paused" ? "warning" : "neutral"}>{String(goal.status).replace("_", " ")}</Badge>}>
           <p className="text-muted">{goal.objective}</p>
-          <div className="mt-1 text-dim">{(goal.tokensUsed ?? 0).toLocaleString()}{goal.tokenBudget ? ` / ${goal.tokenBudget.toLocaleString()}` : ""} tokens</div>
+          <div className="mt-1 text-dim">{formatCount(goal.tokensUsed ?? 0)}{goal.tokenBudget ? ` / ${formatCount(goal.tokenBudget)}` : ""} tokens</div>
         </Section>
       ) : null}
 

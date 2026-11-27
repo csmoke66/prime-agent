@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { contextPercent, formatCost, formatTokens, modelLabel, queueOf, usageTotals } from "./model";
+import { formatCount, contextPercent, formatCost, formatTokens, modelLabel, queueOf, usageTotals } from "./model";
 import { IconMore } from "../app/icons";
 import { Modal, ModelPicker } from "./panels";
 import { abortCompaction, cycleDetail, setServiceTier, setSessionOption, setThinking, useChat } from "./store";
@@ -94,10 +94,10 @@ export function StatusBar() {
         {state.isCompacting ? <button className="bh-btn !px-2 !py-0.5" onClick={() => void abortCompaction()}>Stop compaction</button> : null}
         {state.goal?.status === "active" ? <span className="px-1 text-success max-sm:hidden" title="Goal active">◎ goal</span> : null}
         {queued ? <span className="px-1 text-warning" title="Queued messages">⏳ {queued}</span> : null}
-        <span className={`px-1 ${pctTone}`} title={state.contextUsage ? `${state.contextUsage.tokens.toLocaleString()} / ${state.contextUsage.contextWindow.toLocaleString()} tokens` : "Context usage unknown"}>
+        <span className={`px-1 ${pctTone}`} title={state.contextUsage ? `${formatCount(state.contextUsage.tokens)} / ${formatCount(state.contextUsage.contextWindow)} tokens` : "Context usage unknown"}>
           ctx {pct === null ? "–" : `${pct.toFixed(0)}%`}
         </span>
-        <span className="whitespace-nowrap px-1 max-sm:hidden" title={`in ${totals.input.toLocaleString()} · out ${totals.output.toLocaleString()} · cache r/w ${totals.cacheRead.toLocaleString()}/${totals.cacheWrite.toLocaleString()} (loaded transcript)`}>
+        <span className="whitespace-nowrap px-1 max-sm:hidden" title={`in ${formatCount(totals.input)} · out ${formatCount(totals.output)} · cache r/w ${formatCount(totals.cacheRead)}/${formatCount(totals.cacheWrite)} (loaded transcript)`}>
           ↑{formatTokens(totals.input)} ↓{formatTokens(totals.output)} · {formatCost(totals.cost)}
         </span>
         <span className="px-1 sm:hidden" title="Session cost">{formatCost(totals.cost)}</span>
@@ -118,7 +118,7 @@ export function StatusBar() {
                   <div className="mb-1 text-dim">Service tier</div>
                   <div className="flex flex-wrap gap-1">{TIERS.map((tier) => <button key={tier.label} type="button" className={`bh-btn !min-h-6 !px-1.5 !py-0 ${(tier.value ?? "default") === (state.serviceTier ?? "default") ? "!border-primary text-primary" : ""}`} onClick={() => { void setServiceTier(tier.value); close(); }}>{tier.label}</button>)}</div>
                 </div>
-                <div className="text-dim">{totals.input.toLocaleString()} in · {totals.output.toLocaleString()} out · {formatCost(totals.cost)}</div>
+                <div className="text-dim">{formatCount(totals.input)} in · {formatCount(totals.output)} out · {formatCost(totals.cost)}</div>
                 {state.goal?.status === "active" ? <div className="text-success">◎ goal active</div> : null}
                 <div className="flex flex-wrap gap-1 border-t border-line pt-2">
                   <button type="button" className="bh-btn" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => { close(); void runSlash("/compact", "steer"); }}>Compact</button>

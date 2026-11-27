@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import { Markdown } from "./markdown";
 import { AgentMail } from "./AgentMail";
 import { Images, ToolCard, resultView } from "./tools";
-import { assistantText, formatDuration, counterpartName, parseSkillBlock, resultsById, textOfContent, type Block, type Msg, type SessionData } from "./model";
+import { formatCount, assistantText, formatDuration, counterpartName, parseSkillBlock, resultsById, textOfContent, type Block, type Msg, type SessionData } from "./model";
 import { abortRetry, loadOlder, useChat, type DetailLevel } from "./store";
 
 // Stable across store updates that replace message objects, so rows never remount.
@@ -164,7 +164,7 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
 function SummaryRow({ title, m }: { title: string; m: Msg }) {
   return (
     <div className="my-2 border-y border-primary/30 bg-panel/60 px-2 py-0.5">
-      <Collapsible title={<span className="text-muted">◆ {title}{m.tokensBefore ? ` · ${m.tokensBefore.toLocaleString()} tokens before` : ""}</span>} open={false}>
+      <Collapsible title={<span className="text-muted">◆ {title}{m.tokensBefore ? ` · ${formatCount(m.tokensBefore)} tokens before` : ""}</span>} open={false}>
         {m.customInstructions ? <div className="mb-1 text-xs text-dim">focus: {m.customInstructions}</div> : null}
         <Markdown text={String(m.summary ?? "")} className="text-sm" />
       </Collapsible>

@@ -53,9 +53,9 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Factory activity / workflows (`/run`, `list_workflows`, `get_workflow_run`, factory view)
 - [x] Heartbeats: `/heartbeat`, `/heartbeats` manager, cron list/add/cancel
 - [x] Settings menu (tabs: model policy, prompt segments, compaction, retry, etc.)
-- [~] MCP connections (`/mcp`, `/plugins`), static tokens, remove
-- [~] Harness browser (`/harness`), `/refine`
-- [~] Auth: `/login`, `/logout` (API-key entry; OAuth flows that need a local browser reported as limited)
+- [x] MCP connections (`/mcp`, `/plugins`), static tokens, remove
+- [x] Harness browser (`/harness`), `/refine`
+- [x] Auth: `/login`, `/logout` (API key, OAuth via sign-in link + paste, through the `WebHost` seam)
 - [~] `/hotkeys`, `/changelog`, `/logs`, `/reload`, `/name`, `/export` (HTML/JSONL download), `/share`
 - [~] Onboarding view when no provider is configured
 - [~] Keyboard shortcuts mirroring TUI app bindings where the browser permits
@@ -65,6 +65,6 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 
 
 ## Known limitations (report)
-- Provider auth (`/login`, `/logout`, onboarding), MCP OAuth/static-token login helpers, the harness browser, and `/share` (gist) need the session engine or `gh`; `bh-web` does not link `bh-core`, so there are no REST endpoints for them yet. The panels explain the limit and point to the TUI. Wire-based parts (MCP connections list/remove/set token, `refine` via session commands) work.
+- Provider auth, MCP login, the harness browser and `/share` go through the `WebHost` trait (`bh-web`), implemented in `bh-cli/src/web_host.rs`. `/share` needs `gh` logged in on the host. OAuth callbacks that listen on localhost need the browser on the same machine as `beehive web`.
 - Direct worker transport (TUI fast path) is not used; everything goes through the supervisor connection.
 - Visual checks ran in headless Chromium at desktop and 390px widths; queue panel, retry/compaction banners, images, and the model picker modal were not screenshot-tested.

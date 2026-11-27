@@ -8,8 +8,8 @@ use super::{
     register_agent_message_host_handlers, register_agent_observe_host_handlers,
     switchable_stream_fn_with_live_auth, AgentEngineConfig, AgentSessionEngine, Arc,
     CoreSessionEngine, EngineModelSelection, HostRequestHandlers, LinkAgentMessageController,
-    LinkAgentObserveController, Model, OverflowRecovery, ProducerUsageSink, PromptContextBoundary,
-    ProviderTarget, QuotaParkState, SessionCommandExecution, SessionCommandParams,
+    FeatureNote, LinkAgentObserveController, Model, OverflowRecovery, ProducerUsageSink,
+    PromptContextBoundary, ProviderTarget, QuotaParkState, SessionCommandExecution, SessionCommandParams,
     SessionEngineConfig, SupervisorChildSessions, Value,
 };
 
@@ -835,17 +835,60 @@ impl AgentSessionEngine {
             Arc::clone(&self.own_summary),
             self.children.clone(),
         ));
+        let session = Arc::clone(&self.session);
+        let feature_note: FeatureNote = Arc::new(move |feature, outcome| {
+            let session = Arc::clone(&session);
+            tokio::spawn(async move {
+                let guard = session.lock().await;
+                if let Some(telemetry) = guard.as_deref().and_then(|engine| engine.telemetry.as_ref())
+                {
+                    telemetry.note_feature_outcome(feature, outcome, None);
+                }
+            });
+        });
         let observer = Arc::new(LinkAgentObserveController::new(
             Arc::clone(&self.link),
             config.active_session_id.clone(),
             config.worker_token.clone(),
             Arc::clone(&self.own_summary),
             self.children.clone(),
+            Arc::clone(&feature_note),
         ));
         let mut handlers = HostRequestHandlers::default();
         register_agent_message_host_handlers(sender, &mut handlers);
         register_agent_observe_host_handlers(observer, &mut handlers);
         self.register_kernel_notice_host_handlers(&mut handlers);
+        let goal_link = Arc::clone(&self.link);
+        let goal_session = config.active_session_id.clone();
+        handlers.register(
+            "goal.control",
+            bh_core::kernel::shared::host_handler(move |request| {
+                let link = Arc::clone(&goal_link);
+                let own_session = goal_session.clone();
+                let feature_note = Arc::clone(&feature_note);
+                async move {
+                    let data = &request.data;
+                    let target = data["session"].as_str().unwrap_or(&own_session);
+                    let result = link
+                        .request_success(
+                            serde_json::json!({
+                                "type": "goal_control",
+                                "activeSessionId": target,
+                                "op": data["op"],
+                                "objective": data["objective"],
+                                "tokenBudget": data["token_budget"],
+                            }),
+                            std::time::Duration::from_secs(30),
+                        )
+                        .await;
+                    feature_note(
+                        "goal_control",
+                        if result.is_ok() { "completed" } else { "failed" },
+                    );
+                    result
+                }
+            }),
+        );
         if let Some(host) = &self.children {
             use bh_core::kernel::shared::host_handler;
             let host = Arc::clone(host);

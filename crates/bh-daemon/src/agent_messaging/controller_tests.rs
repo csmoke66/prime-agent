@@ -2,6 +2,7 @@
 //! fallback, and observe families.
 
 use super::observe::summaries_from_roster;
+use std::collections::HashMap;
 use super::*;
 use crate::protocol::{response_failure, response_success};
 use crate::rlm_children::RlmChildIdentity;
@@ -197,6 +198,7 @@ fn observe_controller(socket: std::path::PathBuf) -> LinkAgentObserveController 
         "tok-a".to_string(),
         Arc::new(std::sync::Mutex::new(own_summary())),
         None,
+        Arc::new(|_, _| {}),
     )
 }
 
@@ -226,7 +228,7 @@ fn labeled(
     sessions: Vec<Value>,
     identity: &FamilyIdentity,
 ) -> Vec<(Option<String>, Option<AgentFamilyRelationship>)> {
-    summaries_from_roster(sessions, identity, &[])
+    summaries_from_roster(sessions, identity, &[], &HashMap::default())
         .into_iter()
         .map(|summary| (summary.active_session_id, summary.relationship))
         .collect()
@@ -687,7 +689,7 @@ fn summaries_label_the_nuclear_family_by_durable_edges() {
             "sessionName": "another-root", "runtimeKind": "top-level",
         }),
     ];
-    let summaries = summaries_from_roster(sessions, &identity, &[]);
+    let summaries = summaries_from_roster(sessions, &identity, &[], &HashMap::default());
     assert_eq!(summaries.len(), 4, "{summaries:?}");
     let current = summaries.iter().find(|s| s.is_current).unwrap();
     assert_eq!(current.active_session_id.as_deref(), Some("kid111"));
@@ -925,7 +927,7 @@ fn summaries_carry_the_typed_status_and_activity() {
             "parentActiveSessionId": "me000", "parentSessionId": "sess-me",
         }),
     ];
-    let summaries = summaries_from_roster(sessions, &identity, &[]);
+    let summaries = summaries_from_roster(sessions, &identity, &[], &HashMap::default());
     assert_eq!(summaries.len(), 5, "{summaries:?}");
     let row = |id: &str| {
         summaries
@@ -974,7 +976,7 @@ fn summaries_label_root_siblings_and_never_foreign_children() {
             "runtimeKind": "subagent", "parentActiveSessionId": "root222",
         }),
     ];
-    let summaries = summaries_from_roster(sessions, &identity, &[]);
+    let summaries = summaries_from_roster(sessions, &identity, &[], &HashMap::default());
     assert_eq!(summaries.len(), 2, "{summaries:?}");
     assert!(summaries.iter().any(|s| s.is_current));
     let sibling = summaries
@@ -1100,7 +1102,10 @@ async fn list_agents_returns_current_and_family_without_self() {
     )
     .await;
     let observer = observe_controller(socket);
-    let list = observer.list_agents().await.unwrap();
+    let list = observer
+        .list_agents(AgentListScope::NuclearFamily)
+        .await
+        .unwrap();
     assert_eq!(list.current.active_session_id.as_deref(), Some("aaa111"));
     assert!(list.current.is_current);
     assert_eq!(
@@ -1122,6 +1127,52 @@ async fn list_agents_returns_current_and_family_without_self() {
         .find(|summary| summary.active_session_id.as_deref() == Some("ddd444"))
         .expect("the child stays in the roster");
     assert_eq!(child.relationship, Some(AgentFamilyRelationship::Child));
+}
+
+/// A descendant listing walks the parent edges below the caller: grandchildren appear with
+/// their generation and parent id, and the plain family listing leaves them out.
+#[tokio::test]
+async fn list_agents_with_descendants_reaches_grandchildren() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let socket = dir.path().join("sup.sock");
+    spawn_fake_supervisor(
+        socket.clone(),
+        json!({ "sessions": [
+            { "activeSessionId": "aaa111", "sessionId": "sess-a" },
+            { "activeSessionId": "ddd444", "sessionId": "sess-d", "runtimeKind": "subagent",
+              "parentActiveSessionId": "aaa111", "parentSessionId": "sess-a" },
+            { "activeSessionId": "eee555", "sessionId": "sess-e", "runtimeKind": "subagent",
+              "parentActiveSessionId": "ddd444", "parentSessionId": "sess-d" },
+            { "activeSessionId": "fff666", "sessionId": "sess-f", "runtimeKind": "subagent",
+              "parentSessionId": "sess-e" },
+        ]}),
+        None,
+    )
+    .await;
+    let observer = observe_controller(socket);
+    let family = observer
+        .list_agents(AgentListScope::NuclearFamily)
+        .await
+        .unwrap();
+    assert_eq!(family.agents.len(), 1);
+    let tree = observer
+        .list_agents(AgentListScope::FamilyAndDescendants)
+        .await
+        .unwrap();
+    let depths: Vec<_> = tree
+        .agents
+        .iter()
+        .map(|row| (row.active_session_id.clone().unwrap(), row.depth))
+        .collect();
+    assert_eq!(
+        depths,
+        [
+            ("ddd444".to_string(), Some(1)),
+            ("eee555".to_string(), Some(2)),
+            ("fff666".to_string(), Some(3)),
+        ]
+    );
+    assert_eq!(tree.agents[1].parent_active_session_id.as_deref(), Some("ddd444"));
 }
 
 /// TS `AgentObserveRecentMessagesResult`: the transcript read resolves
@@ -1324,6 +1375,7 @@ async fn recent_messages_reads_a_degraded_live_sibling_but_not_a_foreign_stub() 
             "parentActiveSessionId": "parent", "parentSessionId": "sess-parent",
         })))),
         None,
+        Arc::new(|_, _| {}),
     );
     let recent = observer.recent_messages("sibling", 8, 800).await.unwrap();
     assert_eq!(
@@ -1366,7 +1418,7 @@ fn summaries_carry_the_supervisor_row_facts() {
             "rlmChildId": "sub-kid1", "firstMessage": "x".repeat(300),
         }),
     ];
-    let summaries = summaries_from_roster(sessions, &identity, &[]);
+    let summaries = summaries_from_roster(sessions, &identity, &[], &HashMap::default());
     let child = summaries
         .iter()
         .find(|summary| summary.session_id == "sess-kid")

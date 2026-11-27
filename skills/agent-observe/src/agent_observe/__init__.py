@@ -12,9 +12,16 @@ from typing import Any
 from rlm import host_request
 
 
-async def list_agents() -> dict[str, Any]:
-    """List the full nuclear family: parent, siblings, children, active or not."""
-    return await host_request("agent_observe.list")
+async def list_agents(include_descendants: bool = False) -> dict[str, Any]:
+    """List the nuclear family: parent, siblings, children, active or not.
+
+    With `include_descendants=True`, also list every descendant (children of
+    children, ...); each subtree row carries `depth` (a child is 1) and its
+    parent ids. Deeper descendants have `relationship` null.
+    """
+    return await host_request(
+        "agent_observe.list", {"include_descendants": include_descendants}
+    )
 
 
 async def context_health(

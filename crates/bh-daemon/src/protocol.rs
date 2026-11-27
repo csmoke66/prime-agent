@@ -93,6 +93,7 @@ pub const KNOWN_COMMAND_TYPES: &[&str] = &[
     "get_messages",
     "get_rlm_children",
     "run_workflow",
+    "goal_control",
     "list_workflows",
     "get_session_stats",
     "get_context_tree",
@@ -715,6 +716,7 @@ pub fn command_active_session_id(command: &DaemonCommand) -> Option<&str> {
             active_session_id, ..
         }
         | DaemonCommand::RunWorkflow { active_session_id, .. }
+        | DaemonCommand::GoalControl { active_session_id, .. }
         | DaemonCommand::GetWorkflowRun { active_session_id, .. }
         | DaemonCommand::ListWorkflows { active_session_id, .. }
         | DaemonCommand::GetRlmChildren {
@@ -1012,6 +1014,7 @@ pub fn command_type_name(command: &DaemonCommand) -> &'static str {
         DaemonCommand::GetSessionMessages { .. } => "get_session_messages",
         DaemonCommand::GetRlmChildren { .. } => "get_rlm_children",
         DaemonCommand::RunWorkflow { .. } => "run_workflow",
+        DaemonCommand::GoalControl { .. } => "goal_control",
         DaemonCommand::GetWorkflowRun { .. } => "get_workflow_run",
         DaemonCommand::ListWorkflows { .. } => "list_workflows",
         DaemonCommand::GetSessionStats { .. } => "get_session_stats",

@@ -258,8 +258,8 @@ pub const AUTH_CATEGORIES: &[&str] = &[
 ];
 
 pub const FEATURE_NAMES: &[&str] = &[
-    "model", "login", "logout", "effort", "goal", "new", "resume", "fork", "clone", "tree",
-    "feedback", "edit_context",
+    "model", "login", "logout", "effort", "goal", "goal_control", "agent_tree", "new", "resume", "fork",
+    "clone", "tree", "feedback", "edit_context",
 ];
 
 pub const FEATURE_OUTCOMES: &[&str] = &[
@@ -669,6 +669,16 @@ const AGENT_SESSION_ENDED: EventRule = EventRule {
         ("feature_goal_failed_count", optional(count())),
         ("feature_goal_canceled_count", optional(count())),
         ("feature_goal_unavailable_count", optional(count())),
+        ("feature_goal_control_initiated_count", optional(count())),
+        ("feature_goal_control_completed_count", optional(count())),
+        ("feature_goal_control_failed_count", optional(count())),
+        ("feature_goal_control_canceled_count", optional(count())),
+        ("feature_goal_control_unavailable_count", optional(count())),
+        ("feature_agent_tree_initiated_count", optional(count())),
+        ("feature_agent_tree_completed_count", optional(count())),
+        ("feature_agent_tree_failed_count", optional(count())),
+        ("feature_agent_tree_canceled_count", optional(count())),
+        ("feature_agent_tree_unavailable_count", optional(count())),
         ("feature_new_initiated_count", optional(count())),
         ("feature_new_completed_count", optional(count())),
         ("feature_new_failed_count", optional(count())),
@@ -966,6 +976,16 @@ const TUI_EXIT: EventRule = EventRule {
         ("feature_goal_failed_count", optional(count())),
         ("feature_goal_canceled_count", optional(count())),
         ("feature_goal_unavailable_count", optional(count())),
+        ("feature_goal_control_initiated_count", optional(count())),
+        ("feature_goal_control_completed_count", optional(count())),
+        ("feature_goal_control_failed_count", optional(count())),
+        ("feature_goal_control_canceled_count", optional(count())),
+        ("feature_goal_control_unavailable_count", optional(count())),
+        ("feature_agent_tree_initiated_count", optional(count())),
+        ("feature_agent_tree_completed_count", optional(count())),
+        ("feature_agent_tree_failed_count", optional(count())),
+        ("feature_agent_tree_canceled_count", optional(count())),
+        ("feature_agent_tree_unavailable_count", optional(count())),
         ("feature_new_initiated_count", optional(count())),
         ("feature_new_completed_count", optional(count())),
         ("feature_new_failed_count", optional(count())),

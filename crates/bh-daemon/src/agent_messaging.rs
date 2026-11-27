@@ -10,12 +10,16 @@ use serde_json::{json, Value};
 use bh_core::session_engine::agent_messaging::{
     AgentContextHealth, AgentFamilyMember, AgentFamilyRelationship, AgentFamilyStatus,
     AgentMessageController, AgentMessageDeliveryStatus, AgentMessageReceipt, AgentMessageSendInput,
-    AgentObserveActivity, AgentObserveController, AgentObserveListResult,
+    AgentListScope, AgentObserveActivity, AgentObserveController, AgentObserveListResult,
     AgentObserveMessagePreview, AgentObserveRecentMessagesResult, AgentObserveSummary,
     AGENT_OBSERVE_PREVIEW_MAX_CHARS,
 };
 
 use crate::supervisor_link::SupervisorLink;
+
+/// Records one adoption-telemetry feature outcome (`feature`, `outcome`) on the session.
+/// Fire-and-forget: the caller never waits on the telemetry sink.
+pub(crate) type FeatureNote = Arc<dyn Fn(&'static str, &'static str) + Send + Sync>;
 
 /// One session's durable family identity: the ids its family references it
 /// by, and its recorded parent edge in every identifier form the roster

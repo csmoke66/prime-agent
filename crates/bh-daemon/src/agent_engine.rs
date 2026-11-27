@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::agent_messaging::{LinkAgentMessageController, LinkAgentObserveController};
+use crate::agent_messaging::{FeatureNote, LinkAgentMessageController, LinkAgentObserveController};
 use crate::model_allowlist::DaemonAllowlist;
 use crate::overflow_compaction::{OverflowArmRun, OverflowRecovery};
 use bh_agent::abort::AbortController;

@@ -500,6 +500,58 @@ impl GoalDriver {
         Ok(None)
     }
 
+    /// Edit the goal's objective and/or token budget in place, keeping its usage
+    /// accounting. An active goal whose usage already meets the new budget becomes
+    /// budget-limited. Returns the continuation context announcing the edit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no goal, nothing to change, validation fails,
+    /// or the edited state cannot be persisted.
+    pub fn update(
+        &mut self,
+        session: &mut SessionManager,
+        objective_text: Option<&str>,
+        token_budget: Option<u64>,
+    ) -> anyhow::Result<CustomMessage> {
+        if self.state.objective.is_none()
+            || matches!(self.state.status, GoalStatus::Idle | GoalStatus::Complete)
+        {
+            anyhow::bail!("cannot update goal because this thread has no open goal");
+        }
+        if objective_text.is_none() && token_budget.is_none() {
+            anyhow::bail!("goal update needs an objective or a token_budget");
+        }
+        let objective = match objective_text {
+            Some(text) => Some(validate_goal_objective(text)?),
+            None => None,
+        };
+        let budget = validate_goal_budget(token_budget)?;
+        let next_budget = budget.or(self.state.token_budget);
+        let exhausted = next_budget.is_some_and(|limit| self.state.tokens_used >= limit);
+        let limited = self.state.status == GoalStatus::Active && exhausted;
+        self.set_state(
+            session,
+            GoalState {
+                active: self.state.active && !limited,
+                status: if limited {
+                    GoalStatus::BudgetLimited
+                } else {
+                    self.state.status
+                },
+                last_reason: if limited {
+                    Some("Goal token budget already reached".to_string())
+                } else {
+                    self.state.last_reason.clone()
+                },
+                objective: objective.or_else(|| self.state.objective.clone()),
+                token_budget: next_budget,
+                ..self.state.clone()
+            },
+        )?;
+        create_goal_context_message(&self.state, GoalContextKind::ObjectiveUpdated, &[])
+    }
+
     /// Complete the goal (host `goal.complete()`).
     ///
     /// # Errors

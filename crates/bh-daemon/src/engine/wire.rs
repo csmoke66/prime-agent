@@ -252,6 +252,27 @@ pub enum GoalTurnEndWork {
     Continuation(GoalContinuation),
 }
 
+/// One goal operation another session asks of this session's goal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoalControlRequest {
+    Get,
+    Pause,
+    Resume,
+    Update {
+        objective: Option<String>,
+        token_budget: Option<u64>,
+    },
+    Stop,
+}
+
+/// The result of a [`GoalControlRequest`]: the goal as the kernel's `goal.get` serves it,
+/// plus the `goal_update` event payload when the state changed.
+#[derive(Debug, Clone)]
+pub struct GoalControlOutcome {
+    pub response: Value,
+    pub goal_update: Option<Value>,
+}
+
 /// The worker's session-input probe: `true` while queued user work or a
 /// held suspension owns the next turn boundary, so the goal mint defers.
 pub type SessionInputProbe = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;

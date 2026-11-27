@@ -8,6 +8,7 @@ use super::{
 
 use serde_json::Value;
 
+use crate::engine::GoalControlRequest;
 use crate::protocol::DaemonResponse;
 use crate::session_store::SessionMessagesQuery;
 
@@ -102,6 +103,7 @@ impl Worker {
                 self.handle_wait_for_headless_completion(payload).await
             }
             "get_state" => self.handle_get_state().await,
+            "goal_control" => self.handle_goal_control(payload).await,
             "get_messages" => self.handle_get_messages(payload),
             "get_session_messages" => self.handle_get_session_messages(payload).await,
             "get_session_header" => self.handle_get_session_header(),
@@ -743,6 +745,44 @@ impl Worker {
 
     /// `get_session_stats`: counts, token totals, and the context-usage
     /// estimate over the persisted branch (TS `getSessionStats`).
+    /// `goal_control`: another session's goal operation on this session's goal.
+    async fn handle_goal_control(&self, payload: &Value) -> DaemonResponse {
+        const COMMAND: &str = "goal_control";
+        if let Err(response) = self.require_created(COMMAND) {
+            return response;
+        }
+        let field = |name: &str| payload.get(name).filter(|value| !value.is_null());
+        let request = match payload.get("op").and_then(Value::as_str) {
+            Some("get") => GoalControlRequest::Get,
+            Some("pause") => GoalControlRequest::Pause,
+            Some("resume") => GoalControlRequest::Resume,
+            Some("stop") => GoalControlRequest::Stop,
+            Some("update") => GoalControlRequest::Update {
+                objective: field("objective").and_then(Value::as_str).map(str::to_string),
+                token_budget: field("tokenBudget").and_then(Value::as_u64),
+            },
+            Some(_) | None => {
+                return response_failure(
+                    None,
+                    COMMAND,
+                    "goal_control op must be get, pause, resume, update, or stop",
+                    None,
+                )
+            }
+        };
+        let engine = std::sync::Arc::clone(&self.engine);
+        match tokio::task::spawn_blocking(move || engine.control_goal(request)).await {
+            Ok(Ok(outcome)) => {
+                if let Some(goal) = outcome.goal_update {
+                    self.emit_worker_event(json!({ "type": "goal_update", "goal": goal }));
+                }
+                response_success(None, COMMAND, Some(outcome.response))
+            }
+            Ok(Err(error)) => response_failure(None, COMMAND, &format!("{error:#}"), None),
+            Err(error) => response_failure(None, COMMAND, &error.to_string(), None),
+        }
+    }
+
     fn handle_get_session_stats(&self) -> DaemonResponse {
         if let Err(response) = self.require_created("get_session_stats") {
             return response;

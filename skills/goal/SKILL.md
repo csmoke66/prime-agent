@@ -20,7 +20,7 @@ await goal.complete()
 
 ## API
 
-- `await goal.get()` — current goal as a dict: `goal` (or `None` when no goal
+- `await goal.get(session=None)` — current goal as a dict: `goal` (or `None` when no goal
   is set), `remaining_tokens`, and `completion_budget_report`. The `goal` dict
   carries `objective`, `status`, `token_budget`, `tokens_used`,
   `time_used_seconds`, and timestamps.
@@ -36,11 +36,26 @@ await goal.complete()
   stopping work. When the result includes a `completion_budget_report`, report
   that final usage to the user.
 
+## Controlling another session's goal
+
+Every call below takes `session=` (a resident session's active id); omitted, it
+acts on this session. Any resident session is a valid target, like
+`rlm.workflows.run(session=...)`. Use it only when the user or the task asks
+you to manage that agent's goal.
+
+- `await goal.get(session=...)` — read the goal.
+- `await goal.pause(session=...)` — suspend an active goal; no continuation
+  nudges run until resumed.
+- `await goal.resume(session=...)` — restart a paused, budget-limited, or
+  failed goal and its continuations.
+- `await goal.update(objective=None, token_budget=None, session=...)` — edit
+  the objective and/or budget; an active target gets a harness notice.
+- `await goal.stop(session=...)` — clear the goal.
+
 ## Rules
 
-- Goal status transitions other than completion (pause, resume, clear,
-  budget-limiting) are controlled by the user and the host; there is no API for
-  them here.
+- Budget-limiting is applied by the host. Pause, resume, update, and stop are
+  for the user's explicit requests, mostly on other agents' goals.
 - When an active goal is actually complete, call `await goal.complete()`; do
   not merely say it is done — the harness keeps continuing the goal until the
   completion call arrives.

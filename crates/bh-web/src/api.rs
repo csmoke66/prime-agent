@@ -74,8 +74,8 @@ pub(crate) async fn put_settings(
     State(state): State<Arc<AppState>>,
     Json(patch): Json<Map<String, Value>>,
 ) -> ApiResult<Json<Value>> {
-    let path = state.options.agent_dir.join("settings.json");
-    let mut settings = read_json_object(&path)?;
+    let file = state.options.agent_dir.join("settings.json");
+    let mut settings = read_json_object(&file)?;
     for (key, value) in patch {
         if value.is_null() {
             settings.remove(&key);
@@ -84,9 +84,9 @@ pub(crate) async fn put_settings(
         }
     }
     let text = serde_json::to_string_pretty(&settings).map_err(internal)?;
-    let temp = path.with_extension("json.web-tmp");
+    let temp = file.with_extension("json.web-tmp");
     std::fs::write(&temp, text).map_err(internal)?;
-    std::fs::rename(&temp, &path).map_err(internal)?;
+    std::fs::rename(&temp, &file).map_err(internal)?;
     Ok(Json(Value::Object(settings)))
 }
 
@@ -111,10 +111,13 @@ pub(crate) async fn list_files(
     State(state): State<Arc<AppState>>,
     Query(query): Query<FilesQuery>,
 ) -> ApiResult<Json<Value>> {
-    let base = query.cwd.map_or_else(|| state.options.cwd.clone(), PathBuf::from);
+    let base = query
+        .cwd
+        .map_or_else(|| state.options.cwd.clone(), PathBuf::from);
     let (dir_part, name_prefix) = query.prefix.rsplit_once('/').unwrap_or(("", &query.prefix));
     let dir = if let Some(rest) = query.prefix.strip_prefix("~/") {
-        let home = bh_types::platform::dirs::home_dir().ok_or_else(|| bad_request("no home directory"))?;
+        let home =
+            bh_types::platform::dirs::home_dir().ok_or_else(|| bad_request("no home directory"))?;
         home.join(rest.rsplit_once('/').map_or("", |(dir, _)| dir))
     } else if query.prefix.starts_with('/') {
         PathBuf::from(if dir_part.is_empty() { "/" } else { dir_part })
@@ -157,16 +160,23 @@ pub(crate) async fn upload(
     let name = plain_file_name(&query.name).ok_or_else(|| bad_request("invalid file name"))?;
     let dir = uploads_dir(&state);
     std::fs::create_dir_all(&dir).map_err(internal)?;
-    let path = dir.join(format!("{}-{name}", UPLOAD_SEQ.fetch_add(1, Ordering::Relaxed)));
+    let path = dir.join(format!(
+        "{}-{name}",
+        UPLOAD_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::write(&path, &body).map_err(internal)?;
     Ok(Json(json!({ "path": path, "size": body.len() })))
 }
 
 /// Serve a file the daemon wrote into the export dir (`export_html`/`export_jsonl` with an
 /// `outputPath` under `/api/info`'s `exportDir`) as a browser download.
-pub(crate) async fn download(State(state): State<Arc<AppState>>, UrlPath(name): UrlPath<String>) -> ApiResult<Response> {
+pub(crate) async fn download(
+    State(state): State<Arc<AppState>>,
+    UrlPath(name): UrlPath<String>,
+) -> ApiResult<Response> {
     let name = plain_file_name(&name).ok_or_else(|| bad_request("invalid file name"))?;
-    let data = std::fs::read(exports_dir(&state).join(name)).map_err(|error| (StatusCode::NOT_FOUND, error.to_string()))?;
+    let data = std::fs::read(exports_dir(&state).join(name))
+        .map_err(|error| (StatusCode::NOT_FOUND, error.to_string()))?;
     let disposition = format!("attachment; filename=\"{}\"", name.replace('"', ""));
     Ok(([(header::CONTENT_DISPOSITION, disposition)], data).into_response())
 }
@@ -187,7 +197,9 @@ pub(crate) async fn list_logs(State(state): State<Arc<AppState>>) -> Json<Value>
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let metadata = entry.metadata().ok()?;
-            metadata.is_file().then(|| json!({ "name": entry.file_name().to_string_lossy(), "size": metadata.len() }))
+            metadata.is_file().then(
+                || json!({ "name": entry.file_name().to_string_lossy(), "size": metadata.len() }),
+            )
         })
         .collect();
     Json(json!({ "dir": dir, "files": files }))
@@ -210,7 +222,8 @@ pub(crate) async fn read_log(
     Query(query): Query<TailQuery>,
 ) -> ApiResult<String> {
     let name = plain_file_name(&name).ok_or_else(|| bad_request("invalid file name"))?;
-    let text = std::fs::read_to_string(logs_dir(&state).join(name)).map_err(|error| (StatusCode::NOT_FOUND, error.to_string()))?;
+    let text = std::fs::read_to_string(logs_dir(&state).join(name))
+        .map_err(|error| (StatusCode::NOT_FOUND, error.to_string()))?;
     let lines: Vec<&str> = text.lines().collect();
     Ok(lines[lines.len().saturating_sub(query.tail)..].join("\n"))
 }

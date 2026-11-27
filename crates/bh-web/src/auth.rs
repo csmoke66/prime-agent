@@ -1,5 +1,5 @@
 //! The request gate: loopback `Host` allow-list, per-launch token (first visit via `?token=`, then an
-//! HttpOnly cookie), and the WebSocket `Origin` check, so other local users and other websites cannot
+//! `HttpOnly` cookie), and the WebSocket `Origin` check, so other local users and other websites cannot
 //! drive the daemon through this server.
 
 use std::sync::Arc;
@@ -42,10 +42,20 @@ fn query_token(query: Option<&str>) -> Option<&str> {
         .find_map(|pair| pair.strip_prefix("token="))
 }
 
-pub(crate) async fn gate(State(state): State<Arc<AppState>>, request: Request, next: Next) -> Response {
+pub(crate) async fn gate(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let headers = request.headers();
     let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
-    if !host.is_some_and(|host| state.options.allowed_hosts.iter().any(|allowed| allowed == host)) {
+    if !host.is_some_and(|host| {
+        state
+            .options
+            .allowed_hosts
+            .iter()
+            .any(|allowed| allowed == host)
+    }) {
         return (StatusCode::FORBIDDEN, "unexpected Host header").into_response();
     }
     if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
@@ -55,7 +65,9 @@ pub(crate) async fn gate(State(state): State<Arc<AppState>>, request: Request, n
         }
     }
     let token = &state.options.token;
-    if request.uri().path() == "/" && query_token(request.uri().query()).is_some_and(|t| constant_time_eq(t, token)) {
+    if request.uri().path() == "/"
+        && query_token(request.uri().query()).is_some_and(|t| constant_time_eq(t, token))
+    {
         let cookie = format!("{COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/");
         return ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response();
     }

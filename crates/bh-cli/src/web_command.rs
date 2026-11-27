@@ -28,13 +28,25 @@ fn parse_web_args(args: &[String]) -> Result<WebArgs> {
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        let mut value = |flag: &str| iter.next().cloned().ok_or_else(|| anyhow!("{flag} needs a value"));
+        let mut value = |flag: &str| {
+            iter.next()
+                .cloned()
+                .ok_or_else(|| anyhow!("{flag} needs a value"))
+        };
         match arg.as_str() {
             "--open" => parsed.open = true,
             "--port" => {
-                parsed.port = Some(value("--port")?.parse().context("--port expects a number")?);
+                parsed.port = Some(
+                    value("--port")?
+                        .parse()
+                        .context("--port expects a number")?,
+                );
             }
-            "--host" => parsed.host = value("--host")?.parse().context("--host expects an IP address")?,
+            "--host" => {
+                parsed.host = value("--host")?
+                    .parse()
+                    .context("--host expects an IP address")?
+            }
             "--daemon-socket" => parsed.daemon_socket = Some(value("--daemon-socket")?),
             "--cwd" => parsed.cwd = Some(value("--cwd")?),
             other => bail!("Unknown web option: {other}"),
@@ -138,7 +150,9 @@ mod tests {
 
     #[test]
     fn parses_flags() {
-        let args: Vec<String> = ["--port", "9000", "--open", "--host", "::1"].map(String::from).to_vec();
+        let args: Vec<String> = ["--port", "9000", "--open", "--host", "::1"]
+            .map(String::from)
+            .to_vec();
         assert_eq!(
             parse_web_args(&args).unwrap(),
             WebArgs {

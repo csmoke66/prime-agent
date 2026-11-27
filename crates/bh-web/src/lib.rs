@@ -36,17 +36,22 @@ pub(crate) struct AppState {
 }
 
 /// The full application router: auth gate, bridge, REST helpers, and embedded assets.
-#[must_use]
 pub fn router(options: WebOptions) -> Router {
     let scratch = std::env::temp_dir().join(format!("beehive-web-{}", std::process::id()));
     let state = Arc::new(AppState { options, scratch });
     Router::new()
         .route("/ws", get(bridge::upgrade))
         .route("/api/info", get(api::info))
-        .route("/api/settings", get(api::get_settings).put(api::put_settings))
+        .route(
+            "/api/settings",
+            get(api::get_settings).put(api::put_settings),
+        )
         .route("/api/keybindings", get(api::get_keybindings))
         .route("/api/files", get(api::list_files))
-        .route("/api/upload", post(api::upload).layer(DefaultBodyLimit::max(100 << 20)))
+        .route(
+            "/api/upload",
+            post(api::upload).layer(DefaultBodyLimit::max(100 << 20)),
+        )
         .route("/api/download/{name}", get(api::download))
         .route("/api/changelog", get(api::changelog))
         .route("/api/logs", get(api::list_logs))

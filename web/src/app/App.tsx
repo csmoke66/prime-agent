@@ -5,10 +5,14 @@ import { useRoute, navigate } from "./router";
 import { SessionPicker } from "../panels/SessionPicker";
 import { SessionView } from "../chat/SessionView";
 import { AgentsView } from "../agents/AgentsView";
+import { PanelHost } from "../panels/PanelHost";
+import { CommandPalette } from "./CommandPalette";
+import { usePalette, useGlobalShortcuts } from "./shortcuts";
 
 export function App() {
   const status = useConnectionStatus();
   const route = useRoute();
+  useGlobalShortcuts();
   useEffect(() => {
     wire.connect();
     return () => wire.close();
@@ -24,7 +28,10 @@ export function App() {
           <button className="rounded px-2 py-1 hover:bg-selected" onClick={() => navigate({ name: "sessions" })}>Sessions</button>
           <button className="rounded px-2 py-1 hover:bg-selected" onClick={() => navigate({ name: "agents" })}>Agents</button>
         </nav>
-        <span className="ml-auto text-xs text-dim">
+        <button className="bh-btn ml-auto whitespace-nowrap px-2 py-1 text-xs text-muted" onClick={() => usePalette.setState({ open: true })} aria-label="Open command palette">
+          Search <kbd className="bh-kbd hidden sm:inline">Ctrl K</kbd>
+        </button>
+        <span className="whitespace-nowrap text-xs text-dim">
           <span className={status === "ready" ? "text-success" : "text-warning bh-pulse"}>&#x25CF;</span> {status}
         </span>
       </header>
@@ -39,6 +46,8 @@ export function App() {
           <SessionPicker />
         )}
       </main>
+      <PanelHost />
+      <CommandPalette />
     </div>
   );
 }

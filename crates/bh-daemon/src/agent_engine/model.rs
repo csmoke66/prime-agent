@@ -573,7 +573,7 @@ impl AgentSessionEngine {
     /// session build and a model switch re-read `models.json` here (where
     /// main re-resolved request auth through a fresh registry), never a
     /// provider call. The store carries over, keeping its last read.
-    /// Construction resolves the Prime Inference credential for the
+    /// Construction resolves the the provider credential for the
     /// catalog layer, so a stored `!command` runs at most once per rebuild.
     pub(crate) fn rebuild_request_auth_registry(&self) {
         let mut slot = self

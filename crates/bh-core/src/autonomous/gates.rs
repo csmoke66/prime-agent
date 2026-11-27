@@ -273,7 +273,7 @@ fn truncate_gate_output(output: &str, was_truncated: bool) -> String {
 const SNAPSHOT_EXCLUDES: [&str; 6] = [
     "verification",
     "target",
-    ".vf-prime-agent",
+    ".vf-beehive",
     "Cargo.lock",
     "submission.tar.gz",
     "runner_args.log",

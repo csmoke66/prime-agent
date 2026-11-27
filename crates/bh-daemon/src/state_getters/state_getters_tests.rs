@@ -457,7 +457,7 @@ async fn get_context_tree_lists_persisted_children() {
     let content = [
         json!({"type": "session", "version": 3, "id": session_id, "timestamp": "2026-09-22T00:00:00.000Z", "cwd": "/tmp"}),
         json!({"type": "message", "id": "e1", "parentId": null, "timestamp": "2026-09-22T00:00:01.000Z", "message": {"role": "user", "content": "hi"}}),
-        json!({"type": "message", "id": "e2", "parentId": "e1", "timestamp": "2026-09-22T00:00:02.000Z", "message": {"role": "assistant", "content": [{ "type": "text", "text": "hello" }], "provider": "prime-inference", "model": "internal/glm-5.3-fast", "usage": usage}}),
+        json!({"type": "message", "id": "e2", "parentId": "e1", "timestamp": "2026-09-22T00:00:02.000Z", "message": {"role": "assistant", "content": [{ "type": "text", "text": "hello" }], "provider": "test-provider", "model": "internal/glm-5.3-fast", "usage": usage}}),
     ]
     .iter()
     .map(std::string::ToString::to_string)
@@ -472,7 +472,7 @@ async fn get_context_tree_lists_persisted_children() {
     let write_child = |stop: &str| {
         [
             json!({"type": "message", "id": "c1", "parentId": null, "timestamp": "2026-09-22T00:00:01.000Z", "message": {"role": "user", "content": "fix the login bug"}}),
-            json!({"type": "message", "id": "c2", "parentId": "c1", "timestamp": "2026-09-22T00:00:02.000Z", "message": {"role": "assistant", "content": [{ "type": "text", "text": "done" }], "provider": "prime-inference", "model": "internal/glm-5.3-fast", "stopReason": stop, "usage": {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 15, "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}}}),
+            json!({"type": "message", "id": "c2", "parentId": "c1", "timestamp": "2026-09-22T00:00:02.000Z", "message": {"role": "assistant", "content": [{ "type": "text", "text": "done" }], "provider": "test-provider", "model": "internal/glm-5.3-fast", "stopReason": stop, "usage": {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 15, "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}}}),
         ]
     };
     let write_session = |dir: &std::path::Path, session: &str, stop: &str| {
@@ -689,7 +689,7 @@ async fn model_catalog_and_available_models_match_the_ts_shapes() {
         dir.path().join("agent").join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": "http://127.0.0.1:9/v1",
                     "apiKey": "sk-test",
@@ -741,7 +741,7 @@ async fn model_catalog_and_available_models_match_the_ts_shapes() {
             .count(),
         1
     );
-    assert_eq!(catalog["configuredProviders"], json!(["prime-inference"]));
+    assert_eq!(catalog["configuredProviders"], json!(["test-provider"]));
 
     let response = worker
         .dispatch(
@@ -757,7 +757,7 @@ async fn model_catalog_and_available_models_match_the_ts_shapes() {
     assert!(
         models
             .iter()
-            .filter(|model| model["provider"] == json!("prime-inference"))
+            .filter(|model| model["provider"] == json!("test-provider"))
             .count()
             >= 2
     );

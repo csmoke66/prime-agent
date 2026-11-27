@@ -152,7 +152,7 @@ pub(crate) fn load() -> Arc<Baselines> {
 }
 
 pub(crate) fn reset(roster: &[Value], session: &SessionIdentity) -> Result<()> {
-    let path = path().context("Cannot resolve the Prime Agent data directory")?;
+    let path = path().context("Cannot resolve the Beehive data directory")?;
     let records = reconcile_unified_sessions(roster, &[], session.session_id.as_deref());
     let keys = session.keys();
     let root = records

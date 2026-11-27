@@ -10,7 +10,7 @@
 //! transcript row order, never wall-clock caps.
 //!
 //! The kernel boots through the real runtime bootstrap: the daemon gets
-//! a private `PRIME_AGENT_KERNEL_VENV` (never the user's shared venv),
+//! a private `BEEHIVE_KERNEL_VENV` (never the user's shared venv),
 //! so the runtime source ships from this checkout.
 
 // 64-bit-only targets; the narrowing casts sit at bounded OS boundaries.
@@ -468,7 +468,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -578,11 +578,10 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path, kernel_venv: &Path) -> Daemon {
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env_remove("PRIME_API_KEY")
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         // The session kernel boots through the real runtime bootstrap out
         // of this checkout, into a private venv (never the shared one).
-        .env("PRIME_AGENT_KERNEL_VENV", kernel_venv)
+        .env("BEEHIVE_KERNEL_VENV", kernel_venv)
         // A supervisor killed at teardown must not leak its session workers.
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
@@ -621,7 +620,7 @@ fn machine_notices_inbox_coalesce_and_the_kill_switch_restores_steering() {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-inbox",
@@ -653,7 +652,7 @@ fn machine_notices_inbox_coalesce_and_the_kill_switch_restores_steering() {
             "config": {
                 "cwd": dir.to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -881,7 +880,7 @@ fn a_read_that_drains_the_inbox_continues_the_run_and_never_wakes_a_stale_notice
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-inbox",
@@ -913,7 +912,7 @@ fn a_read_that_drains_the_inbox_continues_the_run_and_never_wakes_a_stale_notice
             "config": {
                 "cwd": dir.to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -1000,7 +999,7 @@ fn agent_messages_route_into_the_inbox_and_targeted_reads_pull_them_back() {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-inbox-am",
@@ -1032,7 +1031,7 @@ fn agent_messages_route_into_the_inbox_and_targeted_reads_pull_them_back() {
             "config": {
                 "cwd": dir.to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -1360,7 +1359,7 @@ fn a_settled_child_lands_its_child_notice_in_the_parent_inbox() {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-inbox",
@@ -1392,7 +1391,7 @@ fn a_settled_child_lands_its_child_notice_in_the_parent_inbox() {
             "config": {
                 "cwd": dir.to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),

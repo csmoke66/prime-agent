@@ -34,10 +34,9 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Supervisor {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         // No telemetry or package network traffic from the test daemon.
-        .env("PI_OFFLINE", "1")
+        .env("BEEHIVE_OFFLINE", "1")
         .spawn()
         .expect("spawn bh-daemon supervisor");
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -97,7 +96,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -120,7 +119,7 @@ fn write_models_json(agent_dir: &Path, base_url: &str) {
     std::fs::create_dir_all(agent_dir).expect("agent dir");
     let models = json!({
         "providers": {
-            "prime-inference": {
+            "test-provider": {
                 "api": "openai-completions",
                 "baseUrl": base_url,
                 "apiKey": "sk-catalog-e2e",
@@ -195,7 +194,7 @@ fn the_daemon_serves_the_compiled_catalog() {
     );
     assert!(models
         .iter()
-        .any(|model| model["id"] == "mock-1" && model["provider"] == "prime-inference"));
+        .any(|model| model["id"] == "mock-1" && model["provider"] == "test-provider"));
     let fable = models
         .iter()
         .find(|model| model["id"] == "claude-fable-5" && model["provider"] == "anthropic")
@@ -203,7 +202,7 @@ fn the_daemon_serves_the_compiled_catalog() {
     assert_eq!(fable["name"], "Claude Fable 5");
     assert_eq!(fable["cost"]["input"], 10);
     assert_eq!(fable["contextWindow"], 1_000_000);
-    // The configured providers: prime-inference (the models.json key) and nothing
+    // The configured providers: test-provider (the models.json key) and nothing
     // else — no ambient credentials authorize other providers.
     let providers: Vec<&str> = data["configuredProviders"]
         .as_array()
@@ -211,7 +210,7 @@ fn the_daemon_serves_the_compiled_catalog() {
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    assert_eq!(providers, vec!["prime-inference"]);
+    assert_eq!(providers, vec!["test-provider"]);
     assert!(models.iter().all(|model| !model["id"]
         .as_str()
         .unwrap_or_default()

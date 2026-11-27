@@ -690,7 +690,7 @@ impl RlmSubagentHost for InlineHost {
                 .and_then(|children| children.get(&name))
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "PRIME_AGENT_FAUX_SCRIPT has no \"children.{name}\" entry: a scripted print run \
+                        "BEEHIVE_FAUX_SCRIPT has no \"children.{name}\" entry: a scripted print run \
                          must script every spawned child"
                     )
                 })?;
@@ -700,8 +700,8 @@ impl RlmSubagentHost for InlineHost {
                         .and_then(Value::as_array)
                         .ok_or_else(|| {
                             anyhow::anyhow!(
-                            "PRIME_AGENT_FAUX_SCRIPT children.{name} requires a responses array"
-                        )
+                                "BEEHIVE_FAUX_SCRIPT children.{name} requires a responses array"
+                            )
                         })?,
                 )
                 .map_err(anyhow::Error::msg)?;

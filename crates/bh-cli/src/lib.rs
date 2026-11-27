@@ -10,7 +10,7 @@
     clippy::cast_precision_loss
 )]
 
-//! bh-cli: the `prime-agent` binary. The argument surface, command routing,
+//! bh-cli: the `beehive` binary. The argument surface, command routing,
 //! help output, and validation are faithful ports of the TypeScript product.
 
 // Internal ported modules are crate-private: the only public API is the
@@ -47,7 +47,7 @@ pub(crate) mod skills_command;
 pub(crate) mod subscription_login;
 
 /// The runtime boundary: everything a mode-runner crate implements to plug
-/// into the `prime-agent` binary, plus the entry point that drives it.
+/// into the `beehive` binary, plus the entry point that drives it.
 pub use mode::{AppMode, MissingSubsystem, RunOptions, Runtime, UnavailableRuntime};
 pub(crate) mod piped_stdin;
 pub(crate) mod print_autonomous;
@@ -94,9 +94,9 @@ fn main_impl(args: &[String], runtime: &dyn mode::Runtime) -> Result<i32, String
         std::env::set_var(crate::config::ENV_OFFLINE, "1");
     }
 
-    // Install-time kernel preparation: the installer invokes `--prime-agent-bootstrap`
+    // Install-time kernel preparation: the installer invokes `--beehive-bootstrap`
     // after extracting a release, so the venv is ready before the first session.
-    if args.len() == 1 && args[0] == "--prime-agent-bootstrap" {
+    if args.len() == 1 && args[0] == "--beehive-bootstrap" {
         crate::config::require_agent_dir()?;
         return run_runtime_bootstrap();
     }
@@ -230,7 +230,7 @@ fn main_impl(args: &[String], runtime: &dyn mode::Runtime) -> Result<i32, String
             .as_deref(),
     ) && app_mode != mode::AppMode::Interactive
     {
-        return Err("PI_STARTUP_BENCHMARK only supports interactive mode".to_string());
+        return Err("BEEHIVE_STARTUP_BENCHMARK only supports interactive mode".to_string());
     }
 
     let agent_dir = crate::config::get_agent_dir();

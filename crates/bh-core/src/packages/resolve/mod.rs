@@ -153,16 +153,16 @@ pub(crate) struct ConfiguredSource {
     pub filter: Option<PackageFilter>,
 }
 
-/// The `pi` manifest in a package's `package.json` (parse failures are no
+/// The `beehive` manifest in a package's `package.json` (parse failures are no
 /// manifest, per the TS product).
 #[derive(Debug, Default)]
-pub(crate) struct PiManifest {
+pub(crate) struct BeehiveManifest {
     pub skills: Option<Vec<String>>,
     pub prompts: Option<Vec<String>>,
     pub themes: Option<Vec<String>>,
 }
 
-impl PiManifest {
+impl BeehiveManifest {
     pub(crate) fn entries(&self, resource_type: ResourceType) -> Option<Vec<String>> {
         match resource_type {
             ResourceType::Skills => self.skills.clone(),

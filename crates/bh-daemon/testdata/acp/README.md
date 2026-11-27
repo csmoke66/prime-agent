@@ -1,7 +1,7 @@
 # ACP capture corpus (slice 1)
 
-Captures of the installed TS binary (`prime-agent --mode acp --no-session
---provider prime-inference --model z-ai/glm-5.3-flash`) speaking ACP over
+Captures of the installed TS binary (`beehive --mode acp --no-session
+--provider test-provider --model z-ai/glm-5.3-flash`) speaking ACP over
 stdio, one file per scenario. Every file is line-delimited JSON:
 
     {"scenario": ..., "direction": "in"|"out", "frame": {jsonrpc frame}}

@@ -49,7 +49,7 @@ use bh_tui::interactive::{
 use serde_json::{json, Map, Value};
 
 /// The daemon supervisor spawned as the freshly-built binary
-/// (`CARGO_BIN_EXE_prime-agent --mode daemon`).
+/// (`CARGO_BIN_EXE_beehive --mode daemon`).
 struct Supervisor {
     child: Child,
     socket: PathBuf,
@@ -114,7 +114,7 @@ fn daemon_endpoint(dir: &Path) -> PathBuf {
             .map(|stamp| stamp.as_nanos())
             .unwrap_or_default();
         PathBuf::from(format!(
-            r"\\.\pipe\prime-agent-triage-{}-{unique}",
+            r"\\.\pipe\beehive-triage-{}-{unique}",
             std::process::id()
         ))
     }
@@ -127,14 +127,14 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = daemon_endpoint(dir);
     let agent_dir = dir.join("agent");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
         // The daemon's startup catalog refresh must never reach the network
-        // from a test: PI_OFFLINE keeps it on the bundled snapshot.
-        .env("PI_OFFLINE", "1")
+        // from a test: BEEHIVE_OFFLINE keeps it on the bundled snapshot.
+        .env("BEEHIVE_OFFLINE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -163,7 +163,6 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             }
         }
     }
-    command.env_remove("PRIME_TEAM_ID");
     command.env(
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
@@ -178,7 +177,7 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             Ok(())
         });
     }
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     Supervisor { child, socket }
 }
 
@@ -230,7 +229,7 @@ fn tui_options(socket: &Path, session_dir: &Path, script: &Path) -> InteractiveO
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -594,7 +593,7 @@ async fn subagent_session_stays_a_distinct_store_entry() {
         socket_path: supervisor.socket.clone(),
         cwd: dir.path().to_path_buf(),
         session_dir: Some(session_dir.clone()),
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: None,
         scope: None,

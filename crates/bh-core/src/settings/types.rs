@@ -247,7 +247,7 @@ pub enum WebSearchProvider {
 }
 
 impl WebSearchProvider {
-    /// The settings value passed to the kernel as `PRIME_AGENT_WEBSEARCH_PROVIDER`.
+    /// The settings value passed to the kernel as `BEEHIVE_WEBSEARCH_PROVIDER`.
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {

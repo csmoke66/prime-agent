@@ -1,4 +1,4 @@
-"""Tiny rlm-compatible kernel shim for Prime Agent."""
+"""Tiny rlm-compatible kernel shim for Beehive."""
 
 from __future__ import annotations
 
@@ -242,7 +242,7 @@ def _parse_host_reply(request_type: str, reply: dict[str, Any]) -> dict[str, Any
 
 
 async def host_request(request_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Send a typed request to the Prime Agent host and await its reply.
+    """Send a typed request to the Beehive host and await its reply.
 
     This is the kernel side of the generic host bridge: Python skills call
     ``await host_request("<type>", {...})`` and the TypeScript host dispatches
@@ -316,7 +316,7 @@ async def spawn(
     thinking: str | None = None,
     cwd: str | None = None,
 ) -> RLMSpawnHandle:
-    """Spawn a recursive Prime Agent child and return once its task is admitted.
+    """Spawn a recursive Beehive child and return once its task is admitted.
 
     ``name`` is required and must be unique among siblings.
     ``model`` selects a child with an exact ``provider/model`` selector. Use
@@ -936,7 +936,7 @@ class _RLMFactoryNamespace:
     library lives under the agent dir), and the template runs directly
     without creating a harness entry:
     ``await rlm.factory.run('review-sweep')``.
-    ``prime-agent factory list | import | export`` manages the library (a
+    ``beehive factory list | import | export`` manages the library (a
     broken machine names its exact errors; a missing one lists what the
     library has).
 
@@ -983,7 +983,7 @@ class _RLMFactoryNamespace:
 
 
 # Display MIME the host collects into the cell card's transcript row: one per read.
-_TRANSCRIPT_READ_MIME = "application/vnd.prime-agent.transcript-read+json"
+_TRANSCRIPT_READ_MIME = "application/vnd.beehive.transcript-read+json"
 
 
 def _message_text(message: dict[str, Any]) -> str:

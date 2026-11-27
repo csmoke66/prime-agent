@@ -1,7 +1,7 @@
-"""Prime Agent session-to-session messaging skill.
+"""Beehive session-to-session messaging skill.
 
 All routing and sender identity live in the TypeScript daemon. These functions
-only call the host bridge exposed inside the Prime Agent kernel.
+only call the host bridge exposed inside the Beehive kernel.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ async def remind_context(
     return receipt
 
 
-_MESSAGE_DISPLAY_MIME = "application/vnd.prime-agent.agent-message+json"
+_MESSAGE_DISPLAY_MIME = "application/vnd.beehive.agent-message+json"
 
 
 async def send(

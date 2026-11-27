@@ -1,5 +1,5 @@
 //! Named v1 workflows. User-global definitions live under the configured agent
-//! directory's `workflows` folder, project definitions live in `.prime/workflows`,
+//! directory's `workflows` folder, project definitions live in `.beehive/workflows`,
 //! and operator definitions are read-only to this API. Precedence is operator,
 //! project, then user-global: trust comes from OS ownership and permissions,
 //! never from a field in an editable definition.
@@ -256,10 +256,10 @@ fn read_workflow(dir: &Directory, filename: &OsStr) -> Result<Option<Workflow>> 
 
 fn project_dir(cwd: &Path, create: bool) -> io::Result<Option<Directory>> {
     let cwd = Directory::project_root(cwd)?;
-    let Some(prime) = cwd.open_dir(OsStr::new(".prime"), create)? else {
+    let Some(beehive_dir) = cwd.open_dir(OsStr::new(".beehive"), create)? else {
         return Ok(None);
     };
-    prime.open_dir(OsStr::new("workflows"), create)
+    beehive_dir.open_dir(OsStr::new("workflows"), create)
 }
 
 fn user_dir(agent_dir: &Path) -> io::Result<Option<Directory>> {

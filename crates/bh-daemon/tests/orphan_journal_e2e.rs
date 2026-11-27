@@ -38,7 +38,7 @@ impl Drop for Daemon {
     }
 }
 
-/// The kernel Python with prime-agent-runtime installed; `PA_E2E_KERNEL_PYTHON` overrides.
+/// The kernel Python with beehive-runtime installed; `PA_E2E_KERNEL_PYTHON` overrides.
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_E2E_KERNEL_PYTHON") {
         let explicit = PathBuf::from(explicit);
@@ -50,8 +50,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -74,14 +74,13 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path>) -
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env_remove("PRIME_API_KEY")
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             "20000",
         );
     if let Some(kernel_python) = kernel_python {
-        command.env("PRIME_AGENT_KERNEL_PYTHON", kernel_python);
+        command.env("BEEHIVE_KERNEL_PYTHON", kernel_python);
     }
     let child = command
         .stdin(Stdio::null())
@@ -255,7 +254,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -305,7 +304,7 @@ fn create_session(client: &mut Client, id: &str, dir: &Path, agent_dir: &Path) -
             "config": {
                 "cwd": dir.to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -432,7 +431,7 @@ fn session_with_orphan(
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-orphan",

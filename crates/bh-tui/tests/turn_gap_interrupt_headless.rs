@@ -29,7 +29,7 @@ fn serve(listener: &UnixListener, commands: &Mutex<Vec<String>>) {
         &mut writer,
         &json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": [],
             "clientId": "mock",
         }),
@@ -106,7 +106,7 @@ fn first_tool_turn() -> Vec<Value> {
 
 fn attach_data() -> Value {
     json!({
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "activeSessionId": "s1",
         "snapshot": {
             "activeSessionId": "s1",
@@ -162,7 +162,7 @@ fn options(socket: PathBuf) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: false,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

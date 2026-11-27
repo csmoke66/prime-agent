@@ -281,7 +281,7 @@ impl SessionUi {
                 }),
                 _ => view.push_entry(crate::chat::ChatEntry::Status {
                     text: format!(
-                        "Reconnected to Prime Agent (update {update_id}) — your session and queued work resumed."
+                        "Reconnected to Beehive (update {update_id}) — your session and queued work resumed."
                     ),
                     kind: crate::chat::StatusKind::Info,
                 }),
@@ -840,7 +840,7 @@ mod backfill_tests {
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let (read, mut write) = stream.into_split();
-            write.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7},\"serverCapabilities\":[],\"clientId\":\"mock\"}\n").await.unwrap();
+            write.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7},\"serverCapabilities\":[],\"clientId\":\"mock\"}\n").await.unwrap();
             let mut lines = BufReader::new(read).lines();
             while let Some(line) = lines.next_line().await.unwrap() {
                 let request: Value = serde_json::from_str(&line).unwrap();
@@ -914,7 +914,7 @@ mod backfill_tests {
                 Some(dir.path().join("s1.jsonl").as_path())
             );
             let mut view = AgentView::new(crate::theme::Theme::builtin(
-                "prime",
+                "beehive",
                 crate::theme::ColorMode::TrueColor,
             ));
             view.harness_browser = Some(HarnessBrowser::loading());
@@ -952,7 +952,7 @@ mod backfill_tests {
             let socket = dir.path().join("panel.sock");
             let (mut session, server) = mock_session(&socket, mpsc::unbounded_channel().0).await;
             let mut view = AgentView::new(crate::theme::Theme::builtin(
-                "prime",
+                "beehive",
                 crate::theme::ColorMode::TrueColor,
             ));
             session.open_agents_view_panel(
@@ -994,7 +994,7 @@ mod backfill_tests {
             ]});
             for preloaded in [true, false] {
                 let theme =
-                    || crate::theme::Theme::builtin("prime", crate::theme::ColorMode::TrueColor);
+                    || crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor);
                 let mut view = AgentView::new(theme());
                 session.bash_activities = if preloaded {
                     shells.clone()
@@ -1076,7 +1076,7 @@ mod backfill_tests {
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let (read, mut write) = stream.into_split();
-            write.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7},\"serverCapabilities\":[],\"clientId\":\"mock\"}\n").await.unwrap();
+            write.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7},\"serverCapabilities\":[],\"clientId\":\"mock\"}\n").await.unwrap();
             let mut lines = BufReader::new(read).lines();
             while let Some(line) = lines.next_line().await.unwrap() {
                 let request: Value = serde_json::from_str(&line).unwrap();
@@ -1088,7 +1088,7 @@ mod backfill_tests {
                             "summary": {
                                 "id": "s1", "cwd": "/tmp",
                                 "modelFallbackMessage":
-                                    "Default model prime-inference/internal/glm-5.3-fast is not available. Using prime-inference/z-ai/glm-5.3",
+                                    "Default model test-provider/internal/glm-5.3-fast is not available. Using test-provider/z-ai/glm-5.3",
                             },
                             "state": {"sessionId": "s1", "cwd": "/tmp", "isStreaming": false},
                             "messages": [], "lastEventSequence": 0,
@@ -1132,7 +1132,7 @@ mod backfill_tests {
         .await
         .unwrap();
         let mut view = AgentView::new(crate::theme::Theme::builtin(
-            "prime",
+            "beehive",
             crate::theme::ColorMode::TrueColor,
         ));
         session.rebuild_view(&mut view, &RebuildKind::Rebind);
@@ -1148,7 +1148,7 @@ mod backfill_tests {
             .collect();
         assert_eq!(
             warnings,
-            vec!["\u{26a0} Default model prime-inference/internal/glm-5.3-fast is not available. Using prime-inference/z-ai/glm-5.3".to_string()],
+            vec!["\u{26a0} Default model test-provider/internal/glm-5.3-fast is not available. Using test-provider/z-ai/glm-5.3".to_string()],
             "the startup fallback warns once at the open"
         );
         session.rebuild_view(&mut view, &RebuildKind::Resync);

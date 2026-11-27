@@ -679,7 +679,7 @@ mod tests {
 
         let model: bh_types::ai::Model = serde_json::from_value(serde_json::json!({
             "id": "glm-test", "name": "GLM test", "api": "openai-completions",
-            "provider": "prime-inference", "baseUrl": format!("http://{addr}"),
+            "provider": "test-provider", "baseUrl": format!("http://{addr}"),
             "reasoning": true, "input": ["text"],
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
             "contextWindow": 131_072, "maxTokens": 8192,

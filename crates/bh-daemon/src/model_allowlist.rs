@@ -432,20 +432,17 @@ mod tests {
             load(dir.path(), &agent_dir),
             DaemonAllowlist::Unrestricted
         ));
-        write_settings(&agent_dir, r#"{"allowedModels": ["prime-inference/*"]}"#);
+        write_settings(&agent_dir, r#"{"allowedModels": ["test-provider/*"]}"#);
         assert_eq!(
             load(dir.path(), &agent_dir),
-            DaemonAllowlist::Allowed(vec!["prime-inference/*".to_string()])
+            DaemonAllowlist::Allowed(vec!["test-provider/*".to_string()])
         );
         // A project scope cannot weaken the global pin: the project dir is
         // the temp dir itself.
-        write_settings(
-            &dir.path().join(".prime").join("agent"),
-            r#"{"allowedModels": []}"#,
-        );
+        write_settings(&dir.path().join(".beehive"), r#"{"allowedModels": []}"#);
         assert_eq!(
             load(dir.path(), &agent_dir),
-            DaemonAllowlist::Allowed(vec!["prime-inference/*".to_string()])
+            DaemonAllowlist::Allowed(vec!["test-provider/*".to_string()])
         );
     }
 
@@ -455,11 +452,11 @@ mod tests {
         let agent_dir = dir.path().join("agent");
         write_settings(
             &agent_dir,
-            r#"{"allowedModels": ["  prime-inference/internal/*  ", ""]}"#,
+            r#"{"allowedModels": ["  test-provider/internal/*  ", ""]}"#,
         );
         assert_eq!(
             load(dir.path(), &agent_dir),
-            DaemonAllowlist::Allowed(vec!["prime-inference/internal/*".to_string()])
+            DaemonAllowlist::Allowed(vec!["test-provider/internal/*".to_string()])
         );
         write_settings(&agent_dir, r#"{"allowedModels": [" ", ""]}"#);
         assert!(matches!(
@@ -471,8 +468,8 @@ mod tests {
     #[test]
     fn assert_allowed_passes_without_an_allowlist_and_types_the_refusal() {
         assert_allowed(&DaemonAllowlist::Unrestricted, "anything/model").unwrap();
-        let allow = DaemonAllowlist::Allowed(vec!["prime-inference/*".to_string()]);
-        assert_allowed(&allow, "prime-inference/internal/glm-5.3-fast").unwrap();
+        let allow = DaemonAllowlist::Allowed(vec!["test-provider/*".to_string()]);
+        assert_allowed(&allow, "test-provider/internal/glm-5.3-fast").unwrap();
         let error = assert_allowed(&allow, "zai/glm-5.3").expect_err("refused");
         let refusal = error
             .downcast_ref::<ModelAllowlistRefusal>()
@@ -488,8 +485,8 @@ mod tests {
         std::fs::write(agent_dir.join("settings.json"), "{ not json").unwrap();
         let state = load(dir.path(), &agent_dir);
         assert!(matches!(state, DaemonAllowlist::Unreadable(_)));
-        assert!(!state.allows("prime-inference/mock-1"));
-        let error = assert_allowed(&state, "prime-inference/mock-1").expect_err("fail closed");
+        assert!(!state.allows("test-provider/mock-1"));
+        let error = assert_allowed(&state, "test-provider/mock-1").expect_err("fail closed");
         let message = error.to_string();
         assert!(message.contains("could not be read"), "{message}");
         assert!(message.contains("fails closed"), "{message}");
@@ -509,7 +506,7 @@ mod tests {
         std::fs::create_dir_all(&agent_dir).unwrap();
         std::fs::write(
             agent_dir.join("settings.json"),
-            r#"{"allowedModels": "prime-inference/*"}"#,
+            r#"{"allowedModels": "test-provider/*"}"#,
         )
         .unwrap();
         assert!(matches!(
@@ -518,7 +515,7 @@ mod tests {
         ));
         std::fs::write(
             agent_dir.join("settings.json"),
-            r#"{"allowedModels": ["prime-inference/*", 42]}"#,
+            r#"{"allowedModels": ["test-provider/*", 42]}"#,
         )
         .unwrap();
         assert!(matches!(
@@ -555,7 +552,7 @@ mod tests {
                 matches!(state, DaemonAllowlist::Unreadable(_)),
                 "{corrupted} must fail closed, got {state:?}"
             );
-            let error = assert_allowed(&state, "prime-inference/mock-1").expect_err("closed");
+            let error = assert_allowed(&state, "test-provider/mock-1").expect_err("closed");
             assert!(
                 error.downcast_ref::<ModelAllowlistRefusal>().is_none(),
                 "fail-closed is not a pattern refusal"

@@ -25,7 +25,7 @@ impl std::error::Error for ModelAllowlistRefusal {}
 
 /// Whether a selector is allowed by the `allowedModels` patterns (the
 /// `--models` grammar, case-insensitive, matched against the full selector
-/// `provider/model-id` and the bare id, whose `prime-inference` ids may
+/// `provider/model-id` and the bare id, whose `test-provider` ids may
 /// carry slashes): wildcards glob, plain patterns match exactly. An empty
 /// pattern list allows nothing.
 #[must_use]
@@ -60,19 +60,19 @@ fn pattern_matches_selector(pattern: &str, selector: &str) -> bool {
 mod tests {
     use super::*;
 
-    const SELECTOR: &str = "prime-inference/internal/glm-5.3-fast";
+    const SELECTOR: &str = "test-provider/internal/glm-5.3-fast";
 
     #[test]
     fn exact_and_bare_id_patterns_match_case_insensitively() {
         assert!(model_allowed(
             SELECTOR,
-            &["prime-inference/internal/glm-5.3-fast".to_string()]
+            &["test-provider/internal/glm-5.3-fast".to_string()]
         ));
         assert!(model_allowed(
             SELECTOR,
-            &["Prime-Inference/Internal/GLM-5.3-Fast".to_string()]
+            &["Test-Provider/Internal/GLM-5.3-Fast".to_string()]
         ));
-        // The bare id (prime-inference ids carry slashes) matches without
+        // The bare id (test-provider ids carry slashes) matches without
         // the provider.
         assert!(model_allowed(
             SELECTOR,
@@ -81,22 +81,19 @@ mod tests {
         assert!(!model_allowed(SELECTOR, &["glm-5.3-fast".to_string()]));
         assert!(!model_allowed(
             SELECTOR,
-            &["prime-inference/internal/glm-5.3-turbo".to_string()]
+            &["test-provider/internal/glm-5.3-turbo".to_string()]
         ));
     }
 
     #[test]
     fn glob_patterns_match_the_full_selector_or_bare_id() {
         let allow = |pattern: &str| vec![pattern.to_string()];
-        assert!(model_allowed(SELECTOR, &allow("prime-inference/*")));
-        assert!(model_allowed(
-            SELECTOR,
-            &allow("prime-inference/internal/*")
-        ));
+        assert!(model_allowed(SELECTOR, &allow("test-provider/*")));
+        assert!(model_allowed(SELECTOR, &allow("test-provider/internal/*")));
         assert!(model_allowed(SELECTOR, &allow("internal/*")));
-        assert!(model_allowed(SELECTOR, &allow("PRIME-INFERENCE/*")));
+        assert!(model_allowed(SELECTOR, &allow("Test-Provider/*")));
         // The provider wildcard does not swallow other providers.
-        assert!(!model_allowed("zai/glm-5.3", &allow("prime-inference/*")));
+        assert!(!model_allowed("zai/glm-5.3", &allow("test-provider/*")));
         // A question mark is a wildcard, not a plain character.
         assert!(model_allowed("zai/glm-5.3", &allow("zai/glm-5.?")));
         // An empty pattern list allows nothing (the settings getter never

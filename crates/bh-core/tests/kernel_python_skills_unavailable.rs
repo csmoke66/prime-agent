@@ -31,7 +31,7 @@ use bh_types::session::FileEntry;
 /// drives it: the std lock serializes the contenders (the only ones).
 static FAUX_LOCK: Mutex<()> = Mutex::new(());
 
-/// The kernel Python with prime-agent-runtime installed (see
+/// The kernel Python with beehive-runtime installed (see
 /// `kernel_lifecycle.rs`); skipped with a note when absent.
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_CORE_KERNEL_PYTHON") {
@@ -44,8 +44,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);

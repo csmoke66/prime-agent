@@ -1,17 +1,17 @@
-//! Namespaced `_meta` payloads for prime-agent capabilities that ACP has
+//! Namespaced `_meta` payloads for beehive capabilities that ACP has
 //! no native concept for (cwd reporting, quiescence observation,
-//! correlation). Vanilla ACP clients ignore `_meta` keys; a prime-agent-aware
+//! correlation). Vanilla ACP clients ignore `_meta` keys; a beehive-aware
 //! client reads them; non-standard fields never appear at an ACP root.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// Reverse-domain namespace for every prime-agent `_meta` payload.
-pub const PRIME_AGENT_META_NAMESPACE: &str = "ai.primeintellect.prime-agent";
+/// Reverse-domain namespace for every beehive `_meta` payload.
+pub const BEEHIVE_META_NAMESPACE: &str = "ai.beehive";
 
 /// A client-requested cwd that differs from the agent's actual startup cwd.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PrimeAgentCwdMeta {
+pub struct BeehiveCwdMeta {
     pub requested: String,
     pub actual: String,
 }
@@ -20,7 +20,7 @@ pub struct PrimeAgentCwdMeta {
 /// counts at a completion point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentQuiescenceMeta {
+pub struct BeehiveQuiescenceMeta {
     pub outstanding_subagents: u64,
     pub remaining_autonomous_continuations: u64,
     /// Live background `bash()` handles plus completed jobs whose
@@ -31,7 +31,7 @@ pub struct PrimeAgentQuiescenceMeta {
 
 /// Producer-side ordering of an update inside its prompt turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PrimeAgentEventPhase {
+pub enum BeehiveEventPhase {
     /// Ordinary streamed work.
     #[serde(rename = "event")]
     Event,
@@ -47,35 +47,35 @@ pub enum PrimeAgentEventPhase {
 /// transport stop reasons (including `end_turn`) are never a causal
 /// completion signal, so this is deliberately only `result` and `error`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PrimeAgentOutcome {
+pub enum BeehiveOutcome {
     #[serde(rename = "result")]
     Result,
     #[serde(rename = "error")]
     Error,
 }
 
-/// The prime-agent payload under the `_meta` namespace key.
+/// The beehive payload under the `_meta` namespace key.
 ///
 /// `prompt_turn_id` is allocated when ACP accepts a prompt, never inferred
 /// from the running prompt; `0` means a session-scoped event with no prompt
 /// origin. `event_sequence` is connection-wide, strictly increasing.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentSessionMeta {
+pub struct BeehiveSessionMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_turn_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_sequence: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub phase: Option<PrimeAgentEventPhase>,
+    pub phase: Option<BeehiveEventPhase>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub outcome: Option<PrimeAgentOutcome>,
+    pub outcome: Option<BeehiveOutcome>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_quiescence_expected: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<PrimeAgentCwdMeta>,
+    pub cwd: Option<BeehiveCwdMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quiescence: Option<PrimeAgentQuiescenceMeta>,
+    pub quiescence: Option<BeehiveQuiescenceMeta>,
     /// Rich kernel output reported by the ipython tool (attachments the cell
     /// loaded into context, plus the number of diffs it displayed).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,23 +84,23 @@ pub struct PrimeAgentSessionMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heartbeats_changed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub goal: Option<PrimeAgentGoalMeta>,
+    pub goal: Option<BeehiveGoalMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub refinement: Option<PrimeAgentRefinementMeta>,
+    pub refinement: Option<BeehiveRefinementMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_message: Option<PrimeAgentAgentMessageMeta>,
+    pub agent_message: Option<BeehiveAgentMessageMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub compaction: Option<PrimeAgentCompactionMeta>,
+    pub compaction: Option<BeehiveCompactionMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subagents: Option<Vec<PrimeAgentSubagentMeta>>,
+    pub subagents: Option<Vec<BeehiveSubagentMeta>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub autonomous: Option<PrimeAgentAutonomousMeta>,
+    pub autonomous: Option<BeehiveAutonomousMeta>,
 }
 
 /// A goal's live state, surfaced after `/goal` commands and driver turns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentGoalMeta {
+pub struct BeehiveGoalMeta {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub objective: Option<String>,
@@ -113,7 +113,7 @@ pub struct PrimeAgentGoalMeta {
 /// The outcome of one continual-harness refinement run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentRefinementMeta {
+pub struct BeehiveRefinementMeta {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -126,7 +126,7 @@ pub struct PrimeAgentRefinementMeta {
 /// An agent-to-agent message sent from inside a kernel cell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentAgentMessageMeta {
+pub struct BeehiveAgentMessageMeta {
     pub tool_call_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
@@ -137,7 +137,7 @@ pub struct PrimeAgentAgentMessageMeta {
 /// One compaction that ran during the session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentCompactionMeta {
+pub struct BeehiveCompactionMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens_before: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,7 +147,7 @@ pub struct PrimeAgentCompactionMeta {
 /// One RLM subagent roster row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentSubagentMeta {
+pub struct BeehiveSubagentMeta {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_name: Option<String>,
@@ -165,7 +165,7 @@ pub struct PrimeAgentSubagentMeta {
 /// Autonomous-mode accounting surfaced with a turn's completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrimeAgentAutonomousMeta {
+pub struct BeehiveAutonomousMeta {
     pub enabled: bool,
     pub continuations_used: u64,
     pub turns_used: u64,
@@ -183,7 +183,7 @@ pub struct PrimeAgentAutonomousMeta {
 /// acp-mode.ts). The daemon-attached settlement's accounting.
 pub fn autonomous_meta(
     status: &bh_core::autonomous::AgentAutonomousStatus,
-) -> PrimeAgentAutonomousMeta {
+) -> BeehiveAutonomousMeta {
     let gate_attempt = std::iter::once(
         status
             .last_gate_failure
@@ -193,7 +193,7 @@ pub fn autonomous_meta(
     .chain(status.gate_attempts.values().copied())
     .max()
     .unwrap_or(0);
-    PrimeAgentAutonomousMeta {
+    BeehiveAutonomousMeta {
         enabled: status.enabled,
         continuations_used: status.continuations_used,
         turns_used: status.turns_used,
@@ -247,9 +247,9 @@ pub fn acp_stop_reason_for_status(
     }
 }
 
-/// Wrap a prime-agent payload in its reverse-domain `_meta` envelope.
-pub fn prime_agent_meta(payload: &PrimeAgentSessionMeta) -> Value {
-    json!({ PRIME_AGENT_META_NAMESPACE: payload })
+/// Wrap a beehive payload in its reverse-domain `_meta` envelope.
+pub fn beehive_meta(payload: &BeehiveSessionMeta) -> Value {
+    json!({ BEEHIVE_META_NAMESPACE: payload })
 }
 
 #[cfg(test)]
@@ -258,16 +258,16 @@ mod tests {
 
     #[test]
     fn meta_wraps_under_the_namespace_key() {
-        let wrapped = prime_agent_meta(&PrimeAgentSessionMeta {
+        let wrapped = beehive_meta(&BeehiveSessionMeta {
             prompt_turn_id: Some(1),
             event_sequence: Some(2),
-            phase: Some(PrimeAgentEventPhase::ResponseBoundary),
-            outcome: Some(PrimeAgentOutcome::Error),
+            phase: Some(BeehiveEventPhase::ResponseBoundary),
+            outcome: Some(BeehiveOutcome::Error),
             ..Default::default()
         });
         assert_eq!(
             wrapped,
-            json!({ "ai.primeintellect.prime-agent": {
+            json!({ "ai.beehive": {
                 "promptTurnId": 1,
                 "eventSequence": 2,
                 "phase": "responseBoundary",
@@ -338,8 +338,8 @@ mod tests {
 
     #[test]
     fn quiescence_serializes_camel_case() {
-        let wrapped = prime_agent_meta(&PrimeAgentSessionMeta {
-            quiescence: Some(PrimeAgentQuiescenceMeta {
+        let wrapped = beehive_meta(&BeehiveSessionMeta {
+            quiescence: Some(BeehiveQuiescenceMeta {
                 outstanding_subagents: 1,
                 remaining_autonomous_continuations: 2,
                 outstanding_background_jobs: 3,
@@ -349,7 +349,7 @@ mod tests {
         // Additive: the two TS fields keep their camelCase shape and the
         // background-job count rides alongside.
         assert_eq!(
-            wrapped[PRIME_AGENT_META_NAMESPACE]["quiescence"],
+            wrapped[BEEHIVE_META_NAMESPACE]["quiescence"],
             json!({
                 "outstandingSubagents": 1,
                 "remainingAutonomousContinuations": 2,

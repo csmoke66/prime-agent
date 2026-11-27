@@ -34,7 +34,7 @@ fn serve(listener: &UnixListener) {
         &mut writer,
         &json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": [],
             "clientId": "mock",
         }),

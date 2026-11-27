@@ -151,7 +151,7 @@ fn cost_command_displays_and_resets_the_whole_session_tree() {
         .arg("cost_command_child_mode")
         .arg("--nocapture")
         .env(CHILD_ENV, "1")
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir.path())
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir.path())
         .output()
         .expect("run isolated cost smoke");
     assert!(

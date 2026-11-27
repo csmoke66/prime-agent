@@ -473,11 +473,10 @@ fn abort_in_flight_turn_cancels_a_running_kernel_cell() {
     };
     let _env = KernelEnvOverride::apply(&[
         (
-            "PRIME_AGENT_KERNEL_PYTHON",
+            "BEEHIVE_KERNEL_PYTHON",
             Some(kernel_python.display().to_string()),
         ),
-        ("PRIME_AGENT_CODING_AGENT_DIR", None),
-        ("PRIME_API_KEY", None),
+        ("BEEHIVE_CODING_AGENT_DIR", None),
     ]);
     let dir = tempfile::TempDir::new().unwrap();
     let engine = AgentSessionEngine::new(AgentEngineConfig {

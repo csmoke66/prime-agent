@@ -63,10 +63,10 @@ const PROGRAM_STATUS_ANSWER: &[u8] =
 /// Every OSC 7501 report's head.
 const STATUS_REPORT: &[u8] = b"\x1b]7501;state=";
 /// The OSC 7501 reports the chat surface writes while a turn runs and rests.
-const STATUS_WORKING: &[u8] = b"\x1b]7501;state=working:app=prime-agent\x1b\\";
-const STATUS_DONE: &[u8] = b"\x1b]7501;state=done:app=prime-agent\x1b\\";
-const STATUS_IDLE: &[u8] = b"\x1b]7501;state=idle:app=prime-agent\x1b\\";
-const STATUS_ERROR: &[u8] = b"\x1b]7501;state=error:app=prime-agent\x1b\\";
+const STATUS_WORKING: &[u8] = b"\x1b]7501;state=working:app=beehive\x1b\\";
+const STATUS_DONE: &[u8] = b"\x1b]7501;state=done:app=beehive\x1b\\";
+const STATUS_IDLE: &[u8] = b"\x1b]7501;state=idle:app=beehive\x1b\\";
+const STATUS_ERROR: &[u8] = b"\x1b]7501;state=error:app=beehive\x1b\\";
 
 /// The child-mode env: which surface this re-executed binary runs.
 const CHILD_MODE_ENV: &str = "PA_DIFF_CHILD_MODE";
@@ -162,7 +162,7 @@ fn diff_selector_child_mode() {
         },
     ];
     let selector = ConfigSelector::new(rows);
-    let theme = bh_tui::app::load_theme("prime");
+    let theme = bh_tui::app::load_theme("beehive");
     let keybindings = if remap_exit {
         let mut bindings = bh_tui::keybindings::KeybindingsConfig::new();
         bindings.insert("app.clear".to_string(), vec!["ctrl+q".to_string()]);
@@ -193,7 +193,7 @@ fn diff_replay_child_mode() {
     let stream =
         bh_tui::session::JsonlSessionStream::from_path(Path::new(&fixture)).expect("fixture");
     let options = bh_tui::app::AppOptions {
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         panic_after_frame,
         ..Default::default()
     };

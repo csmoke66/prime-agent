@@ -10,9 +10,9 @@ use anyhow::{anyhow, bail, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// `PI_OAUTH_CALLBACK_HOST` (default `127.0.0.1`).
+/// `BEEHIVE_OAUTH_CALLBACK_HOST` (default `127.0.0.1`).
 fn callback_host() -> String {
-    std::env::var("PI_OAUTH_CALLBACK_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
+    std::env::var("BEEHIVE_OAUTH_CALLBACK_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
 /// A range (not one port) so a leaked or concurrent login cannot wedge all logins with one occupied
@@ -211,7 +211,7 @@ async fn serve_callback(mut stream: tokio::net::TcpStream, shared: &CallbackShar
         let _ = write_response(
             &mut stream,
             "400 Bad Request",
-            oauth_error_page("Prime Agent", "Callback route not found."),
+            oauth_error_page("Beehive", "Callback route not found."),
         )
         .await;
         return;
@@ -229,7 +229,7 @@ async fn serve_callback(mut stream: tokio::net::TcpStream, shared: &CallbackShar
         let _ = write_response(
             &mut stream,
             "404 Not Found",
-            oauth_error_page("Prime Agent", "Callback route not found."),
+            oauth_error_page("Beehive", "Callback route not found."),
         )
         .await;
         return;
@@ -244,8 +244,8 @@ async fn serve_callback(mut stream: tokio::net::TcpStream, shared: &CallbackShar
             &mut stream,
             "400 Bad Request",
             oauth_error_page(
-                "Prime Agent",
-                &format!("Prime Agent authentication failed. Error: {error}"),
+                "Beehive",
+                &format!("Beehive authentication failed. Error: {error}"),
             ),
         )
         .await;
@@ -257,9 +257,7 @@ async fn serve_callback(mut stream: tokio::net::TcpStream, shared: &CallbackShar
             let _ = write_response(
                 &mut stream,
                 "200 OK",
-                oauth_success_page(
-                    "Prime Agent authentication completed. You can close this window.",
-                ),
+                oauth_success_page("Beehive authentication completed. You can close this window."),
             )
             .await;
         }
@@ -268,7 +266,7 @@ async fn serve_callback(mut stream: tokio::net::TcpStream, shared: &CallbackShar
             let _ = write_response(
                 &mut stream,
                 "400 Bad Request",
-                oauth_error_page("Prime Agent", "Missing code or state parameter."),
+                oauth_error_page("Beehive", "Missing code or state parameter."),
             )
             .await;
         }
@@ -378,7 +376,7 @@ fn render_page(title: &str, message: &str) -> String {
 }
 
 fn oauth_success_page(message: &str) -> String {
-    render_page("Prime Agent authentication completed", message)
+    render_page("Beehive authentication completed", message)
 }
 
 fn oauth_error_page(label: &str, message: &str) -> String {

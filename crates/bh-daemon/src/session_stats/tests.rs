@@ -311,7 +311,7 @@ fn compaction_boundary_serves_the_windowed_reader() {
             message(
                 "assistant",
                 &json!({
-                    "provider": "prime-inference", "model": "internal/glm-5.3-fast",
+                    "provider": "test-provider", "model": "internal/glm-5.3-fast",
                     "content": [{ "type": "text", "text": "hi" }],
                     "stopReason": "stop",
                     "usage": spent,
@@ -329,7 +329,7 @@ fn compaction_boundary_serves_the_windowed_reader() {
             "timestamp": "2026-09-23T00:00:00.000Z",
             "customType": "model_usage",
             "data": {
-                "source": "side_question", "provider": "prime-inference",
+                "source": "side_question", "provider": "test-provider",
                 "modelId": "internal/glm-5.3-fast", "usage": usage(300, 30, 0, 330, 0.125),
             },
         })
@@ -441,7 +441,7 @@ fn compaction_boundary_drops_the_pre_cut_ancestry() {
             "timestamp": "2026-09-23T00:00:00.000Z",
             "message": {
                 "role": "assistant",
-                "provider": "prime-inference", "model": "internal/glm-5.3-fast",
+                "provider": "test-provider", "model": "internal/glm-5.3-fast",
                 "content": [{ "type": "text", "text": "hi" }],
                 "stopReason": "stop",
                 "usage": { "input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0,
@@ -524,7 +524,7 @@ fn an_abandoned_branchs_compaction_never_bounds_the_active_list() {
             "timestamp": "2026-09-23T00:00:00.000Z",
             "message": {
                 "role": "assistant",
-                "provider": "prime-inference", "model": "internal/glm-5.3-fast",
+                "provider": "test-provider", "model": "internal/glm-5.3-fast",
                 "content": [{ "type": "text", "text": "hi" }],
                 "stopReason": "stop",
                 "usage": { "input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0,

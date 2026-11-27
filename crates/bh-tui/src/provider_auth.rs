@@ -35,7 +35,7 @@ impl AuthType {
 pub enum AuthFlow {
     ApiKeyPrompt,
     /// Run the flow through the inline auth panel (browser OAuth, the
-    /// Prime login, the MCP device flow).
+    /// provider login, the MCP device flow).
     TerminalFlow,
 }
 
@@ -85,14 +85,14 @@ pub type ProviderAuthFuture =
 /// (credential storage, OAuth flows, and the provider catalog stay above this crate).
 pub trait ProviderAuthCommands: Send + Sync {
     /// The login provider rows sorted TS-style (configured first,
-    /// prime-inference first among them, oauth before api key, then by name).
+    /// test-provider first among them, oauth before api key, then by name).
     fn login_options(&self) -> ProviderRowsFuture;
     /// One row per stored credential, sorted by name.
     fn logout_options(&self) -> ProviderRowsFuture;
     /// Store the key for `ApiKeyPrompt` rows; an OAuth row arriving here
     /// answers the silent cancel, never an error wall (unavailable rows never reach this).
     fn login(&self, provider: &ProviderRow, api_key: Option<&str>) -> ProviderAuthFuture;
-    /// The panel-driven flows (the MCP OAuth login, the Prime Inference login): the TUI mounts the
+    /// The panel-driven flows (the MCP OAuth login, the the provider login): the TUI mounts the
     /// inline auth panel ([`crate::auth_panel`]) and services the flow's requests.
     fn login_on_panel(
         &self,
@@ -116,12 +116,6 @@ impl std::fmt::Debug for ProviderAuthCommandsHandle {
         f.debug_struct("ProviderAuthCommandsHandle").finish()
     }
 }
-
-/// The Prime Inference provider's id (bh-core's `PRIME_INFERENCE_PROVIDER_ID`).
-pub const PRIME_INFERENCE_PROVIDER_ID: &str = "prime-inference";
-/// The Prime Inference default model's id: the model the onboarding flow
-/// applies after the sign-in when the home has no current model.
-pub const PRIME_INFERENCE_DEFAULT_MODEL_ID: &str = "z-ai/glm-5.3";
 
 /// The Codex Subscription provider's id (the wire identifier bh-core's
 /// auth exports; carried here because the TUI does not link the session engine).
@@ -540,7 +534,7 @@ mod tests {
     }
 
     fn theme() -> Theme {
-        crate::theme::Theme::builtin("prime", crate::theme::ColorMode::TrueColor)
+        crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
     }
 
     fn anthropic() -> ProviderRow {

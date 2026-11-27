@@ -2,7 +2,7 @@ use super::*;
 use crate::theme::ColorMode;
 
 fn theme() -> Theme {
-    Theme::builtin("prime", ColorMode::TrueColor)
+    Theme::builtin("beehive", ColorMode::TrueColor)
 }
 
 fn queue() -> QueuedMessages {

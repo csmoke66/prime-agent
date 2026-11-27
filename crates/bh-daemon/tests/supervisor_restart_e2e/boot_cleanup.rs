@@ -122,7 +122,7 @@ fn boot_cleanup_preserves_unverifiable_journals_and_waiting_callers_status() {
     let corrupt_owner = corrupt_lease.join("owner.json");
     std::fs::write(&corrupt_owner, "not json").expect("corrupt owner");
     preserved.push((corrupt_owner, b"not json".to_vec()));
-    let obsolete_cache = agent_dir.join("prime-inference-models-cache.json");
+    let obsolete_cache = agent_dir.join("test-provider-models-cache.json");
     std::fs::write(&obsolete_cache, "{}").expect("obsolete cache");
 
     let _daemon = spawn_supervisor(&socket, &agent_dir);

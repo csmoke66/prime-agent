@@ -3,7 +3,7 @@ name = "bh-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Agent loop for Prime Agent."
+description = "Agent loop for Beehive."
 
 [dependencies]
 anyhow.workspace = true

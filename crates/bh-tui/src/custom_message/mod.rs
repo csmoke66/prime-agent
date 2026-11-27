@@ -497,7 +497,7 @@ mod tests {
         for custom_type in [
             "harness_digest",
             "refinement_notice",
-            "prime-agent.worker_recovery",
+            "beehive.worker_recovery",
             AGENT_MESSAGE_CUSTOM_TYPE,
         ] {
             let entries = decoded(&json!({
@@ -518,7 +518,7 @@ mod tests {
         for custom_type in [
             "harness_digest",
             "refinement_notice",
-            "prime-agent.worker_recovery",
+            "beehive.worker_recovery",
             "ipython_state",
             "thread_goal_state",
         ] {
@@ -957,7 +957,7 @@ mod tests {
     fn expandable_bodies_hang_on_one_gutter() {
         use crate::chat::Detail;
         use crate::compaction_row::render_compaction_summary;
-        let theme = crate::theme::Theme::builtin("prime", crate::theme::ColorMode::TrueColor);
+        let theme = crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor);
         let gutter = Span::styled(
             crate::branch::BRANCH_GUTTER.to_string(),
             theme.fg_style(ThemeColor::Dim),

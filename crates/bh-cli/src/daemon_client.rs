@@ -40,7 +40,7 @@ impl DaemonClient {
     pub(crate) fn connect(socket_path: &Path) -> Result<Self> {
         Self::connect_raw(socket_path).map_err(|error| {
             anyhow!(
-                "Failed to connect to the Prime Agent daemon: {}. {}",
+                "Failed to connect to the Beehive daemon: {}. {}",
                 node_connect_error(&error, socket_path),
                 endpoint_details(socket_path)
             )
@@ -87,7 +87,7 @@ impl DaemonClient {
         let protocol = daemon_protocol(&hello)?;
         if protocol.version < DAEMON_PROTOCOL_VERSION {
             return Err(anyhow!(
-                "The running Prime Agent daemon does not support {command_type}."
+                "The running Beehive daemon does not support {command_type}."
             ));
         }
         self.request_id += 1;
@@ -179,7 +179,7 @@ impl DaemonClient {
                         .map(|reason| format!(" Reason: {reason}."))
                         .unwrap_or_default();
                     return Err(anyhow!(
-                        "Connection to the Prime Agent daemon closed.{reason} {}",
+                        "Connection to the Beehive daemon closed.{reason} {}",
                         endpoint_details(&self.socket_path)
                     ));
                 }
@@ -221,9 +221,9 @@ enum Operation<'a> {
 impl Operation<'_> {
     fn wait_description(&self) -> String {
         match self {
-            Operation::Handshake => "waiting for the Prime Agent daemon handshake".to_string(),
+            Operation::Handshake => "waiting for the Beehive daemon handshake".to_string(),
             Operation::Command(command_type) => {
-                format!("waiting for the Prime Agent daemon response to \"{command_type}\"")
+                format!("waiting for the Beehive daemon response to \"{command_type}\"")
             }
         }
     }
@@ -288,7 +288,7 @@ mod tests {
             let (stream, _) = listener.accept().unwrap();
             let mut writer = stream.try_clone().unwrap();
             let mut reader = BufReader::new(stream);
-            writer.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7},\"serverCapabilities\":[]}\n").unwrap();
+            writer.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7},\"serverCapabilities\":[]}\n").unwrap();
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
             let request: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
@@ -311,7 +311,7 @@ mod tests {
         let error = DaemonClient::connect(&socket).unwrap_err();
         let text = error.to_string();
         assert!(
-            text.starts_with("Failed to connect to the Prime Agent daemon: connect ENOENT "),
+            text.starts_with("Failed to connect to the Beehive daemon: connect ENOENT "),
             "{text}"
         );
         assert!(text.contains("Socket: "), "{text}");
@@ -328,7 +328,7 @@ mod tests {
             let mut writer = stream.try_clone().unwrap();
             let mut reader = BufReader::new(stream);
             writer
-                .write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n")
+                .write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n")
                 .unwrap();
             writer
                 .write_all(b"{\"type\":\"daemon_closing\",\"reason\":\"shutdown\"}\n")
@@ -344,7 +344,7 @@ mod tests {
         let error = client.request(list_command("daemon_1")).unwrap_err();
         let text = error.to_string();
         assert!(
-            text.starts_with("Connection to the Prime Agent daemon closed. Reason: shutdown."),
+            text.starts_with("Connection to the Beehive daemon closed. Reason: shutdown."),
             "{text}"
         );
         assert!(text.contains("Socket: "), "{text}");

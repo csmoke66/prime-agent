@@ -17,15 +17,15 @@ pub(super) fn home_dir() -> PathBuf {
     bh_types::platform::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// Directory of the kernel venv, honoring `PRIME_AGENT_KERNEL_VENV`.
+/// Directory of the kernel venv, honoring `BEEHIVE_KERNEL_VENV`.
 #[must_use]
 pub fn kernel_venv_dir() -> PathBuf {
-    if let Ok(override_dir) = std::env::var("PRIME_AGENT_KERNEL_VENV") {
+    if let Ok(override_dir) = std::env::var("BEEHIVE_KERNEL_VENV") {
         if !override_dir.is_empty() {
             return expand_home(&override_dir);
         }
     }
-    home_dir().join(".prime").join("agent").join("kernel-venv")
+    home_dir().join(".beehive").join("kernel-venv")
 }
 
 fn xdg_kernel_venv_dir() -> PathBuf {
@@ -33,7 +33,7 @@ fn xdg_kernel_venv_dir() -> PathBuf {
         Ok(value) if !value.is_empty() => expand_home(&value),
         _ => home_dir().join(".local").join("share"),
     };
-    data_home.join("prime").join("agent").join("kernel-venv")
+    data_home.join("beehive").join("kernel-venv")
 }
 
 pub(crate) fn resolve_writable_kernel_venv_dir() -> anyhow::Result<PathBuf> {
@@ -41,7 +41,7 @@ pub(crate) fn resolve_writable_kernel_venv_dir() -> anyhow::Result<PathBuf> {
     if std::fs::create_dir_all(primary.parent().unwrap_or(Path::new("/"))).is_ok() {
         return Ok(primary);
     }
-    if std::env::var("PRIME_AGENT_KERNEL_VENV").is_ok_and(|v| !v.is_empty()) {
+    if std::env::var("BEEHIVE_KERNEL_VENV").is_ok_and(|v| !v.is_empty()) {
         return Err(anyhow!(
             "couldn't create kernel venv parent directories for {}",
             primary.display()
@@ -50,7 +50,7 @@ pub(crate) fn resolve_writable_kernel_venv_dir() -> anyhow::Result<PathBuf> {
     let fallback = xdg_kernel_venv_dir();
     if std::fs::create_dir_all(fallback.parent().unwrap_or(Path::new("/"))).is_err() {
         return Err(anyhow!(
-            "couldn't create kernel venv directory at {} or {}; set PRIME_AGENT_KERNEL_PYTHON to a python with a current prime-agent-runtime installed",
+            "couldn't create kernel venv directory at {} or {}; set BEEHIVE_KERNEL_PYTHON to a python with a current beehive-runtime installed",
             primary.display(),
             fallback.display()
         ));

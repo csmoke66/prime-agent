@@ -44,7 +44,7 @@ fn spawn_worker(dir: &Path, socket: &Path) -> WorkerGuard {
             bh_daemon::worker::WORKER_RECOVERY_JOURNAL_ENV,
             dir.join("recovery.jsonl"),
         )
-        .env("PRIME_AGENT_CODING_AGENT_DIR", dir.join("agent"))
+        .env("BEEHIVE_CODING_AGENT_DIR", dir.join("agent"))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

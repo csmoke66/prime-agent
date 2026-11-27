@@ -49,7 +49,7 @@ impl MockSupervisor {
         let mut reader = BufReader::new(stream);
         let hello = json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": [],
         });
         write_json(&mut writer, &hello);

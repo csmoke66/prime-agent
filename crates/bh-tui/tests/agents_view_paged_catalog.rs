@@ -30,7 +30,7 @@ fn serve(listener: &UnixListener, saved_requests: &Mutex<Vec<Value>>) {
         &mut writer,
         &json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": [],
         }),
     );

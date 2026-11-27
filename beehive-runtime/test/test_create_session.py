@@ -14,7 +14,7 @@ PAYLOAD = {
     "session_id": "session-root",
     "name": "researcher",
     "session_file": "/tmp/sessions/researcher/session.jsonl",
-    "model": "prime-inference/deepseek/deepseek-v4-flash",
+    "model": "test-provider/deepseek/deepseek-v4-flash",
 }
 
 
@@ -27,7 +27,7 @@ class RlmCreateSessionTest(unittest.TestCase):
                 rlm_module.rlm.create_session(
                     "analyze shard 1",
                     name="researcher",
-                    model="prime-inference/deepseek/deepseek-v4-flash",
+                    model="test-provider/deepseek/deepseek-v4-flash",
                     thinking="off",
                     cwd="/tmp/project",
                 )
@@ -39,7 +39,7 @@ class RlmCreateSessionTest(unittest.TestCase):
                 "prompt": "analyze shard 1",
                 "kwargs": {
                     "name": "researcher",
-                    "model": "prime-inference/deepseek/deepseek-v4-flash",
+                    "model": "test-provider/deepseek/deepseek-v4-flash",
                     "thinking": "off",
                     "cwd": "/tmp/project",
                 },
@@ -52,7 +52,7 @@ class RlmCreateSessionTest(unittest.TestCase):
                 session_id="session-root",
                 name="researcher",
                 session_file=Path("/tmp/sessions/researcher/session.jsonl"),
-                model="prime-inference/deepseek/deepseek-v4-flash",
+                model="test-provider/deepseek/deepseek-v4-flash",
             ),
         )
 

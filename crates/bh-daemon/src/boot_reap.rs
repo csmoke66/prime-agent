@@ -366,14 +366,14 @@ fn socket_spelling_of(pid: u32, value: &str) -> String {
     }
 }
 
-/// The product's own binary names: `prime-agent` (release/install) and
+/// The product's own binary names: `beehive` (release/install) and
 /// `bh-daemon` (the workspace binary). Unix only, as [`is_worker_argv`].
 #[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn is_product_binary(exe: &str) -> bool {
     matches!(
         Path::new(exe).file_name().and_then(|name| name.to_str()),
-        Some("prime-agent" | "bh-daemon")
+        Some("beehive" | "bh-daemon")
     )
 }
 
@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn worker_argv_shapes() {
-        let worker = ["/bin/prime-agent", "worker"]
+        let worker = ["/bin/beehive", "worker"]
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
@@ -891,7 +891,7 @@ mod tests {
         let kernel = [
             "/opt/kernel-venv/bin/python",
             "-m",
-            "prime_agent_runtime.kernel",
+            "beehive_runtime.kernel",
         ]
         .iter()
         .map(ToString::to_string)
@@ -900,11 +900,11 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let bare = ["/usr/local/bin/prime-agent"]
+        let bare = ["/usr/local/bin/beehive"]
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let worker_flag_second = ["/usr/local/bin/prime-agent", "--mode", "worker"]
+        let worker_flag_second = ["/usr/local/bin/beehive", "--mode", "worker"]
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn the_exe_gate_accepts_replaced_binaries() {
-        let replaced = "/opt/prime-agent/bin/prime-agent (deleted)";
+        let replaced = "/opt/beehive/bin/beehive (deleted)";
         assert!(
             is_product_binary(replaced.trim_end_matches(" (deleted)")),
             "the deleted-suffix spelling still identifies the product binary"
@@ -964,7 +964,7 @@ mod tests {
     #[test]
     fn the_supervisor_match_normalizes_both_spellings() {
         let direct = [
-            "/usr/bin/prime-agent",
+            "/usr/bin/beehive",
             "--mode",
             "daemon",
             "--daemon-socket",
@@ -978,7 +978,7 @@ mod tests {
             &normalize_socket_spelling(Path::new("/tmp/x/daemon.sock"))
         ));
         let dotted = [
-            "/usr/bin/prime-agent",
+            "/usr/bin/beehive",
             "--mode",
             "daemon",
             "--daemon-socket",
@@ -999,7 +999,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn our_worker_socket_names_only() {
-        let supervisor = Path::new("/tmp/prime-agent-1000/daemon.sock");
+        let supervisor = Path::new("/tmp/beehive-1000/daemon.sock");
         let key = crate::paths::hash_key(&supervisor.to_string_lossy(), 12);
         let dir = crate::platform::socket_dir().to_string_lossy().to_string();
         let ours = format!("{dir}/worker-{key}-abcdef123456.sock");
@@ -1027,7 +1027,7 @@ mod tests {
     #[test]
     fn supervisor_argv_shapes() {
         let product = [
-            "/usr/local/bin/prime-agent",
+            "/usr/local/bin/beehive",
             "--mode",
             "daemon",
             "--daemon-socket",
@@ -1048,7 +1048,7 @@ mod tests {
         .map(ToString::to_string)
         .collect::<Vec<_>>();
         let other_socket = [
-            "/usr/local/bin/prime-agent",
+            "/usr/local/bin/beehive",
             "--mode",
             "daemon",
             "--daemon-socket",
@@ -1057,7 +1057,7 @@ mod tests {
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-        let interactive = ["/usr/local/bin/prime-agent"]
+        let interactive = ["/usr/local/bin/beehive"]
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();

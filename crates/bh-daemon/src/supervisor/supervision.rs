@@ -627,7 +627,7 @@ impl Supervisor {
                 .to_string_lossy()
                 .ends_with(" (deleted)")
             {
-                "; the daemon executable was replaced while running. Restart the Prime Agent daemon"
+                "; the daemon executable was replaced while running. Restart the Beehive daemon"
             } else {
                 ""
             };

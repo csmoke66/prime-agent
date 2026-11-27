@@ -103,7 +103,7 @@ pub fn load_local_service_catalog(
         // Review status and legacy-builtin trust cannot be self-asserted.
         if entry.legacy_builtin {
             return Err(format!(
-                "{at} ({id}): local entries cannot claim legacyBuiltin; it is reserved for Prime built-ins"
+                "{at} ({id}): local entries cannot claim legacyBuiltin; it is reserved for Beehive built-ins"
             ));
         }
         if entry.verification.status != VerificationStatus::Unverified {
@@ -117,7 +117,7 @@ pub fn load_local_service_catalog(
         }
         if entry.setup.readiness.is_some() {
             return Err(format!(
-                "{at} ({id}): local entries cannot claim setup.readiness; readiness is a Prime audit assessment"
+                "{at} ({id}): local entries cannot claim setup.readiness; readiness is a Beehive audit assessment"
             ));
         }
         if !seen_local.insert(id.clone()) {

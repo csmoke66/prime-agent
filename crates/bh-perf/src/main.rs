@@ -8,7 +8,7 @@ use bh_perf::corpus::{self, CacheMode, CorpusOptions, Profile};
 use bh_perf::report::{self, Baseline};
 
 #[derive(Parser)]
-#[command(name = "bh-perf", about = "prime-agent performance tooling", version)]
+#[command(name = "bh-perf", about = "beehive performance tooling", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -79,7 +79,7 @@ struct CorpusArgs {
 #[derive(clap::Args)]
 struct BenchArgs {
     /// The release binary under test.
-    #[arg(long, default_value = "target/release/prime-agent")]
+    #[arg(long, default_value = "target/release/beehive")]
     binary: PathBuf,
     /// The corpus root (holds corpus.json).
     #[arg(long)]
@@ -101,7 +101,7 @@ struct BenchArgs {
 #[derive(clap::Args)]
 struct RunArgs {
     /// The release binary under test.
-    #[arg(long, default_value = "target/release/prime-agent")]
+    #[arg(long, default_value = "target/release/beehive")]
     binary: PathBuf,
     /// The named corpus profile for both generated corpora.
     #[arg(long, value_enum, default_value_t = Profile::Small)]

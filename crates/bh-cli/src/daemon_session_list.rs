@@ -390,7 +390,7 @@ mod tests {
             "messageCount": 3,
             "unfinishedActionCount": 0,
             "modified": "2026-09-16T18:30:26.272Z",
-            "model": { "id": "z-ai/glm-5.3", "provider": "prime-inference" },
+            "model": { "id": "z-ai/glm-5.3", "provider": "test-provider" },
             "sessionActions": { "queuedCount": 0, "steering": [], "followUps": [] },
         })
     }
@@ -402,16 +402,13 @@ mod tests {
         let lines: Vec<&str> = table.lines().collect();
         assert_eq!(
             lines[0],
-            "name      id            status  age  model                         messages  clients"
+            "name      id            status  age  model                       messages  clients"
         );
         assert!(
             lines[1].starts_with("research  b72ad7009b11  idle"),
             "{lines:?}"
         );
-        assert!(
-            lines[1].contains("prime-inference/z-ai/glm-5.3"),
-            "{lines:?}"
-        );
+        assert!(lines[1].contains("test-provider/z-ai/glm-5.3"), "{lines:?}");
     }
 
     #[test]

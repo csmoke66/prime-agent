@@ -34,7 +34,7 @@ fn lane() -> PrintLane {
 }
 
 impl PrintLane {
-    /// The kernel Python with prime-agent-runtime installed; set
+    /// The kernel Python with beehive-runtime installed; set
     /// `PA_E2E_KERNEL_PYTHON` to point at an explicit interpreter. A
     /// missing kernel FAILS the lane loudly (these e2es are the
     /// subagent surface's proof — a skip would read green while
@@ -50,8 +50,8 @@ impl PrintLane {
             return explicit;
         }
         let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-            |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-            |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+            |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+            |home| format!("{home}/.beehive/kernel-venv/bin/python"),
         ));
         assert!(
             candidate.exists(),
@@ -69,7 +69,7 @@ impl PrintLane {
         kernel_python: &Path,
         env_extra: &[(&str, &str)],
     ) -> (String, String, i32) {
-        let bin = env!("CARGO_BIN_EXE_prime-agent");
+        let bin = env!("CARGO_BIN_EXE_beehive");
         // This test explicitly selects its interpreter, which supplies the
         // checkout's skills without relying on the product's inherited env.
         let skills = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skills");
@@ -109,13 +109,13 @@ impl PrintLane {
         command
             .args(args)
             .env("HOME", self.home.path())
-            .env("PRIME_AGENT_CODING_AGENT_DIR", &self.agent_dir)
-            .env("PRIME_AGENT_FAUX_SCRIPT", script.to_string())
-            .env("PRIME_AGENT_KERNEL_PYTHON", &wrapper)
+            .env("BEEHIVE_CODING_AGENT_DIR", &self.agent_dir)
+            .env("BEEHIVE_FAUX_SCRIPT", script.to_string())
+            .env("BEEHIVE_KERNEL_PYTHON", &wrapper)
             .env_remove("RLM_DEPTH")
             .env_remove("RLM_MAX_DEPTH")
-            .env_remove("PRIME_AGENT_SESSION_DIR")
-            .env_remove("PRIME_AGENT_CODING_AGENT_SESSION_DIR")
+            .env_remove("BEEHIVE_SESSION_DIR")
+            .env_remove("BEEHIVE_CODING_AGENT_SESSION_DIR")
             .current_dir(self.home.path());
         for (key, value) in env_extra {
             command.env(key, value);

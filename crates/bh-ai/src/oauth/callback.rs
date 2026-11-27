@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-pub(crate) const CALLBACK_HOST_ENV: &str = "PI_OAUTH_CALLBACK_HOST";
+pub(crate) const CALLBACK_HOST_ENV: &str = "BEEHIVE_OAUTH_CALLBACK_HOST";
 
 /// The registered redirect port (the registration's, not a scan
 /// range).
@@ -320,11 +320,11 @@ fn render_page(title: &str, message: &str) -> String {
 }
 
 fn success_page(message: &str) -> String {
-    render_page("Prime Agent authentication completed", message)
+    render_page("Beehive authentication completed", message)
 }
 
 fn error_page(message: &str) -> String {
-    render_page("Prime Agent authentication failed", message)
+    render_page("Beehive authentication failed", message)
 }
 
 #[cfg(test)]

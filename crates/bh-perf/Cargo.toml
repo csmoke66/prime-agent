@@ -1,6 +1,6 @@
 # bh-perf: the performance corpus generator + bench harness (dev/CI tooling).
 # Top of the dependency graph: nothing depends on it, and it never ships —
-# the release lanes build only `-p bh-cli --bin prime-agent`.
+# the release lanes build only `-p bh-cli --bin beehive`.
 [package]
 name = "bh-perf"
 version.workspace = true

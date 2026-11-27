@@ -53,7 +53,7 @@ fn next_spinner_deadline(started: Instant, now: Instant) -> Instant {
 /// daemon update restart (TS #2391) instead of failing the open hard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SessionOpenRoute {
-    /// The CLI's open (`prime-agent`, `--resume`, `--attach`): a single attempt.
+    /// The CLI's open (`beehive`, `--resume`, `--attach`): a single attempt.
     Cli,
     /// The agents view's open: waits through the update-restart window and retries; `panel`
     /// mounts on open and its close returns to the agents view.

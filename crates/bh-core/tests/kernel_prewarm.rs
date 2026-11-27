@@ -27,7 +27,7 @@ use bh_types::session::FileEntry;
 /// the std lock serializes them (the only contenders).
 static FAUX_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The kernel Python with prime-agent-runtime installed (the interpreter the session-path
+/// The kernel Python with beehive-runtime installed (the interpreter the session-path
 /// provisioner resolves). Skipped (with a note) on machines without a live install; set
 /// `PA_CORE_KERNEL_PYTHON` to point at an explicit interpreter instead.
 fn kernel_python() -> Option<PathBuf> {
@@ -41,8 +41,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -301,7 +301,7 @@ async fn subagent_sessions_stay_lazy_despite_the_prewarm_flag() {
 /// while it runs and restores them after, serialized through its own lock.
 static TELEMETRY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-const TELEMETRY_ENV_VARS: [&str; 3] = ["DO_NOT_TRACK", "PI_OFFLINE", "PRIME_AGENT_TELEMETRY"];
+const TELEMETRY_ENV_VARS: [&str; 3] = ["DO_NOT_TRACK", "BEEHIVE_OFFLINE", "BEEHIVE_TELEMETRY"];
 
 struct CleanTelemetryEnv {
     saved: Vec<(&'static str, Option<String>)>,

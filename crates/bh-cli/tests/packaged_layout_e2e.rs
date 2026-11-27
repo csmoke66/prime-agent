@@ -11,9 +11,9 @@
 )]
 
 //! Kernel-packaging e2e: the packaged (exe-adjacent) release layout boots
-//! a session with NO `PI_PACKAGE_DIR`, and the packaging script produces
+//! a session with NO `BEEHIVE_PACKAGE_DIR`, and the packaging script produces
 //! the release artifact (the TS native packaging contract: binary,
-//! `package.json`, `prime-agent-runtime/` sidecar, and `skills/`).
+//! `package.json`, `beehive-runtime/` sidecar, and `skills/`).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -52,15 +52,15 @@ fn serial_lock() -> std::sync::MutexGuard<'static, ()> {
     }
 }
 
-/// The staged binary name: Cargo's MSVC linker emits `prime-agent.exe` on
+/// The staged binary name: Cargo's MSVC linker emits `beehive.exe` on
 /// Windows (`std::env::consts::EXE_SUFFIX`), and the packaged layout - the
 /// installer's extract target and the binary's own exe-adjacent resolution
 /// - names the platform's spelling.
 fn packaged_binary_name() -> &'static str {
     if cfg!(windows) {
-        "prime-agent.exe"
+        "beehive.exe"
     } else {
-        "prime-agent"
+        "beehive"
     }
 }
 
@@ -69,12 +69,12 @@ fn packaged_binary_name() -> &'static str {
 fn stage_packaged_layout(dir: &Path, with_runtime: bool) {
     std::fs::create_dir_all(dir).expect("stage dir");
     let binary = dir.join(packaged_binary_name());
-    std::fs::copy(env!("CARGO_BIN_EXE_prime-agent"), &binary).expect("copy binary");
+    std::fs::copy(env!("CARGO_BIN_EXE_beehive"), &binary).expect("copy binary");
     set_executable(&binary);
     std::fs::write(
         dir.join("package.json"),
         format!(
-            r#"{{"name":"prime-agent","version":"{}","piConfig":{{"name":"prime-agent","configDir":".prime/agent"}}}}"#,
+            r#"{{"name":"beehive","version":"{}","piConfig":{{"name":"beehive","configDir":".beehive"}}}}"#,
             env!("CARGO_PKG_VERSION")
         ),
     )
@@ -90,8 +90,8 @@ fn stage_packaged_layout(dir: &Path, with_runtime: bool) {
     }
     if with_runtime {
         copy_dir(
-            &repo_root().join("prime-agent-runtime"),
-            &dir.join("prime-agent-runtime"),
+            &repo_root().join("beehive-runtime"),
+            &dir.join("beehive-runtime"),
         );
     }
 }
@@ -132,7 +132,7 @@ fn set_executable(path: &Path) {
     let _ = path;
 }
 
-/// The kernel Python with prime-agent-runtime installed (skipped with a
+/// The kernel Python with beehive-runtime installed (skipped with a
 /// note without a live install).
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_E2E_KERNEL_PYTHON") {
@@ -153,8 +153,8 @@ fn kernel_python() -> Option<PathBuf> {
         "kernel-venv/bin/python"
     };
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| format!("/home/ubuntu/.prime/agent/{venv_python}"),
-        |home| format!("{home}/.prime/agent/{venv_python}"),
+        |_| format!("/home/ubuntu/.beehive/{venv_python}"),
+        |home| format!("{home}/.beehive/{venv_python}"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -187,19 +187,18 @@ fn sandbox() -> Sandbox {
 
 impl Sandbox {
     /// The packaged binary with a hermetic environment: sandboxed HOME and
-    /// agent dir, no ambient `PI_PACKAGE_DIR`, kernel-override env, or API
+    /// agent dir, no ambient `BEEHIVE_PACKAGE_DIR`, kernel-override env, or API
     /// keys (a later `Command::env` wins over the scrub).
     fn command(&self, staged: &Path) -> Command {
         let mut command = Command::new(staged.join(packaged_binary_name()));
         command
             .env("HOME", self.home.path())
-            .env("PRIME_AGENT_CODING_AGENT_DIR", &self.agent_dir)
-            .env_remove("PI_PACKAGE_DIR")
-            .env_remove("PRIME_AGENT_KERNEL_PYTHON")
-            .env_remove("PRIME_AGENT_KERNEL_VENV")
-            .env_remove("PRIME_AGENT_SESSION_DIR")
-            .env_remove("PRIME_AGENT_CODING_AGENT_SESSION_DIR")
-            .env_remove("PRIME_API_KEY")
+            .env("BEEHIVE_CODING_AGENT_DIR", &self.agent_dir)
+            .env_remove("BEEHIVE_PACKAGE_DIR")
+            .env_remove("BEEHIVE_KERNEL_PYTHON")
+            .env_remove("BEEHIVE_KERNEL_VENV")
+            .env_remove("BEEHIVE_SESSION_DIR")
+            .env_remove("BEEHIVE_CODING_AGENT_SESSION_DIR")
             .current_dir(&self.cwd);
         command
     }
@@ -233,7 +232,7 @@ fn run_json_turn(
         .arg("json")
         .arg("-p")
         .arg("use the kernel")
-        .env("PRIME_AGENT_FAUX_SCRIPT", script.to_string())
+        .env("BEEHIVE_FAUX_SCRIPT", script.to_string())
         .output()
         .expect("run packaged binary");
     (
@@ -269,7 +268,7 @@ fn packaged_session_boots_kernel_without_pi_package_dir() {
     let script = kernel_boot_script(&receipt);
 
     let mut command = box_.command(staged);
-    command.env("PRIME_AGENT_KERNEL_PYTHON", &kernel_python);
+    command.env("BEEHIVE_KERNEL_PYTHON", &kernel_python);
     let (stdout, stderr, code) = run_json_turn(&mut command, &script);
     assert_eq!(code, Some(0), "stdout: {stdout}\nstderr: {stderr}");
     assert!(
@@ -310,7 +309,7 @@ fn packaged_binary_reports_manifest_version() {
     stage_packaged_layout(staged, false);
     std::fs::write(
         staged.join("package.json"),
-        r#"{"name":"prime-agent","version":"9.8.7-test"}"#,
+        r#"{"name":"beehive","version":"9.8.7-test"}"#,
     )
     .expect("version manifest");
     let box_ = sandbox();
@@ -337,7 +336,7 @@ fn missing_sidecar_reports_actionable_bootstrap_error() {
     let box_ = sandbox();
     let output = box_
         .command(staged)
-        .arg("--prime-agent-bootstrap")
+        .arg("--beehive-bootstrap")
         // No uv anywhere the bootstrap looks (PATH and ~/.local/bin under
         // the sandboxed HOME): the failure is the resolution error.
         .env("PATH", "/usr/bin:/bin")
@@ -350,7 +349,7 @@ fn missing_sidecar_reports_actionable_bootstrap_error() {
         "TS bootstrap failure text missing: {stderr}"
     );
     assert!(
-        stderr.contains("prime-agent-runtime directory was not found"),
+        stderr.contains("beehive-runtime directory was not found"),
         "missing-sidecar hint missing: {stderr}"
     );
     assert!(
@@ -359,7 +358,7 @@ fn missing_sidecar_reports_actionable_bootstrap_error() {
     );
 }
 
-/// A `PRIME_AGENT_KERNEL_PYTHON` that lacks the runtime reports the TS override error.
+/// A `BEEHIVE_KERNEL_PYTHON` that lacks the runtime reports the TS override error.
 #[test]
 fn invalid_kernel_python_override_reports_ts_error() {
     let _guard = serial_lock();
@@ -370,14 +369,14 @@ fn invalid_kernel_python_override_reports_ts_error() {
     let bogus = box_.home.path().join("not-a-kernel-python");
     let output = box_
         .command(staged)
-        .arg("--prime-agent-bootstrap")
-        .env("PRIME_AGENT_KERNEL_PYTHON", &bogus)
+        .arg("--beehive-bootstrap")
+        .env("BEEHIVE_KERNEL_PYTHON", &bogus)
         .output()
         .expect("run packaged binary");
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("PRIME_AGENT_KERNEL_PYTHON points to a Python missing"),
+        stderr.contains("BEEHIVE_KERNEL_PYTHON points to a Python missing"),
         "TS override error missing: {stderr}"
     );
 }
@@ -403,13 +402,13 @@ fn hostile_child_assertions(staged: &Path) {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         HOSTILE_STAGED_VERSION,
-        "the hostile PI_PACKAGE_DIR must not win: {}",
+        "the hostile BEEHIVE_PACKAGE_DIR must not win: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let output = box_
         .command(staged)
-        .arg("--prime-agent-bootstrap")
+        .arg("--beehive-bootstrap")
         .env("PATH", "/usr/bin:/bin")
         .output()
         .expect("run packaged binary");
@@ -420,7 +419,7 @@ fn hostile_child_assertions(staged: &Path) {
         "TS bootstrap failure text missing: {stderr}"
     );
     assert!(
-        stderr.contains("prime-agent-runtime directory was not found"),
+        stderr.contains("beehive-runtime directory was not found"),
         "missing-sidecar hint missing: {stderr}"
     );
     assert!(
@@ -428,13 +427,13 @@ fn hostile_child_assertions(staged: &Path) {
         "the hint must name the staged dir: {stderr}"
     );
     assert!(
-        !stderr.contains("PRIME_AGENT_KERNEL_PYTHON points to"),
+        !stderr.contains("BEEHIVE_KERNEL_PYTHON points to"),
         "the hostile kernel-python override leaked into the packaged layout: {stderr}"
     );
-    if let Some(package_decoy) = std::env::var_os("PI_PACKAGE_DIR") {
+    if let Some(package_decoy) = std::env::var_os("BEEHIVE_PACKAGE_DIR") {
         assert!(
             !stderr.contains(Path::new(&package_decoy).to_string_lossy().as_ref()),
-            "the hostile PI_PACKAGE_DIR leaked into the packaged layout: {stderr}"
+            "the hostile BEEHIVE_PACKAGE_DIR leaked into the packaged layout: {stderr}"
         );
     }
 }
@@ -455,7 +454,7 @@ fn packaged_layout_stays_hermetic_under_hostile_host_env() {
     stage_packaged_layout(staged, false);
     std::fs::write(
         staged.join("package.json"),
-        format!(r#"{{"name":"prime-agent","version":"{HOSTILE_STAGED_VERSION}"}}"#),
+        format!(r#"{{"name":"beehive","version":"{HOSTILE_STAGED_VERSION}"}}"#),
     )
     .expect("version manifest");
 
@@ -465,7 +464,7 @@ fn packaged_layout_stays_hermetic_under_hostile_host_env() {
     std::fs::create_dir_all(&package_decoy).expect("package decoy dir");
     std::fs::write(
         package_decoy.join("package.json"),
-        r#"{"name":"prime-agent","version":"0.0.0-decoy"}"#,
+        r#"{"name":"beehive","version":"0.0.0-decoy"}"#,
     )
     .expect("decoy manifest");
     let venv_decoy = decoys.path().join("kernel-venv");
@@ -473,7 +472,7 @@ fn packaged_layout_stays_hermetic_under_hostile_host_env() {
     std::fs::write(venv_decoy.join("bin").join("python"), "#!/bin/sh\nexit 0\n")
         .expect("decoy python");
 
-    // The most hostile PRIME_AGENT_KERNEL_PYTHON would satisfy the
+    // The most hostile BEEHIVE_KERNEL_PYTHON would satisfy the
     // bootstrap if it leaked: the live venv when present, else a bogus path.
     let hostile_python =
         kernel_python().unwrap_or_else(|| decoys.path().join("hostile-kernel-python"));
@@ -482,9 +481,9 @@ fn packaged_layout_stays_hermetic_under_hostile_host_env() {
         .arg("--exact")
         .arg("packaged_layout_stays_hermetic_under_hostile_host_env")
         .env(HOSTILE_CHILD_STAGE, staged)
-        .env("PRIME_AGENT_KERNEL_PYTHON", &hostile_python)
-        .env("PI_PACKAGE_DIR", &package_decoy)
-        .env("PRIME_AGENT_KERNEL_VENV", &venv_decoy)
+        .env("BEEHIVE_KERNEL_PYTHON", &hostile_python)
+        .env("BEEHIVE_PACKAGE_DIR", &package_decoy)
+        .env("BEEHIVE_KERNEL_VENV", &venv_decoy)
         .output()
         .expect("re-exec the test binary with the hostile host env");
     assert!(
@@ -506,13 +505,13 @@ struct PairedFixture {
 
 fn split_paired_fixture(python: &str, version: &str, target: &str, alias: &str) -> PairedFixture {
     let dir = tempfile::TempDir::new().expect("split fixture dir");
-    let source = dir.path().join("prime-agent.c");
+    let source = dir.path().join("beehive.c");
     // The packer's version pin runs `--version`: the fixture answers the pinned version.
     let program = format!(
         "#include <stdio.h>\nint main(int argc, char **argv) {{ (void)argc; (void)argv; puts(\"{version}\"); return 0; }}\n"
     );
     std::fs::write(&source, program).expect("fixture source");
-    let raw = dir.path().join("cargo-prime-agent");
+    let raw = dir.path().join("cargo-beehive");
     let compiled = Command::new("gcc")
         .arg("-g")
         .arg("-Wl,--build-id")
@@ -527,7 +526,7 @@ fn split_paired_fixture(python: &str, version: &str, target: &str, alias: &str) 
         "fixture gcc failed: {}",
         String::from_utf8_lossy(&compiled.stderr)
     );
-    let shipped = dir.path().join("prime-agent");
+    let shipped = dir.path().join("beehive");
     let split = Command::new(python)
         .arg(
             repo_root()
@@ -555,7 +554,7 @@ fn split_paired_fixture(python: &str, version: &str, target: &str, alias: &str) 
     );
     let decoder = dir
         .path()
-        .join(format!("prime-agent-{version}-{alias}.debug.gz"));
+        .join(format!("beehive-{version}-{alias}.debug.gz"));
     assert!(shipped.is_file(), "shipped fixture missing");
     assert!(decoder.is_file(), "decoder fixture missing");
     PairedFixture {
@@ -577,7 +576,7 @@ fn packaging_dry_run_produces_artifact() {
     // A synthetic tree: the packaging must ship the sidecar without its
     // .venv or bytecode caches.
     let tree = tempfile::TempDir::new().expect("packaging tree");
-    let runtime = tree.path().join("prime-agent-runtime");
+    let runtime = tree.path().join("beehive-runtime");
     std::fs::create_dir_all(runtime.join("src").join("rlm")).expect("runtime tree");
     std::fs::write(runtime.join("pyproject.toml"), "[project]\nname = \"x\"\n").unwrap();
     std::fs::write(
@@ -665,7 +664,7 @@ fn packaging_dry_run_produces_artifact() {
             Some(fixture.dir),
         )
     } else {
-        (env!("CARGO_BIN_EXE_prime-agent").into(), None, None)
+        (env!("CARGO_BIN_EXE_beehive").into(), None, None)
     };
     // The platform tag the packer derives on this host (`release_platform`):
     // linux-x64 on the linux CI host, win32-x64 on the windows-latest battery
@@ -678,9 +677,9 @@ fn packaging_dry_run_produces_artifact() {
         _ => "linux-x64",
     };
     let staged_binary_name = if cfg!(windows) {
-        "prime-agent.exe"
+        "beehive.exe"
     } else {
-        "prime-agent"
+        "beehive"
     };
     let mut command = Command::new(python);
     command
@@ -707,7 +706,7 @@ fn packaging_dry_run_produces_artifact() {
     let version = env!("CARGO_PKG_VERSION");
     let stage = out
         .path()
-        .join(format!("prime-agent-{version}-{host_platform}"));
+        .join(format!("beehive-{version}-{host_platform}"));
     assert!(
         stage.join(staged_binary_name).is_file(),
         "staged binary missing"
@@ -717,17 +716,17 @@ fn packaging_dry_run_produces_artifact() {
     )
     .expect("manifest json");
     assert_eq!(manifest["version"], version, "version pin: {manifest}");
-    assert_eq!(manifest["piConfig"]["name"], "prime-agent");
+    assert_eq!(manifest["piConfig"]["name"], "beehive");
     assert!(
         stage
-            .join("prime-agent-runtime")
+            .join("beehive-runtime")
             .join("pyproject.toml")
             .is_file(),
         "sidecar manifest missing"
     );
     assert!(
         stage
-            .join("prime-agent-runtime")
+            .join("beehive-runtime")
             .join("src")
             .join("rlm")
             .join("repl.py")
@@ -755,12 +754,12 @@ fn packaging_dry_run_produces_artifact() {
     );
     // .venv handling (the TS installer exclusion set): dev caches never ship.
     assert!(
-        !stage.join("prime-agent-runtime").join(".venv").exists(),
+        !stage.join("beehive-runtime").join(".venv").exists(),
         ".venv rode the artifact"
     );
     assert!(
         !stage
-            .join("prime-agent-runtime")
+            .join("beehive-runtime")
             .join("src")
             .join("rlm")
             .join("__pycache__")
@@ -770,7 +769,7 @@ fn packaging_dry_run_produces_artifact() {
 
     let archive = out
         .path()
-        .join(format!("prime-agent-{version}-{host_platform}.tar.gz"));
+        .join(format!("beehive-{version}-{host_platform}.tar.gz"));
     assert!(archive.is_file(), "tarball missing");
     let sums = std::fs::read_to_string(out.path().join("SHA256SUMS")).expect("SHA256SUMS");
     let sha256 = sha256_file(&archive);
@@ -961,11 +960,11 @@ fn bootstrap_kernel_venv_from_packaged_sidecar() {
     let box_ = sandbox();
     let venv = box_.home.path().join("kernel-venv");
 
-    // --prime-agent-bootstrap builds the venv from the exe-adjacent sidecar.
+    // --beehive-bootstrap builds the venv from the exe-adjacent sidecar.
     let output = box_
         .command(staged)
-        .arg("--prime-agent-bootstrap")
-        .env("PRIME_AGENT_KERNEL_VENV", &venv)
+        .arg("--beehive-bootstrap")
+        .env("BEEHIVE_KERNEL_VENV", &venv)
         .output()
         .expect("run packaged binary");
     assert_eq!(
@@ -992,7 +991,7 @@ fn bootstrap_kernel_venv_from_packaged_sidecar() {
     let receipt = box_.home.path().join("kernel-receipt.json");
     let script = kernel_boot_script(&receipt);
     let mut command = box_.command(staged);
-    command.env("PRIME_AGENT_KERNEL_VENV", &venv);
+    command.env("BEEHIVE_KERNEL_VENV", &venv);
     let (stdout, stderr, code) = run_json_turn(&mut command, &script);
     assert_eq!(code, Some(0), "stdout: {stdout}\nstderr: {stderr}");
     assert!(

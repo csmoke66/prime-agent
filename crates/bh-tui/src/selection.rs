@@ -635,7 +635,7 @@ mod tests {
     use crate::Span;
 
     fn view() -> AgentView {
-        AgentView::new(Theme::builtin("prime", ColorMode::TrueColor))
+        AgentView::new(Theme::builtin("beehive", ColorMode::TrueColor))
     }
 
     fn rendered_row(frame: &[Line], row: usize) -> String {
@@ -1085,7 +1085,7 @@ mod tests {
         crate::hyperlinks::set_hyperlinks_override(Some(true));
         let mut v = view();
         let mut screen = crate::onboarding::OnboardingScreen::welcome();
-        let mut panel = crate::auth_panel::AuthPanel::new("Login to Prime Inference");
+        let mut panel = crate::auth_panel::AuthPanel::new("Login to the provider");
         panel.show_auth_url("https://fixture.example/auth".to_string(), None);
         screen.mount_panel(crate::onboarding_flow::OnboardingPanel::Auth {
             panel: std::boxed::Box::new(panel),

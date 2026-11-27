@@ -13,7 +13,7 @@ async fn mcp_startup_gating_ignores_project_settings() {
     let agent_dir = dir.path().join("agent");
     let cwd = dir.path().join("project");
     std::fs::create_dir_all(&agent_dir).unwrap();
-    std::fs::create_dir_all(cwd.join(".prime/agent")).unwrap();
+    std::fs::create_dir_all(cwd.join(".beehive")).unwrap();
     let global: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/mcp/global-settings.json"
@@ -21,7 +21,7 @@ async fn mcp_startup_gating_ignores_project_settings() {
     .unwrap();
     std::fs::write(agent_dir.join("settings.json"), global.to_string()).unwrap();
     std::fs::write(
-        cwd.join(".prime/agent/settings.json"),
+        cwd.join(".beehive/settings.json"),
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/mcp/project-settings.json"
@@ -149,7 +149,7 @@ async fn engine_runs_tool_loop_and_persists() {
 
     // The system prompt is the layered assembly: static core layer
     // first, dynamic tail after.
-    assert!(engine.system_prompt.starts_with("# prime-agent harness"));
+    assert!(engine.system_prompt.starts_with("# beehive harness"));
     assert!(engine
         .system_prompt
         .contains("Recursive agent depth: 0 (root)"));

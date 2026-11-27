@@ -10,7 +10,7 @@
 )]
 
 //! End-to-end verifier for the interactive TUI: spawn the real supervisor
-//! (`prime-agent --mode daemon`), drive the TUI headlessly against a scripted
+//! (`beehive --mode daemon`), drive the TUI headlessly against a scripted
 //! daemon session, and assert on rendered frames plus daemon-side state. The
 //! `script` seam is the faux provider contract; the product never sets it.
 #![cfg(unix)]
@@ -198,7 +198,7 @@ fn assert_daemon_stops_clean(socket: &Path) {
     let command = serde_json::json!({
         "type": "command",
         "id": "stop-assert",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": { "type": "shutdown" },
     });
     let mut line = serde_json::to_string(&command).expect("serialize");
@@ -257,7 +257,7 @@ fn graceful_shutdown(socket: &Path) -> Option<u32> {
     let command = serde_json::json!({
         "type": "command",
         "id": "test-shutdown",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": { "type": "shutdown" },
     });
     let Ok(mut line) = serde_json::to_string(&command) else {
@@ -389,14 +389,14 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = dir.join("daemon.sock");
     let agent_dir = dir.join("agent");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
         // The daemon's startup catalog refresh must never reach the network
-        // from a test: PI_OFFLINE keeps it on the bundled/models.json snapshot.
-        .env("PI_OFFLINE", "1")
+        // from a test: BEEHIVE_OFFLINE keeps it on the bundled/models.json snapshot.
+        .env("BEEHIVE_OFFLINE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -423,7 +423,6 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             }
         }
     }
-    command.env_remove("PRIME_TEAM_ID");
     // A supervisor killed by a failing test must not leak its session workers:
     // the supervisor-lost exit runs on this short window, not the 5-minute default.
     command.env(
@@ -442,7 +441,7 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             Ok(())
         });
     }
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_mins(1);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -532,7 +531,7 @@ async fn tui_attaches_prompts_streams_lists_and_switches() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -656,7 +655,7 @@ async fn ensure_daemon_running_spawns_supervisor_and_tui_attaches() {
     let session_dir = agent_dir.join("sessions");
     std::fs::create_dir_all(&session_dir).expect("session dir");
     let socket = dir.path().join("spawned.sock");
-    std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir);
+    std::env::set_var("BEEHIVE_CODING_AGENT_DIR", &agent_dir);
     // The internally-spawned supervisor inherits this process's env: the short
     // supervisor-lost window keeps a killed supervisor from leaking workers.
     std::env::set_var(
@@ -687,7 +686,7 @@ async fn ensure_daemon_running_spawns_supervisor_and_tui_attaches() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: Some("boot".to_string()),
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -709,7 +708,7 @@ async fn ensure_daemon_running_spawns_supervisor_and_tui_attaches() {
     let _guard = DetachedDaemon {
         socket: socket.clone(),
     };
-    let exe = std::path::PathBuf::from(env!("CARGO_BIN_EXE_prime-agent"));
+    let exe = std::path::PathBuf::from(env!("CARGO_BIN_EXE_beehive"));
     bh_cli::ensure_daemon_running_with(&exe, &socket, dir.path())
         .await
         .expect("spawn the daemon");
@@ -767,7 +766,7 @@ async fn tui_dispatches_slash_commands_menu_and_suggestions() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -947,7 +946,7 @@ async fn tui_model_picker_applies_and_effort_reports() {
     std::fs::write(dir.path().join("script.json"), script.to_string()).expect("write script");
     let supervisor = spawn_supervisor(dir.path());
     // The catalog snapshot the composition root injects, pinned hermetically:
-    // ambient credentials (PRIME_API_KEY on the dev box) cannot leak in.
+    // ambient credentials (provider keys on the dev box) cannot leak in.
     let auth = bh_core::auth::AuthStorage::in_memory_without_env(
         &bh_core::auth::AuthStorageData::default(),
         std::sync::Arc::new(bh_core::auth::NoOAuth),
@@ -976,7 +975,7 @@ async fn tui_model_picker_applies_and_effort_reports() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -1150,7 +1149,7 @@ async fn tui_effort_applies_on_a_map_addressable_model_without_the_reasoning_fla
         client_settings: None,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -1259,7 +1258,7 @@ async fn tui_compact_on_a_short_session_warns_nothing_to_compact() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -1376,7 +1375,7 @@ async fn tui_compact_shows_the_loader_then_the_summary_and_rebuilds() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -1542,7 +1541,7 @@ async fn tui_session_tree_navigates_forks_and_clones() {
         no_session: false,
         session: bh_tui::interactive::SessionSelection::New,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         // The default tree filter keeps every message row visible, and the
         // branch-summary prompt is skipped (TS `branchSummary.skipPrompt`).
@@ -1716,7 +1715,7 @@ async fn tui_big_streamed_turns_render_at_the_producer_rate() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
 
         tree_filter_mode: String::new(),
@@ -1803,7 +1802,7 @@ async fn tui_renders_and_fires_user_keybindings_from_settings() {
     let agent_dir = dir.path().join("agent");
     let session_dir = agent_dir.join("sessions");
     std::fs::create_dir_all(&session_dir).expect("session dir");
-    // One binding overridden exactly like a user's `~/.prime/agent/keybindings.json` would.
+    // One binding overridden exactly like a user's `~/.beehive/keybindings.json` would.
     std::fs::write(
         agent_dir.join("keybindings.json"),
         r#"{ "app.tools.expand": "ctrl+alt+x" }"#,
@@ -1832,7 +1831,7 @@ async fn tui_renders_and_fires_user_keybindings_from_settings() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -1985,7 +1984,7 @@ async fn tui_prompts_queued_behind_a_turn_render_the_queue_strip() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -2095,7 +2094,7 @@ async fn tui_flagged_model_turn_reports_the_ts_preflight_error_without_credentia
         client_settings: None,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -2220,7 +2219,7 @@ async fn tui_model_pick_refreshes_the_label_and_the_next_turn_resolves() {
         client_settings: None,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -2378,7 +2377,7 @@ fn base_options(
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -2952,7 +2951,7 @@ async fn tui_prompt_stash_round_trips_across_in_place_switch() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3063,7 +3062,7 @@ async fn tui_prompt_stash_survives_the_agents_view_handoff() {
     // bytes (the reopened chat's paste registry is empty — the stash hydrates it).
     let png_path = dir.path().join("fixture.png");
     std::fs::write(&png_path, MINIMAL_PNG).expect("write fixture image");
-    std::env::set_var("PRIME_AGENT_TEST_CLIPBOARD_IMAGE", &png_path);
+    std::env::set_var("BEEHIVE_TEST_CLIPBOARD_IMAGE", &png_path);
     let prompt_stash: std::sync::Arc<std::sync::Mutex<bh_tui::prompt_stash::PromptStashStore>> =
         std::sync::Arc::default();
     let make_options = || bh_tui::interactive::InteractiveOptions {
@@ -3083,7 +3082,7 @@ async fn tui_prompt_stash_survives_the_agents_view_handoff() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3201,7 +3200,7 @@ async fn tui_prompt_stash_restores_a_pasted_image_with_the_draft() {
     std::fs::write(&png_path, MINIMAL_PNG).expect("write fixture image");
     // The seam only applies to the paste path (ctrl+v). The var stays set for
     // the whole process: a cross-test remove would race the parallel stash tests.
-    std::env::set_var("PRIME_AGENT_TEST_CLIPBOARD_IMAGE", &png_path);
+    std::env::set_var("BEEHIVE_TEST_CLIPBOARD_IMAGE", &png_path);
     let supervisor = spawn_supervisor(dir.path());
     let script = serde_json::json!({
         "engine": "faux",
@@ -3242,7 +3241,7 @@ async fn tui_prompt_stash_restores_a_pasted_image_with_the_draft() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3332,7 +3331,7 @@ async fn tui_ctrl_s_stashes_and_restores_the_prompt_draft() {
     // The draft carries a pasted image, so the manual stash must round-trip the bytes too.
     let png_path = dir.path().join("fixture.png");
     std::fs::write(&png_path, MINIMAL_PNG).expect("write fixture image");
-    std::env::set_var("PRIME_AGENT_TEST_CLIPBOARD_IMAGE", &png_path);
+    std::env::set_var("BEEHIVE_TEST_CLIPBOARD_IMAGE", &png_path);
     let supervisor = spawn_supervisor(dir.path());
     let script = serde_json::json!({
         "engine": "faux",
@@ -3365,7 +3364,7 @@ async fn tui_ctrl_s_stashes_and_restores_the_prompt_draft() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3522,7 +3521,7 @@ async fn tui_ctrl_s_stash_keeps_a_held_draft_and_reports_the_empty_editor() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3664,7 +3663,7 @@ async fn tui_ctrl_s_stash_is_remappable_via_keybindings_json() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -3807,7 +3806,7 @@ async fn tui_ctrl_s_during_queue_browse_stashes_the_draft_and_keeps_the_parked_m
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -4399,7 +4398,7 @@ async fn tui_idle_session_event_repaints_without_input() {
 }
 
 /// The bare-launch safety regression (the P6 continue-recent trap): a plain
-/// `prime-agent` run must open a FRESH session even when a newer saved session
+/// `beehive` run must open a FRESH session even when a newer saved session
 /// exists for the cwd — resuming it blindly would resurrect whatever it holds.
 #[tokio::test]
 async fn tui_bare_launch_opens_a_fresh_session_when_a_newer_saved_one_exists_for_the_cwd() {
@@ -4514,7 +4513,7 @@ async fn tui_two_back_to_back_submits_reach_the_daemon_in_order() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -4633,7 +4632,7 @@ async fn tui_submit_outlived_by_switch_stays_silent_on_the_new_session() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -4744,7 +4743,7 @@ async fn tui_headless_done_with_a_turn_settling_parks_the_closed_input_channel()
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -4861,7 +4860,7 @@ async fn tui_refused_submit_restores_the_draft_after_the_round_trip() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -4982,7 +4981,7 @@ async fn tui_accepted_then_killed_turn_renders_closed_error() {
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -5054,7 +5053,7 @@ async fn tui_accepted_then_killed_turn_renders_closed_error() {
 #[tokio::test]
 async fn tui_close_reason_rows_survive_late_turn_status() {
     for (reason, explanation) in [
-        ("shutdown", "The Prime Agent daemon shut down while this window was attached. The session transcript remains saved; restart Prime Agent and reopen it from Agents View."),
+        ("shutdown", "The Beehive daemon shut down while this window was attached. The session transcript remains saved; restart Beehive and reopen it from Agents View."),
         ("replaced", "The daemon replaced this agent session with another session. Reopen the current session from Agents View."),
     ] {
         assert_close_reason_survives_late_turn_status(reason, explanation).await;
@@ -5133,7 +5132,7 @@ async fn assert_close_reason_survives_late_turn_status(reason: &str, explanation
         show_images: true,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

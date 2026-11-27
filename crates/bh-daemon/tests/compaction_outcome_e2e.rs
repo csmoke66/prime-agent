@@ -269,8 +269,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Supervisor {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             "15000",
@@ -314,7 +313,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -416,7 +415,7 @@ fn drive_failed_auto_compaction(mode: SummarizerMode) -> FailedCompactionRun {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": mock.url(),
                     "apiKey": "sk-battery",
@@ -454,7 +453,7 @@ fn drive_failed_auto_compaction(mode: SummarizerMode) -> FailedCompactionRun {
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": session_dir.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),

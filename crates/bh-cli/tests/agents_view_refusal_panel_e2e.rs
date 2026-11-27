@@ -38,11 +38,11 @@ impl Drop for Daemon {
 
 #[allow(clippy::zombie_processes)]
 fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -62,7 +62,7 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
     );
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -95,7 +95,7 @@ fn view_options(socket: &Path, session_dir: &Path, notice: Option<String>) -> Ag
         socket_path: socket.to_path_buf(),
         cwd: PathBuf::from("/tmp"),
         session_dir: Some(session_dir.to_path_buf()),
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: None,
         scope: None,
@@ -157,7 +157,7 @@ async fn the_refused_open_renders_both_ways_out_as_the_notice_panel() {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

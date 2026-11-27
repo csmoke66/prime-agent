@@ -4,7 +4,7 @@ use serde_json::json;
 
 fn test_view() -> crate::view::AgentView {
     crate::view::AgentView::new(crate::theme::Theme::builtin(
-        "prime",
+        "beehive",
         crate::theme::ColorMode::TrueColor,
     ))
 }
@@ -316,7 +316,7 @@ fn tool_execution_start_reports_the_tool_name() {
 
 fn slim_attach() -> Value {
     json!({
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "activeSessionId": "abc123def456",
         "snapshot": {
             "activeSessionId": "abc123def456",
@@ -773,11 +773,11 @@ fn a_cursorless_attach_reconstructs_as_unkeyed_for_the_layout_handoff() {
 fn reconstructs_the_model_provider_alongside_the_id() {
     let mut attach = slim_attach();
     attach["snapshot"]["state"]["model"] =
-        json!({ "id": "z-ai/glm-5.3", "provider": "prime-inference" });
+        json!({ "id": "z-ai/glm-5.3", "provider": "test-provider" });
     let data = attach_data_from_response(attach).unwrap();
     let view = reconstruct(&data);
     assert_eq!(view.model_id.as_deref(), Some("z-ai/glm-5.3"));
-    assert_eq!(view.model_provider.as_deref(), Some("prime-inference"));
+    assert_eq!(view.model_provider.as_deref(), Some("test-provider"));
 
     let mut attach = slim_attach();
     attach["snapshot"]["state"]["model"] = json!({ "id": "z-ai/glm-5.3" });
@@ -1302,7 +1302,7 @@ fn decodes_auto_retry_events() {
         "delayMs": 0,
         "errorMessage": "provider down",
         "reason": "backup",
-        "backupModel": "prime-inference/glm-5.3",
+        "backupModel": "test-provider/glm-5.3",
     }))
     .expect("backup switch maps");
     assert_eq!(
@@ -1313,7 +1313,7 @@ fn decodes_auto_retry_events() {
             delay_ms: 0,
             error_message: "provider down".to_string(),
             reason: RetryStartReason::Backup {
-                backup_model: "prime-inference/glm-5.3".to_string()
+                backup_model: "test-provider/glm-5.3".to_string()
             },
         }
     );
@@ -1338,7 +1338,7 @@ fn decodes_auto_retry_events() {
         "type": "auto_retry_end",
         "success": true,
         "attempt": 2,
-        "restoredModel": "prime-inference/glm-5.3",
+        "restoredModel": "test-provider/glm-5.3",
     }))
     .expect("retry success maps");
     assert_eq!(
@@ -1348,7 +1348,7 @@ fn decodes_auto_retry_events() {
             success: true,
             attempt: 2,
             final_error: None,
-            restored_model: Some("prime-inference/glm-5.3".to_string()),
+            restored_model: Some("test-provider/glm-5.3".to_string()),
         }
     );
 }
@@ -1737,7 +1737,7 @@ fn transcript_replay_stacks_provider_failure_rows() {
         json!({
             "role": "assistant",
             "content": [],
-            "provider": "prime-inference", "model": "mock-1",
+            "provider": "test-provider", "model": "mock-1",
             "stopReason": "error",
             "errorMessage": "Connection error.",
             "timestamp": timestamp,
@@ -1748,7 +1748,7 @@ fn transcript_replay_stacks_provider_failure_rows() {
         json!({
             "role": "assistant",
             "content": [{ "type": "text", "text": "battery hello from mock" }],
-            "provider": "prime-inference", "model": "mock-1",
+            "provider": "test-provider", "model": "mock-1",
             "usage": { "input": 10, "output": 2 }, "stopReason": "stop",
             "timestamp": 2,
         }),
@@ -2013,7 +2013,7 @@ fn goal_update_decodes_the_goal_payload() {
 #[test]
 fn attach_snapshot_carries_the_goal_state() {
     let attach = json!({
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "activeSessionId": "abc123def456",
         "snapshot": {
             "activeSessionId": "abc123def456",
@@ -2183,7 +2183,7 @@ fn elided_image_tool_results_render_their_marker_metadata() {
         0,
         crate::chat::Detail::All,
         crate::chat::Detail::All,
-        &crate::theme::Theme::builtin("prime", crate::theme::ColorMode::TrueColor),
+        &crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor),
         100,
         true,
     );

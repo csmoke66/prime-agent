@@ -1,5 +1,5 @@
 //! Per-OS daemon endpoint naming: Unix socket files under
-//! `<tmpdir>/prime-agent-<uid>/`; Windows named pipes in the `\\.\\pipe\\`
+//! `<tmpdir>/beehive-<uid>/`; Windows named pipes in the `\\.\\pipe\\`
 //! namespace (fixed daemon pipe, hashed worker pipes) - the TS product's
 //! exact split.
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ pub fn socket_dir() -> PathBuf {
 /// can re-anchor deep paths through /proc; other Unix platforms need a short path.
 #[cfg(unix)]
 fn socket_dir_for(tmp: &Path, uid: u32) -> PathBuf {
-    let name = format!("prime-agent-{uid}");
+    let name = format!("beehive-{uid}");
     let dir = tmp.join(&name);
     #[cfg(not(target_os = "linux"))]
     if std::os::unix::net::SocketAddr::from_pathname(
@@ -32,11 +32,11 @@ fn socket_dir_for(tmp: &Path, uid: u32) -> PathBuf {
 }
 
 /// The socket-dir half of a discovery state root on Windows: TS computes
-/// `<tmpdir>/prime-agent-user` so `DaemonStateRoot` keeps one shape.
+/// `<tmpdir>/beehive-user` so `DaemonStateRoot` keeps one shape.
 #[cfg(not(unix))]
 #[must_use]
 pub fn socket_dir() -> PathBuf {
-    std::env::temp_dir().join("prime-agent-user")
+    std::env::temp_dir().join("beehive-user")
 }
 
 /// Default supervisor endpoint: `daemon.sock` in the socket dir (Unix) or
@@ -50,7 +50,7 @@ pub fn default_daemon_socket_path() -> PathBuf {
 #[cfg(not(unix))]
 #[must_use]
 pub fn default_daemon_socket_path() -> PathBuf {
-    PathBuf::from(r"\\.\pipe\prime-agent-daemon")
+    PathBuf::from(r"\\.\pipe\beehive-daemon")
 }
 
 /// Worker endpoint next to the supervisor's: hashed supervisor key plus the
@@ -70,7 +70,7 @@ pub fn worker_socket_path(supervisor_socket_path: &Path, worker_id: &str) -> Pat
 pub fn worker_socket_path(supervisor_socket_path: &Path, worker_id: &str) -> PathBuf {
     let key = hash_key(&supervisor_socket_path.to_string_lossy(), 12);
     PathBuf::from(format!(
-        r"\\.\pipe\prime-agent-worker-{key}-{}",
+        r"\\.\pipe\beehive-worker-{key}-{}",
         &worker_id[..12.min(worker_id.len())]
     ))
 }
@@ -112,9 +112,9 @@ mod tests {
             let worker = dir.join("worker-000000000000-000000000000.sock");
             assert!(SocketAddr::from_pathname(&worker).is_ok());
             if length >= 65 {
-                assert_eq!(dir, Path::new("/tmp/prime-agent-501"));
+                assert_eq!(dir, Path::new("/tmp/beehive-501"));
             } else {
-                assert_eq!(dir, tmp.join("prime-agent-501"));
+                assert_eq!(dir, tmp.join("beehive-501"));
             }
         }
     }
@@ -124,13 +124,13 @@ mod tests {
     fn short_tmpdir_keeps_the_original_socket_directory() {
         assert_eq!(
             socket_dir_for(Path::new("/tmp"), 501),
-            Path::new("/tmp/prime-agent-501")
+            Path::new("/tmp/beehive-501")
         );
     }
 
     #[test]
     fn worker_socket_names_are_deterministic() {
-        let supervisor = Path::new("/tmp/prime-agent-1/daemon.sock");
+        let supervisor = Path::new("/tmp/beehive-1/daemon.sock");
         let a = worker_socket_path(supervisor, "0123456789abcdef");
         let b = worker_socket_path(supervisor, "fedcba9876543210");
         assert_ne!(a, b);
@@ -147,13 +147,13 @@ mod tests {
     fn windows_endpoints_are_the_ts_pipe_names() {
         assert_eq!(
             default_daemon_socket_path(),
-            PathBuf::from(r"\\.\pipe\prime-agent-daemon")
+            PathBuf::from(r"\\.\pipe\beehive-daemon")
         );
-        let supervisor = Path::new(r"\\.\pipe\prime-agent-daemon");
+        let supervisor = Path::new(r"\\.\pipe\beehive-daemon");
         let a = worker_socket_path(supervisor, "0123456789abcdef");
         let rendered = a.to_string_lossy();
         assert!(
-            rendered.starts_with(r"\\.\pipe\prime-agent-worker-"),
+            rendered.starts_with(r"\\.\pipe\beehive-worker-"),
             "the worker pipe namespace: {rendered}"
         );
         assert!(

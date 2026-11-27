@@ -425,7 +425,7 @@ mod tests {
         entry
     }
 
-    /// The combined input+output limit 400 (the live Prime Inference
+    /// The combined input+output limit 400 (the live the provider
     /// shape): only the combined ceiling text.
     fn combined_limit_error(delay_ms: u64) -> Value {
         let mut entry = json!({

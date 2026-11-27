@@ -150,7 +150,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> ProcessGuard {
         .arg(agent_dir)
         // Hermetic agent dir: the ambient environment may export a real
         // agent dir; point every fallback at the test sandbox instead.
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .env_remove("PA_API_KEY")
         .env(bh_daemon::socket::BIND_CAPTURE_GAP_ENV, BIND_CAPTURE_GAP_MS)
         .stdin(Stdio::null())
@@ -183,7 +183,7 @@ fn spawn_worker(dir: &Path, socket: &Path, supervisor_socket: &Path, token: &str
             bh_daemon::worker::WORKER_RECOVERY_JOURNAL_ENV,
             dir.join("recovery.jsonl"),
         )
-        .env("PRIME_AGENT_CODING_AGENT_DIR", dir.join("agent"))
+        .env("BEEHIVE_CODING_AGENT_DIR", dir.join("agent"))
         .env(bh_daemon::socket::BIND_CAPTURE_GAP_ENV, BIND_CAPTURE_GAP_MS)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

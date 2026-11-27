@@ -641,7 +641,7 @@ async fn refine_pushed_live_context_matches_a_full_rebuild_byte_for_byte() {
     );
     assert!(custom_types(&candidate)
         .iter()
-        .all(|custom_type| custom_type != "prime-agent.refinement"));
+        .all(|custom_type| custom_type != "beehive.refinement"));
 }
 
 #[tokio::test]

@@ -42,7 +42,7 @@ impl Drop for Daemon {
     }
 }
 
-/// The kernel Python with prime-agent-runtime (and its `mcp` package) installed; skipped (with a
+/// The kernel Python with beehive-runtime (and its `mcp` package) installed; skipped (with a
 /// note) without a live install.
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_E2E_KERNEL_PYTHON") {
@@ -55,8 +55,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -77,12 +77,11 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: &Path) -> Da
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env("PRIME_AGENT_KERNEL_PYTHON", kernel_python)
+        .env("BEEHIVE_KERNEL_PYTHON", kernel_python)
         // Hermetic agent dir: the ambient environment exports this var globally; point
         // it at the test agent dir so every fallback (supervisor, worker, kernel)
         // resolves inside the sandbox.
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
-        .env_remove("PRIME_API_KEY")
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         // A supervisor killed at teardown must not leak its session workers into later
@@ -138,7 +137,7 @@ impl Client {
         self.send(&json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         }));
     }

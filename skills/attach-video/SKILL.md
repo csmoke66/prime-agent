@@ -32,7 +32,7 @@ print(await attach_video("a.mp4", "b.webm"))
 ```
 
 The file is attached as-is: it is not transcoded, trimmed, or resized, and the
-original file is left untouched. Each file must be at most 7.5 MB (prime-agent's
+original file is left untouched. Each file must be at most 7.5 MB (beehive's
 limit for one attachment); trim or downscale longer recordings first (for example
 `ffmpeg -i in.mp4 -t 10 -vf scale=640:-2 -an out.mp4`). The attachment is
 replayed to the model on every later turn, so prefer short, low-resolution

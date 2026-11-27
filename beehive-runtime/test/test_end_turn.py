@@ -13,7 +13,7 @@ class RlmEndTurnTest(unittest.TestCase):
     def test_namespace_delegates_the_sanctioned_end_turn_call(self) -> None:
         """The cell-facing `rlm` is the _RLMNamespace instance, not the
         module, so the namespace must expose `end_turn` (the bootstrap
-        binds `rlm = _prime_agent_rlm_module.rlm`); otherwise the
+        binds `rlm = _beehive_rlm_module.rlm`); otherwise the
         sanctioned terminal call raises AttributeError in every cell.
         """
         host_request = AsyncMock(return_value={"endedTurn": True})

@@ -441,7 +441,7 @@ impl Directory {
         // The known folder is the administrative trust anchor; validate it
         // and the owner/DACL of each registry directory or file beneath it.
         let program_files = Self::new(root.file, true)?;
-        let Some(agent) = program_files.open_dir(OsStr::new("Prime Agent"), false)? else {
+        let Some(agent) = program_files.open_dir(OsStr::new("Beehive"), false)? else {
             return Ok(None);
         };
         agent.open_dir(OsStr::new("workflows"), false)

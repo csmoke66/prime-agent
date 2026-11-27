@@ -357,7 +357,7 @@ pub fn settings_menu_rows(current: &SettingsCurrentValues) -> Vec<SettingsMenuRo
         SettingsMenuRow {
             id: "builtin-skills",
             label: "Built-in skills",
-            description: "Load built-in skills shipped with prime-agent (takes effect after reload)",
+            description: "Load built-in skills shipped with beehive (takes effect after reload)",
             current: current.builtin_skills.to_string(),
             values: Some(bool_value()),
             submenu: None,

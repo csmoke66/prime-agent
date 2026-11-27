@@ -33,7 +33,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use super::jsonrpc::{self, Incoming};
-use super::meta::{self, PrimeAgentEventPhase, PrimeAgentOutcome, PrimeAgentSessionMeta};
+use super::meta::{self, BeehiveEventPhase, BeehiveOutcome, BeehiveSessionMeta};
 use super::producer::{self, UpdateProducer};
 use super::types;
 use super::wire_config::{
@@ -252,7 +252,7 @@ pub struct DaemonAcpOptions {
 #[derive(Clone, Default)]
 pub(crate) struct DaemonBinding {
     pub(crate) active_session_id: String,
-    /// The durable prime-agent session id, which is also the ACP session id.
+    /// The durable beehive session id, which is also the ACP session id.
     pub(crate) session_id: String,
     /// The session's working directory: MCP stdio servers start in it and
     /// the cwd-mismatch meta reports it.
@@ -379,7 +379,7 @@ pub async fn run_daemon_attached_acp_mode(options: DaemonAcpOptions) -> anyhow::
                             for update in wire_events::wire_updates(&event, &mut current.mapping) {
                                 let _ = current
                                     .producer
-                                    .publish(&update, turn_id, PrimeAgentEventPhase::Event, None)
+                                    .publish(&update, turn_id, BeehiveEventPhase::Event, None)
                                     .await;
                             }
                             if matches!(
@@ -426,13 +426,13 @@ pub async fn run_daemon_attached_acp_mode(options: DaemonAcpOptions) -> anyhow::
                                 .producer
                                 .publish(
                                     &types::AcpSessionUpdate::SessionInfoUpdate {
-                                        meta: meta::prime_agent_meta(&PrimeAgentSessionMeta {
+                                        meta: meta::beehive_meta(&BeehiveSessionMeta {
                                             heartbeats_changed: Some(true),
                                             ..Default::default()
                                         }),
                                     },
                                     0,
-                                    PrimeAgentEventPhase::Event,
+                                    BeehiveEventPhase::Event,
                                     None,
                                 )
                                 .await;
@@ -1123,7 +1123,7 @@ pub(crate) async fn reserve_session_slot(
     {
         let _ = tx.send(super::internal_error(
             id,
-            "prime-agent ACP mode hosts one session per connection; start another prime-agent process for a second session",
+            "beehive ACP mode hosts one session per connection; start another beehive process for a second session",
         ));
         return false;
     }
@@ -1249,8 +1249,8 @@ pub(crate) async fn admit_session(
     if let Some(requested) = params.cwd.as_deref().filter(|cwd| !cwd.is_empty()) {
         let actual = binding.cwd.display().to_string();
         if !super::same_cwd(Path::new(requested), &binding.cwd) {
-            result["_meta"] = meta::prime_agent_meta(&PrimeAgentSessionMeta {
-                cwd: Some(meta::PrimeAgentCwdMeta {
+            result["_meta"] = meta::beehive_meta(&BeehiveSessionMeta {
+                cwd: Some(meta::BeehiveCwdMeta {
                     requested: requested.to_string(),
                     actual,
                 }),
@@ -1265,7 +1265,7 @@ pub(crate) async fn admit_session(
     ) {
         let _ = hosted
             .producer
-            .publish(&update, 0, PrimeAgentEventPhase::Event, None)
+            .publish(&update, 0, BeehiveEventPhase::Event, None)
             .await;
     }
     // Install the hosted session before the admission response leaves
@@ -1325,7 +1325,7 @@ pub(crate) async fn admit_session(
                 for update in wire_events::wire_updates(&event, &mut current.mapping) {
                     let _ = current
                         .producer
-                        .publish(&update, 0, PrimeAgentEventPhase::Event, None)
+                        .publish(&update, 0, BeehiveEventPhase::Event, None)
                         .await;
                 }
             }
@@ -1651,7 +1651,7 @@ async fn prompt_turn(
         return super::turn_failure_error(
             &id,
             &failure,
-            &format!("prime-agent turn failed: {failure}"),
+            &format!("beehive turn failed: {failure}"),
         );
     }
     // The autonomous accounting for the completion envelope: the daemon's
@@ -1692,7 +1692,7 @@ async fn prompt_turn(
     // The boundary, completion, and terminal quiescence frames match the
     // TS captures.
     let boundary = types::AcpSessionUpdate::SessionInfoUpdate {
-        meta: meta::prime_agent_meta(&PrimeAgentSessionMeta {
+        meta: meta::beehive_meta(&BeehiveSessionMeta {
             terminal_quiescence_expected: Some(true),
             ..Default::default()
         }),
@@ -1701,15 +1701,15 @@ async fn prompt_turn(
         .publish(
             &boundary,
             turn_id,
-            PrimeAgentEventPhase::ResponseBoundary,
-            Some(PrimeAgentOutcome::Result),
+            BeehiveEventPhase::ResponseBoundary,
+            Some(BeehiveOutcome::Result),
         )
         .await;
     // The completion envelope: the turn's own observation, with the
     // live outstanding-subagent count the settle loop then waits down to
     // zero.
     let quiescence = types::AcpSessionUpdate::SessionInfoUpdate {
-        meta: meta::prime_agent_meta(&PrimeAgentSessionMeta {
+        meta: meta::beehive_meta(&BeehiveSessionMeta {
             autonomous: autonomous_meta,
             quiescence: Some(quiescence_meta(
                 autonomous_status.as_ref(),
@@ -1720,7 +1720,7 @@ async fn prompt_turn(
         }),
     };
     let completion_published = producer
-        .publish(&quiescence, turn_id, PrimeAgentEventPhase::Event, None)
+        .publish(&quiescence, turn_id, BeehiveEventPhase::Event, None)
         .await;
     // The settlement loop (TS `finalizePendingTerminal`): the barrier is
     // the event, no timer, and the roster re-read is the response-cut
@@ -1768,7 +1768,7 @@ async fn prompt_turn(
         // with this turn; later events resume turn 0.
         producer.finish_prompt(turn_id).await;
         let terminal = types::AcpSessionUpdate::SessionInfoUpdate {
-            meta: meta::prime_agent_meta(&PrimeAgentSessionMeta {
+            meta: meta::beehive_meta(&BeehiveSessionMeta {
                 autonomous: status.enabled.then(|| meta::autonomous_meta(&status)),
                 quiescence: Some(terminal_quiescence),
                 ..Default::default()
@@ -1778,8 +1778,8 @@ async fn prompt_turn(
             .publish(
                 &terminal,
                 turn_id,
-                PrimeAgentEventPhase::TerminalQuiescence,
-                Some(PrimeAgentOutcome::Result),
+                BeehiveEventPhase::TerminalQuiescence,
+                Some(BeehiveOutcome::Result),
             )
             .await;
         if !published || !completion_published || !terminal_published {
@@ -1823,7 +1823,7 @@ async fn prompt_turn(
 /// `terminalQuiescenceExpected: false`).
 async fn publish_error_boundary(producer: &Arc<UpdateProducer>, turn_id: u64) {
     let boundary = types::AcpSessionUpdate::SessionInfoUpdate {
-        meta: meta::prime_agent_meta(&PrimeAgentSessionMeta {
+        meta: meta::beehive_meta(&BeehiveSessionMeta {
             terminal_quiescence_expected: Some(false),
             ..Default::default()
         }),
@@ -1832,8 +1832,8 @@ async fn publish_error_boundary(producer: &Arc<UpdateProducer>, turn_id: u64) {
         .publish(
             &boundary,
             turn_id,
-            PrimeAgentEventPhase::ResponseBoundary,
-            Some(PrimeAgentOutcome::Error),
+            BeehiveEventPhase::ResponseBoundary,
+            Some(BeehiveOutcome::Error),
         )
         .await;
 }
@@ -1933,8 +1933,8 @@ fn quiescence_meta(
     status: Option<&bh_core::autonomous::AgentAutonomousStatus>,
     children: &[Value],
     outstanding_background_jobs: u64,
-) -> meta::PrimeAgentQuiescenceMeta {
-    meta::PrimeAgentQuiescenceMeta {
+) -> meta::BeehiveQuiescenceMeta {
+    meta::BeehiveQuiescenceMeta {
         outstanding_subagents: outstanding_subagents(children),
         remaining_autonomous_continuations: status.filter(|status| status.enabled).map_or(
             0,

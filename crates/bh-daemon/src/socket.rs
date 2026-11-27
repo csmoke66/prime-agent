@@ -99,7 +99,7 @@ pub async fn prepare_socket_path(path: &Path) -> Result<()> {
     prepare_locked_socket_path(path).await
 }
 
-/// Create a socket directory prime-agent owns (the default one, or one it
+/// Create a socket directory beehive owns (the default one, or one it
 /// creates for a custom socket) and refuse it unless it is a real directory
 /// owned by the current user: another user who pre-created or symlinked it
 /// could swap the socket. Then restrict it to the owner.
@@ -309,7 +309,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let real = dir.path().join("real");
         std::fs::create_dir(&real).unwrap();
-        let link = dir.path().join("prime-agent");
+        let link = dir.path().join("beehive");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let error = prepare_owned_socket_dir(&link).unwrap_err();
         assert!(error.to_string().contains("symlink"), "{error}");

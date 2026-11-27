@@ -4513,7 +4513,7 @@ def _cap_factory_frame(frame: dict[str, Any]) -> None:
 # - repo: the bundled machines shipped INSIDE the runtime package
 #   (``src/rlm/machines/<name>/MACHINE.md``, wheel package data, so every
 #   installed kernel sees the same seeds a checkout does);
-#   ``PRIME_AGENT_MACHINES_DIR`` redirects the level at a team directory.
+#   ``BEEHIVE_MACHINES_DIR`` redirects the level at a team directory.
 # - user: ``<agent dir>/machines/<name>/MACHINE.md`` (personal machines).
 #
 # ``import_machine`` is the library's gate: it parses the file, passes the
@@ -4877,7 +4877,7 @@ def _machine_env_dir(name: str) -> str | None:
 def repo_machines_dir() -> Path:
     """The bundled machine library shipped inside the runtime package.
 
-    An explicit ``PRIME_AGENT_MACHINES_DIR`` wins (a team can point the
+    An explicit ``BEEHIVE_MACHINES_DIR`` wins (a team can point the
     shared level at their own directory); otherwise the library resolves
     relative to this module — ``src/rlm/machines`` in a checkout, exactly
     the wheel-package data a kernel venv installs into
@@ -4885,7 +4885,7 @@ def repo_machines_dir() -> Path:
     seeds a checkout does, with no source-tree walk-up that could pick up
     a stray directory above an installed venv.
     """
-    override = _machine_env_dir("PRIME_AGENT_MACHINES_DIR")
+    override = _machine_env_dir("BEEHIVE_MACHINES_DIR")
     if override:
         return Path(override).expanduser().resolve()
     return Path(__file__).resolve().parent / MACHINES_DIR_NAME
@@ -4894,9 +4894,9 @@ def repo_machines_dir() -> Path:
 def user_machines_dir() -> Path:
     """The personal machines directory (``<agent dir>/machines``)."""
     raw = (
-        _machine_env_dir("PRIME_AGENT_CODING_AGENT_DIR")
-        or _machine_env_dir("PI_CODING_AGENT_DIR")
-        or str(Path.home() / ".prime" / "agent")
+        _machine_env_dir("BEEHIVE_CODING_AGENT_DIR")
+        or _machine_env_dir("BEEHIVE_CODING_AGENT_DIR")
+        or str(Path.home() / ".beehive")
     )
     return Path(raw).expanduser().resolve() / MACHINES_DIR_NAME
 
@@ -5249,7 +5249,7 @@ def export_machine(
 
 
 def cli_dispatch(payload: Any) -> "dict[str, Any]":
-    """JSON facade for the ``prime-agent factory`` subcommands.
+    """JSON facade for the ``beehive factory`` subcommands.
 
     The CLI resolves the kernel Python, feeds one JSON payload on stdin,
     and reads one JSON result from stdout: ``{"ok": true, ...}`` or
@@ -5710,9 +5710,9 @@ watched = await rlm.factory.watch(result["run_id"], 30)
 - The machine library: machines are `MACHINE.md` files (frontmatter plus
   one fenced `machine-spec` block), one directory per machine, resolved
   from two levels — the bundled seeds shipped inside the runtime (visible
-  in every install; `PRIME_AGENT_MACHINES_DIR` redirects the level at a
+  in every install; `BEEHIVE_MACHINES_DIR` redirects the level at a
   team directory) first, the personal `machines/` library under the agent
-  dir second; the earlier level wins on name conflicts. `prime-agent
+  dir second; the earlier level wins on name conflicts. `beehive
   factory list | import | export` manages them: list shows only what
   parses and validates (broken files print as warnings), import runs the same
   write-time validation as a stored spec so an invalid machine never

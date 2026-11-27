@@ -42,7 +42,7 @@ DEFAULT_SNAPSHOT_MAX_VARIABLE_BYTES = 16 * 1024 * 1024
 
 # Plain ASCII, never a pickle start: _restore_state sniffs it to tell v2 framed
 # payloads from legacy (single dill-pickled dict) ones.
-_SNAPSHOT_MAGIC = b"PRIME-AGENT-KERNEL-SNAPSHOT-V2\n"
+_SNAPSHOT_MAGIC = b"BEEHIVE-KERNEL-SNAPSHOT-V2\n"
 
 # Stream writes must fit one protocol frame: the host buffers whole lines
 # before its per-execution truncation, and raw fd writes already arrive as
@@ -1664,7 +1664,7 @@ def _read_requests(stdin_fd: int, queue: asyncio.Queue[dict[str, Any]]) -> None:
 
 
 def _resolve_owner_pid() -> int:
-    raw = os.environ.get("PRIME_AGENT_KERNEL_OWNER_PID", "")
+    raw = os.environ.get("BEEHIVE_KERNEL_OWNER_PID", "")
     try:
         owner = int(raw)
     except ValueError:

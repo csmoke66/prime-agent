@@ -26,7 +26,7 @@ fn entry_json(server: &str, url: &str) -> serde_json::Value {
         "auth": { "strategy": "oauth", "clientRegistration": "dynamic" },
         "setup": { "status": "ready" },
         "verification": { "status": "unverified" },
-        "legacyBuiltin": false, "provenance": [{ "source": "prime" }],
+        "legacyBuiltin": false, "provenance": [{ "source": "beehive" }],
         "oauth": { "kind": "oauth" }
     })
 }
@@ -46,7 +46,7 @@ fn pasteable_entry_json(server: &str, url: &str) -> serde_json::Value {
             ]
         },
         "verification": { "status": "unverified" },
-        "legacyBuiltin": false, "provenance": [{ "source": "prime" }]
+        "legacyBuiltin": false, "provenance": [{ "source": "beehive" }]
     })
 }
 
@@ -579,7 +579,7 @@ async fn paste_flow_installs_a_bearer_token_service_end_to_end() {
             ]
         },
         "verification": { "status": "unverified" },
-        "legacyBuiltin": false, "provenance": [{ "source": "prime" }]
+        "legacyBuiltin": false, "provenance": [{ "source": "beehive" }]
     });
     let entries = catalog_from_entries(&[two_cred]);
     for entry in &entries {

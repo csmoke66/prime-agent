@@ -276,7 +276,7 @@ mod tests {
             dir.join("agent").join("models.json"),
             json!({
                 "providers": {
-                    "prime-inference": {
+                    "test-provider": {
                         "api": "openai-completions",
                         "baseUrl": "http://127.0.0.1:9/v1",
                         "apiKey": "sk-test",
@@ -303,7 +303,7 @@ mod tests {
                     "set_model",
                     &json!({
                         "activeSessionId": "allowlist-session",
-                        "provider": "prime-inference",
+                        "provider": "test-provider",
                         "modelId": "mock-1"
                     }),
                 )
@@ -410,7 +410,7 @@ mod tests {
         models_fixture(dir.path());
         let agent_dir = dir.path().join("agent");
         // The signed-in provider keeps resolving (the regression guard).
-        let model = resolve_available_model(&agent_dir, "prime-inference", "mock-1")
+        let model = resolve_available_model(&agent_dir, "test-provider", "mock-1")
             .expect("the signed-in provider resolves");
         assert_eq!(model.id, "mock-1");
 
@@ -450,13 +450,13 @@ mod tests {
         models_fixture(dir.path());
         let agent_dir = dir.path().join("agent");
         // The fixture signs the provider in but grants no private-model
-        // authorization (no Prime credential, no explicit ids).
-        let error = resolve_available_model(&agent_dir, "prime-inference", "internal/glm-5.2-fast")
+        // authorization (no provider credential, no explicit ids).
+        let error = resolve_available_model(&agent_dir, "test-provider", "internal/glm-5.2-fast")
             .expect_err("the unauthorized private model refuses");
         assert_eq!(
             error,
             bh_core::models::SetModelSelectionError::NotFound {
-                provider: "prime-inference".to_string(),
+                provider: "test-provider".to_string(),
                 model_id: "internal/glm-5.2-fast".to_string(),
             }
         );
@@ -505,7 +505,7 @@ mod tests {
             dir.path().join("models.json"),
             serde_json::json!({
                 "providers": {
-                    "prime-inference": {
+                    "test-provider": {
                         "api": "openai-completions",
                         "baseUrl": "http://127.0.0.1:9/v1",
                         "apiKey": "sk-test",
@@ -521,10 +521,10 @@ mod tests {
         )
         .expect("write models.json");
         let model =
-            resolve_available_model(dir.path(), "prime-inference", "mock-1").expect("resolves");
+            resolve_available_model(dir.path(), "test-provider", "mock-1").expect("resolves");
         assert_eq!(model.id, "mock-1");
-        let error = resolve_available_model(dir.path(), "prime-inference", "nope")
+        let error = resolve_available_model(dir.path(), "test-provider", "nope")
             .expect_err("unknown model fails");
-        assert_eq!(error.to_string(), "Model not found: prime-inference/nope");
+        assert_eq!(error.to_string(), "Model not found: test-provider/nope");
     }
 }

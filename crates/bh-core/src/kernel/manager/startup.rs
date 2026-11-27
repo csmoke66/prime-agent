@@ -286,7 +286,7 @@ impl Inner {
             crate::kernel::bootstrap::invalidate_runtime_probe_cache();
             return Err(anyhow!(
                 "Kernel runtime speaks protocol {protocol}, expected {REPL_PROTOCOL_VERSION}. \
-                 Update prime-agent-runtime in the kernel Python (PRIME_AGENT_KERNEL_PYTHON) to match this prime-agent."
+                 Update beehive-runtime in the kernel Python (BEEHIVE_KERNEL_PYTHON) to match this beehive."
             ));
         }
         {
@@ -605,7 +605,7 @@ fn kernel_spawn_env(
         env.insert("PYTHONUTF8".into(), "1".into());
     }
     env.insert(
-        "PRIME_AGENT_KERNEL_OWNER_PID".into(),
+        "BEEHIVE_KERNEL_OWNER_PID".into(),
         std::process::id().to_string().into(),
     );
     crate::kernel::python_env::sanitize_python_env(&mut env);
@@ -677,7 +677,7 @@ mod tests {
             Some("1")
         );
         assert_eq!(
-            env.get(std::ffi::OsStr::new("PRIME_AGENT_KERNEL_OWNER_PID"))
+            env.get(std::ffi::OsStr::new("BEEHIVE_KERNEL_OWNER_PID"))
                 .and_then(|value| value.to_str()),
             Some(std::process::id().to_string().as_str())
         );

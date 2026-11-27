@@ -47,7 +47,7 @@ impl RpcChild {
         Self::spawn_seeded(args, script, None, Some(Self::kernel_python()))
     }
 
-    /// The kernel Python with prime-agent-runtime installed; a missing
+    /// The kernel Python with beehive-runtime installed; a missing
     /// kernel FAILS the lane loudly (the wake lane's proof).
     fn kernel_python() -> std::path::PathBuf {
         if let Some(explicit) = std::env::var_os("PA_E2E_KERNEL_PYTHON") {
@@ -60,8 +60,8 @@ impl RpcChild {
             return explicit;
         }
         let candidate = std::path::PathBuf::from(std::env::var("HOME").map_or_else(
-            |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-            |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+            |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+            |home| format!("{home}/.beehive/kernel-venv/bin/python"),
         ));
         assert!(
             candidate.exists(),
@@ -85,17 +85,17 @@ impl RpcChild {
             std::fs::create_dir_all(&agent_dir).unwrap();
             std::fs::write(agent_dir.join("models.json"), models.to_string()).unwrap();
         }
-        let bin = env!("CARGO_BIN_EXE_prime-agent");
+        let bin = env!("CARGO_BIN_EXE_beehive");
         let mut command = Command::new(bin);
         command
             .args(args)
             .env("HOME", home.path())
-            .env("PRIME_AGENT_CODING_AGENT_DIR", home.path().join("agent"))
-            .env("PRIME_AGENT_FAUX_SCRIPT", script.to_string())
+            .env("BEEHIVE_CODING_AGENT_DIR", home.path().join("agent"))
+            .env("BEEHIVE_FAUX_SCRIPT", script.to_string())
             .env_remove("RLM_DEPTH")
             .env_remove("RLM_MAX_DEPTH");
         if let Some(kernel) = kernel_python {
-            command.env("PRIME_AGENT_KERNEL_PYTHON", kernel);
+            command.env("BEEHIVE_KERNEL_PYTHON", kernel);
         }
         let mut child = command
             .current_dir(home.path())
@@ -1067,7 +1067,7 @@ fn write_corpus_fixture(path: &std::path::Path, size_mib: usize) {
                         "arguments": { "code": format!("print('corpus {turn}')") },
                     }],
                     "api": "openai-completions",
-                    "provider": "prime-inference",
+                    "provider": "test-provider",
                     "model": "mock-1",
                     "usage": {
                         "input": 100, "output": 20, "cacheRead": 10, "cacheWrite": 0,
@@ -1135,7 +1135,7 @@ fn write_corpus_fixture(path: &std::path::Path, size_mib: usize) {
                     { "type": "text", "text": "CVIS-E2E-TAIL end of corpus." },
                 ],
                 "api": "openai-completions",
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
                 "usage": {
                     "input": 100, "output": 20, "cacheRead": 10, "cacheWrite": 0,
@@ -1180,11 +1180,11 @@ impl TimedRpcChild {
     /// Spawn with the reader deferred (stdout held unread until `begin_reading`).
     fn spawn_stalled(fixture: &std::path::Path, script: &Value) -> TimedRpcChild {
         let home = tempfile::TempDir::new().unwrap();
-        let bin = env!("CARGO_BIN_EXE_prime-agent");
+        let bin = env!("CARGO_BIN_EXE_beehive");
         let mut child = Command::new(bin)
             .args(["--mode", "rpc", "--resume", fixture.to_str().unwrap()])
             .env("HOME", home.path())
-            .env("PRIME_AGENT_FAUX_SCRIPT", script.to_string())
+            .env("BEEHIVE_FAUX_SCRIPT", script.to_string())
             .env("RUST_LOG", "error")
             .current_dir(home.path())
             .stdin(Stdio::piped())

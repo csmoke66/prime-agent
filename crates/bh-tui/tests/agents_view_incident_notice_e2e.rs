@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 
 use support::{respond, respond_failure, view_options, write_json};
 
-/// Environment mutations are process-global: the `PRIME_AGENT_CODING_AGENT_DIR` redirect serializes
+/// Environment mutations are process-global: the `BEEHIVE_CODING_AGENT_DIR` redirect serializes
 /// on one lock and restores on exit. A tokio mutex (a std guard across an await is a clippy error).
 static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -55,7 +55,7 @@ impl MockSupervisor {
                 &mut writer,
                 &json!({
                     "type": "daemon_hello",
-                    "protocol": { "name": "prime-agent.daemon", "version": 7 },
+                    "protocol": { "name": "beehive.daemon", "version": 7 },
                     "serverCapabilities": [],
                 }),
             );
@@ -166,8 +166,8 @@ fn supervisor_start_line() -> String {
         "ts": iso_ago(600_000),
         "level": "warn",
         "component": "coding-agent.daemon-supervisor",
-        "msg": "Prime Agent daemon supervisor e14de15c listening on /tmp/prime-agent-501/daemon.sock",
-        "socketPath": "/tmp/prime-agent-501/daemon.sock",
+        "msg": "Beehive daemon supervisor e14de15c listening on /tmp/beehive-501/daemon.sock",
+        "socketPath": "/tmp/beehive-501/daemon.sock",
         "pid": 15026,
     })
     .to_string()
@@ -202,8 +202,8 @@ async fn renders_the_collapsed_worker_crash_notice_line() {
         format!("{}\n{}\n", supervisor_start_line(), worker_crash_line()),
     )
     .expect("write fixture log");
-    let previous = std::env::var_os("PRIME_AGENT_CODING_AGENT_DIR");
-    std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", agent_dir.path());
+    let previous = std::env::var_os("BEEHIVE_CODING_AGENT_DIR");
+    std::env::set_var("BEEHIVE_CODING_AGENT_DIR", agent_dir.path());
 
     let plan = AgentsHeadlessPlan {
         steps: vec![AgentsStep::WaitSettle { timeout_ms: 2_500 }],
@@ -220,8 +220,8 @@ async fn renders_the_collapsed_worker_crash_notice_line() {
     .outcome;
 
     match previous {
-        Some(previous) => std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", previous),
-        None => std::env::remove_var("PRIME_AGENT_CODING_AGENT_DIR"),
+        Some(previous) => std::env::set_var("BEEHIVE_CODING_AGENT_DIR", previous),
+        None => std::env::remove_var("BEEHIVE_CODING_AGENT_DIR"),
     }
 
     let frames_text = outcome.frames.join("\n");
@@ -230,7 +230,7 @@ async fn renders_the_collapsed_worker_crash_notice_line() {
         "{frames_text}"
     );
     assert!(
-        frames_text.contains("run prime-agent incident for the timeline"),
+        frames_text.contains("run beehive incident for the timeline"),
         "{frames_text}"
     );
     assert!(frames_text.contains("⚠"), "{frames_text}");
@@ -264,8 +264,8 @@ async fn dismisses_with_esc_and_the_dismissal_survives_reentry() {
         format!("{}\n{}\n", supervisor_start_line(), worker_crash_line()),
     )
     .expect("write fixture log");
-    let previous = std::env::var_os("PRIME_AGENT_CODING_AGENT_DIR");
-    std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", agent_dir.path());
+    let previous = std::env::var_os("BEEHIVE_CODING_AGENT_DIR");
+    std::env::set_var("BEEHIVE_CODING_AGENT_DIR", agent_dir.path());
 
     let plan = AgentsHeadlessPlan {
         steps: vec![
@@ -290,12 +290,12 @@ async fn dismisses_with_esc_and_the_dismissal_survives_reentry() {
         "{last_frame}"
     );
     assert!(
-        !last_frame.contains("prime-agent incident for the timeline"),
+        !last_frame.contains("beehive incident for the timeline"),
         "{last_frame}"
     );
     assert!(outcome.frames.iter().any(|frame| {
         frame.contains("worker 5b1d3aeb91ee crashed at")
-            && frame.contains("prime-agent incident for the timeline")
+            && frame.contains("beehive incident for the timeline")
     }));
 
     // Re-entry with the carried state: the dismissal horizon hides the same incident; no poll
@@ -314,13 +314,13 @@ async fn dismisses_with_esc_and_the_dismissal_survives_reentry() {
             .outcome;
 
     match previous {
-        Some(previous) => std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", previous),
-        None => std::env::remove_var("PRIME_AGENT_CODING_AGENT_DIR"),
+        Some(previous) => std::env::set_var("BEEHIVE_CODING_AGENT_DIR", previous),
+        None => std::env::remove_var("BEEHIVE_CODING_AGENT_DIR"),
     }
 
     let frames_text = second.frames.join("\n");
     assert!(
-        !frames_text.contains("prime-agent incident for the timeline"),
+        !frames_text.contains("beehive incident for the timeline"),
         "{frames_text}"
     );
     assert!(
@@ -348,8 +348,8 @@ async fn esc_cancels_an_armed_delete_confirmation_and_keeps_the_notice() {
         format!("{}\n{}\n", supervisor_start_line(), worker_crash_line()),
     )
     .expect("write fixture log");
-    let previous = std::env::var_os("PRIME_AGENT_CODING_AGENT_DIR");
-    std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", agent_dir.path());
+    let previous = std::env::var_os("BEEHIVE_CODING_AGENT_DIR");
+    std::env::set_var("BEEHIVE_CODING_AGENT_DIR", agent_dir.path());
 
     // ctrl+x arms the stop-or-delete confirm over the selected row; Esc must cancel it and keep the
     // notice, or the next ctrl+x would fire without a fresh confirmation.
@@ -372,8 +372,8 @@ async fn esc_cancels_an_armed_delete_confirmation_and_keeps_the_notice() {
     .outcome;
 
     match previous {
-        Some(previous) => std::env::set_var("PRIME_AGENT_CODING_AGENT_DIR", previous),
-        None => std::env::remove_var("PRIME_AGENT_CODING_AGENT_DIR"),
+        Some(previous) => std::env::set_var("BEEHIVE_CODING_AGENT_DIR", previous),
+        None => std::env::remove_var("BEEHIVE_CODING_AGENT_DIR"),
     }
 
     // The run exited through the empty-editor Esc (the delete confirm consumed the dismissal), and

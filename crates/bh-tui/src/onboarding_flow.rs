@@ -424,7 +424,7 @@ mod tests {
     use crate::theme::{ColorMode, Theme};
 
     fn theme() -> Theme {
-        Theme::builtin("prime", ColorMode::TrueColor)
+        Theme::builtin("beehive", ColorMode::TrueColor)
     }
 
     fn options(count: usize) -> Vec<ProviderPickerOption> {

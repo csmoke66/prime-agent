@@ -27,7 +27,7 @@ fn workflow(instructions: &str) -> Workflow {
 }
 
 fn project_path(cwd: &Path) -> PathBuf {
-    cwd.join(".prime/workflows")
+    cwd.join(".beehive/workflows")
 }
 
 fn create_project(cwd: &Path, name: &str, definition: &Workflow) -> Result<()> {
@@ -236,17 +236,17 @@ fn rejects_symlink_directories_and_files() {
     let project = tempdir().unwrap();
     let outside = tempdir().unwrap();
     let cwd = project.path();
-    let prime = cwd.join(".prime");
+    let beehive_dir = cwd.join(".beehive");
     let registry = project_path(cwd);
     let valid = workflow("Review.");
     let victim = outside.path().join("victim.md");
     stdfs::write(&victim, "untouched").unwrap();
 
-    symlink(outside.path(), &prime).unwrap();
+    symlink(outside.path(), &beehive_dir).unwrap();
     assert!(create_project(cwd, "review", &valid).is_err());
     assert!(!outside.path().join("workflows").exists());
-    stdfs::remove_file(&prime).unwrap();
-    stdfs::create_dir(&prime).unwrap();
+    stdfs::remove_file(&beehive_dir).unwrap();
+    stdfs::create_dir(&beehive_dir).unwrap();
     symlink(outside.path(), &registry).unwrap();
     assert!(create_project(cwd, "review", &valid).is_err());
     assert!(!outside.path().join("review.json").exists());

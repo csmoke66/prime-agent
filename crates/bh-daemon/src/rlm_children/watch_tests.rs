@@ -119,7 +119,7 @@ async fn spawn_fake_supervisor(
                 let mut reader = BufReader::new(reader);
                 writer
                     .write_all(
-                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                     )
                     .await
                     .unwrap();

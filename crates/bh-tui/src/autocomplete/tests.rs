@@ -275,7 +275,7 @@ fn should_trigger_file_completion_skips_slash_names() {
 }
 
 fn theme() -> crate::theme::Theme {
-    crate::theme::Theme::builtin("prime", crate::theme::ColorMode::TrueColor)
+    crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn command_catalog_parse_keeps_skills_and_source_labels() {
                 "name": "skill:packaged",
                 "description": "From the registry",
                 "source": "skill",
-                "sourceInfo": { "source": "npm:@prime/skill-pack", "scope": "project" },
+                "sourceInfo": { "source": "npm:@beehive/skill-pack", "scope": "project" },
             },
             {
                 "name": "skill:path-skill",
@@ -481,7 +481,7 @@ fn command_catalog_parse_keeps_skills_and_source_labels() {
     assert_eq!(entries[0].source_tag.as_deref(), Some("#user"));
     assert_eq!(
         entries[1].source_tag.as_deref(),
-        Some("#project:npm:@prime/skill-pack")
+        Some("#project:npm:@beehive/skill-pack")
     );
     assert_eq!(entries[2].source_tag.as_deref(), Some("#temporary"));
     // Prompt-template entries stay out; a malformed response yields
@@ -615,25 +615,25 @@ fn at_completion_keeps_the_typed_quoting() {
 #[test]
 fn at_directory_scope_lists_its_children() {
     let base = tempfile::TempDir::new().expect("temp dir");
-    std::fs::create_dir_all(base.path().join("prime-agent/src")).expect("mkdir");
+    std::fs::create_dir_all(base.path().join("beehive/src")).expect("mkdir");
     for file in [
-        "prime-agent/src/lib.rs",
-        "prime-agent/README.md",
-        "prime-agent/Cargo.toml",
-        "prime-agent/.env",
+        "beehive/src/lib.rs",
+        "beehive/README.md",
+        "beehive/Cargo.toml",
+        "beehive/.env",
         "other.md",
     ] {
         std::fs::write(base.path().join(file), "x").expect("write");
     }
     let provider = provider(base.path().to_str().expect("utf8"));
     assert_eq!(
-        at_item_values(&provider, "@prime-agent/"),
+        at_item_values(&provider, "@beehive/"),
         [
-            "@prime-agent/src/",
-            "@prime-agent/README.md",
-            "@prime-agent/Cargo.toml",
-            "@prime-agent/src/lib.rs",
-            "@prime-agent/.env",
+            "@beehive/src/",
+            "@beehive/README.md",
+            "@beehive/Cargo.toml",
+            "@beehive/src/lib.rs",
+            "@beehive/.env",
         ]
     );
 }

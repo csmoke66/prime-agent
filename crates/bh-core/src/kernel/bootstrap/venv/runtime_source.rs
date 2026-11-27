@@ -5,10 +5,10 @@
 use super::{expand_home, Digest, Path, PathBuf};
 use anyhow::Context;
 
-/// Directory of the installed `prime-agent-runtime` sources. The Rust binary ships the same sidecar
+/// Directory of the installed `beehive-runtime` sources. The Rust binary ships the same sidecar
 /// layout the compiled TS executable uses.
 pub(in crate::kernel::bootstrap) fn package_dir() -> PathBuf {
-    if let Ok(env_dir) = std::env::var("PI_PACKAGE_DIR") {
+    if let Ok(env_dir) = std::env::var("BEEHIVE_PACKAGE_DIR") {
         if !env_dir.is_empty() {
             return expand_home(&env_dir);
         }
@@ -27,17 +27,17 @@ pub(in crate::kernel::bootstrap) fn packaged_runtime_dir() -> Option<PathBuf> {
 
 fn resolve_runtime_source_dir(package: &Path, checkout: Option<&Path>) -> Option<PathBuf> {
     let mut candidates = vec![
-        package.join("prime-agent-runtime"),
-        package.join("dist").join("prime-agent-runtime"),
+        package.join("beehive-runtime"),
+        package.join("dist").join("beehive-runtime"),
     ];
     // Source checkouts keep the sidecar at the workspace root (TS resolves
     // module-relative monorepo candidates the same way).
     if let Some(root) = checkout {
-        candidates.push(root.join("prime-agent-runtime"));
+        candidates.push(root.join("beehive-runtime"));
     }
     candidates.into_iter().find_map(|candidate| {
         // Always pass an absolute filesystem path to uv, including when
-        // PI_PACKAGE_DIR was relative. A manifest alone is not a runtime.
+        // BEEHIVE_PACKAGE_DIR was relative. A manifest alone is not a runtime.
         let candidate = candidate.canonicalize().ok()?;
         if !["pyproject.toml", "src/rlm/__init__.py", "src/rlm/repl.py"]
             .iter()
@@ -47,14 +47,13 @@ fn resolve_runtime_source_dir(package: &Path, checkout: Option<&Path>) -> Option
         }
         let manifest = std::fs::read_to_string(candidate.join("pyproject.toml")).ok()?;
         let manifest: toml::Value = toml::from_str(&manifest).ok()?;
-        (manifest.get("project")?.get("name")?.as_str()? == "prime-agent-runtime")
-            .then_some(candidate)
+        (manifest.get("project")?.get("name")?.as_str()? == "beehive-runtime").then_some(candidate)
     })
 }
 
 pub(in crate::kernel::bootstrap) fn require_runtime_source_dir() -> anyhow::Result<PathBuf> {
     resolve_runtime_source_dir(&package_dir(), crate::packages::source_checkout_root()).context(
-        "Prime Agent requires a local prime-agent-runtime directory containing its pyproject.toml and src/rlm sources; reinstall Prime Agent with the runtime beside the binary, or set PI_PACKAGE_DIR to the complete trusted package directory. The runtime will not be downloaded from a package index.",
+        "Beehive requires a local beehive-runtime directory containing its pyproject.toml and src/rlm sources; reinstall Beehive with the runtime beside the binary, or set BEEHIVE_PACKAGE_DIR to the complete trusted package directory. The runtime will not be downloaded from a package index.",
     )
 }
 
@@ -130,7 +129,7 @@ mod tests {
         std::fs::write(machines.join("MACHINE.md"), machine_body)?;
         std::fs::write(
             temp.join("pyproject.toml"),
-            "[project]\nname = 'prime-agent-runtime'\n",
+            "[project]\nname = 'beehive-runtime'\n",
         )?;
         Ok(())
     }
@@ -140,7 +139,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let package = temp.path();
         assert_eq!(resolve_runtime_source_dir(package, None), None);
-        let runtime = package.join("prime-agent-runtime");
+        let runtime = package.join("beehive-runtime");
         runtime_fixture(&runtime, "machine")?;
         for file in ["pyproject.toml", "src/rlm/__init__.py", "src/rlm/repl.py"] {
             let path = runtime.join(file);
@@ -165,9 +164,9 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let package = temp.path().join("package");
         let checkout = temp.path().join("checkout");
-        let direct = package.join("prime-agent-runtime");
-        let dist = package.join("dist/prime-agent-runtime");
-        let source = checkout.join("prime-agent-runtime");
+        let direct = package.join("beehive-runtime");
+        let dist = package.join("dist/beehive-runtime");
+        let source = checkout.join("beehive-runtime");
         for runtime in [&source, &dist, &direct] {
             runtime_fixture(runtime, "machine")?;
             assert_eq!(
@@ -188,7 +187,7 @@ mod tests {
     fn relative_package_paths_are_never_returned_as_requirements() -> anyhow::Result<()> {
         let cwd = std::env::current_dir()?;
         let temp = tempfile::tempdir_in(&cwd)?;
-        let runtime = temp.path().join("prime-agent-runtime");
+        let runtime = temp.path().join("beehive-runtime");
         runtime_fixture(&runtime, "machine")?;
         let relative = temp.path().strip_prefix(&cwd)?;
         assert_eq!(

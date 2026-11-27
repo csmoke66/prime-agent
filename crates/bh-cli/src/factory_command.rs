@@ -1,4 +1,4 @@
-//! `prime-agent factory`: the machine library commands.
+//! `beehive factory`: the machine library commands.
 //!
 //! Every subcommand — list included — is one `rlm.factory.cli_dispatch`
 //! payload through the kernel Python. The kernel owns the whole library
@@ -38,7 +38,7 @@ const CLI_DISPATCH_RUNNER: &str = concat!(
     "print(json.dumps(cli_dispatch(payload)))\n",
 );
 
-/// The parsed `prime-agent factory` invocation.
+/// The parsed `beehive factory` invocation.
 #[derive(Debug, PartialEq, Eq)]
 enum FactoryCommand {
     List {
@@ -93,13 +93,13 @@ fn parse_factory_command(args: &[String]) -> Result<FactoryCommand, String> {
     match subcommand.as_str() {
         "list" => {
             if !operands.is_empty() {
-                return Err("Usage: prime-agent factory list [--json]".to_string());
+                return Err("Usage: beehive factory list [--json]".to_string());
             }
             Ok(FactoryCommand::List { json })
         }
         "import" => {
             if operands.len() != 1 {
-                return Err("Usage: prime-agent factory import <path> [--json]".to_string());
+                return Err("Usage: beehive factory import <path> [--json]".to_string());
             }
             Ok(FactoryCommand::Import {
                 path: operands.remove(0),
@@ -109,12 +109,12 @@ fn parse_factory_command(args: &[String]) -> Result<FactoryCommand, String> {
         "export" => {
             if operands.len() != 1 {
                 return Err(
-                    "Usage: prime-agent factory export <name> --out <path> [--json]".to_string(),
+                    "Usage: beehive factory export <name> --out <path> [--json]".to_string()
                 );
             }
             let Some(out) = out else {
                 return Err(
-                    "Usage: prime-agent factory export <name> --out <path> [--json]".to_string(),
+                    "Usage: beehive factory export <name> --out <path> [--json]".to_string()
                 );
             };
             Ok(FactoryCommand::Export {
@@ -133,12 +133,12 @@ pub fn run_factory_command(args: &[String]) -> i32 {
         Ok(command) => command,
         Err(empty_hint) if empty_hint.is_empty() => {
             eprintln!("Missing factory command.");
-            eprintln!("Run \"prime-agent help factory\" for usage.");
+            eprintln!("Run \"beehive help factory\" for usage.");
             return 1;
         }
         Err(error) => {
             eprintln!("Error: {error}");
-            eprintln!("Run `prime-agent help factory` for usage.");
+            eprintln!("Run `beehive help factory` for usage.");
             return 1;
         }
     };
@@ -444,7 +444,7 @@ mod tests {
         assert!(missing_out.is_err());
         assert!(missing_out
             .unwrap_err()
-            .starts_with("Usage: prime-agent factory export"));
+            .starts_with("Usage: beehive factory export"));
         let dangling_out = parse_factory_command(&arg(&["export", "sweep", "--out"]));
         assert!(dangling_out.is_err());
         assert!(dangling_out
@@ -516,7 +516,7 @@ mod tests {
     fn render_list_parses_the_kernel_listing() {
         let result: Value = serde_json::from_str(
             r#"{"ok": true, "machines": [
-                {"name": "review-sweep", "description": "Sweep a branch.", "version": "1", "author": "Prime Agent", "source": "repo", "path": "/rlm/machines/review-sweep/MACHINE.md"},
+                {"name": "review-sweep", "description": "Sweep a branch.", "version": "1", "author": "Beehive", "source": "repo", "path": "/rlm/machines/review-sweep/MACHINE.md"},
                 {"name": "mine", "description": "Personal.", "version": "", "author": "", "source": "user", "path": "/agent/machines/mine/MACHINE.md"}
             ], "warnings": []}"#,
         )

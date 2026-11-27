@@ -282,8 +282,7 @@ fn model_unavailable_error(
     let base = format!(
         "Requested {target} model \"{reference}\" is unavailable, unauthenticated, or expired"
     );
-    let hint =
-        "selectors use the form \"provider/model-id\" (e.g. \"prime-inference/z-ai/glm-5.3\")";
+    let hint = "selectors use the form \"provider/model-id\" (e.g. \"test-provider/z-ai/glm-5.3\")";
     let close_matches = find_rlm_model_matches(reference, candidates, MODEL_ERROR_SUGGESTION_LIMIT);
     if close_matches.is_empty() {
         anyhow!("{base}; {hint}")
@@ -353,7 +352,7 @@ mod tests {
                         "api": "openai-completions",
                         "models": [
                             { "id": "glm-5.3", "name": "Other GLM", "contextWindow": 1000, "maxTokens": 100 },
-                            { "id": "test-provider/glm-5.3", "name": "Nested GLM", "contextWindow": 1000, "maxTokens": 100 }
+                            { "id": "nested/glm-5.3", "name": "Nested GLM", "contextWindow": 1000, "maxTokens": 100 }
                         ]
                     }
                 }
@@ -384,7 +383,7 @@ mod tests {
             r#"{"allowedModels":["test-provider/glm-5.3-turbo"]}"#,
         )
         .unwrap();
-        let project_settings = dir.path().join(".prime/agent");
+        let project_settings = dir.path().join(".beehive");
         std::fs::create_dir_all(&project_settings).unwrap();
         std::fs::write(
             project_settings.join("settings.json"),
@@ -460,7 +459,7 @@ mod tests {
         let policy = model_allowlist::child_policy(&agent_dir, &agent_dir, Some(&session_file), 0)
             .unwrap()
             .0;
-        assert!(!policy.allows("other-provider/test-provider/glm-5.3"));
+        assert!(!policy.allows("other-provider/nested/glm-5.3"));
         let response = search("test-provider/glm-5.3").await.unwrap();
         assert_eq!(response["models"][0]["selector"], "test-provider/glm-5.3");
 
@@ -580,7 +579,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         write_catalog(dir.path());
         let allow =
-            crate::model_allowlist::DaemonAllowlist::Allowed(vec!["prime-inference/*".to_string()]);
+            crate::model_allowlist::DaemonAllowlist::Allowed(vec!["unlisted-provider/*".to_string()]);
         // An explicit reference outside the allowlist fails with the typed refusal.
         let error = resolve_child_model(
             dir.path(),

@@ -28,7 +28,7 @@ fn test_lock() -> MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// The kernel Python with prime-agent-runtime installed; set
+/// The kernel Python with beehive-runtime installed; set
 /// `PA_CORE_KERNEL_PYTHON` to point at an explicit interpreter instead.
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_CORE_KERNEL_PYTHON") {
@@ -41,7 +41,7 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let home = std::env::var("HOME").unwrap_or_default();
-    let candidate = PathBuf::from(format!("{home}/.prime/agent/kernel-venv/bin/python"));
+    let candidate = PathBuf::from(format!("{home}/.beehive/kernel-venv/bin/python"));
     if candidate.exists() {
         return Some(candidate);
     }

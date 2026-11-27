@@ -38,11 +38,11 @@ impl Drop for Daemon {
 
 #[allow(clippy::zombie_processes)]
 fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -67,7 +67,7 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
     );
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -94,7 +94,7 @@ fn make_session_active(socket: &Path, session_path: &Path, cwd: &Path) -> String
     let command = json!({
         "type": "command",
         "id": "guard-create",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": {
             "type": "create",
             "sessionPath": session_path.to_string_lossy(),
@@ -134,7 +134,7 @@ fn make_session_active(socket: &Path, session_path: &Path, cwd: &Path) -> String
 }
 
 fn run_print(args: &[&str], env: &[(String, String)]) -> (String, String, i32) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command.args(args);
     for (key, value) in env {
         command.env(key, value);
@@ -161,11 +161,11 @@ fn print_continue_refuses_an_active_daemon_session() {
     let env = vec![
         ("HOME".to_string(), dir.path().to_string_lossy().to_string()),
         (
-            "PRIME_AGENT_CODING_AGENT_DIR".to_string(),
+            "BEEHIVE_CODING_AGENT_DIR".to_string(),
             agent_dir.to_string_lossy().to_string(),
         ),
         (
-            "PRIME_AGENT_FAUX_SCRIPT".to_string(),
+            "BEEHIVE_FAUX_SCRIPT".to_string(),
             json!({"responses": [{"text": "first turn"}]}).to_string(),
         ),
     ];
@@ -240,7 +240,7 @@ fn print_continue_refuses_an_active_daemon_session() {
     );
     assert!(
         stderr.contains(&format!(
-            "Attach to it instead: prime-agent --resume '{active_session_id}'\n"
+            "Attach to it instead: beehive --resume '{active_session_id}'\n"
         )),
         "the refusal suggests attaching to the live session (the holder id rides shell-quoted): {stderr}"
     );
@@ -283,11 +283,11 @@ fn print_resume_refuses_a_foreign_lease_holder() {
     let env = vec![
         ("HOME".to_string(), dir.path().to_string_lossy().to_string()),
         (
-            "PRIME_AGENT_CODING_AGENT_DIR".to_string(),
+            "BEEHIVE_CODING_AGENT_DIR".to_string(),
             agent_dir.to_string_lossy().to_string(),
         ),
         (
-            "PRIME_AGENT_FAUX_SCRIPT".to_string(),
+            "BEEHIVE_FAUX_SCRIPT".to_string(),
             json!({"responses": [{"text": "first turn"}]}).to_string(),
         ),
     ];
@@ -321,12 +321,12 @@ fn print_resume_refuses_a_foreign_lease_holder() {
         .unwrap_or_default();
     let expected = format!(
         concat!(
-            "Error: This session is currently open in another Rust build of Prime Agent ",
+            "Error: This session is currently open in another Rust build of Beehive ",
             "(active in foreign01ab3c) — another daemon or window of this product holds the file's ",
             "runtime lease.\n",
             "\n",
             "• Continue where you left off:\n",
-            "  prime-agent --daemon-socket <socket> --resume 'foreign01ab3c'\n",
+            "  beehive --daemon-socket <socket> --resume 'foreign01ab3c'\n",
             "  (<socket> is that instance's daemon socket, from the shell where you started ",
             "it — that daemon owns this session)\n",
             "\n",

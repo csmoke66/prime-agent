@@ -188,7 +188,7 @@ fn serve(
     )
 }
 
-/// The kernel Python with prime-agent-runtime installed; set
+/// The kernel Python with beehive-runtime installed; set
 /// `PA_E2E_KERNEL_PYTHON` to point at an explicit interpreter instead.
 fn kernel_python() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("PA_E2E_KERNEL_PYTHON") {
@@ -201,8 +201,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -230,12 +230,11 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path
         } else {
             Stdio::null()
         })
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         // The probe-cell test boots a live kernel on its worker.
         .envs(kernel_python.map(|python| {
             (
-                "PRIME_AGENT_KERNEL_PYTHON".to_string(),
+                "BEEHIVE_KERNEL_PYTHON".to_string(),
                 python.display().to_string(),
             )
         }))
@@ -302,7 +301,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -374,7 +373,7 @@ fn setup(
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": primary.url(),
                     "apiKey": "sk-primary",
@@ -388,7 +387,7 @@ fn setup(
                         }
                     ]
                 },
-                "prime-backup": {
+                "backup-provider": {
                     "api": "openai-completions",
                     "baseUrl": backup.url(),
                     "apiKey": "sk-backup",
@@ -433,7 +432,7 @@ fn setup(
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": session_dir.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -498,7 +497,7 @@ fn provider_failure_fails_over_to_the_next_provider_and_recovers() {
     assert_eq!(starts[0].get("reason"), None, "quick retry has no reason");
     assert_eq!(starts[1]["attempt"], 2);
     assert_eq!(starts[1]["reason"], "backup");
-    assert_eq!(starts[1]["backupModel"], "prime-backup/mock-1");
+    assert_eq!(starts[1]["backupModel"], "backup-provider/mock-1");
     assert_eq!(starts[1]["delayMs"], 0);
     assert!(starts[1]["errorMessage"]
         .as_str()
@@ -508,7 +507,7 @@ fn provider_failure_fails_over_to_the_next_provider_and_recovers() {
     let end = retry_end(&client.events);
     assert_eq!(end["success"], true);
     assert_eq!(end["attempt"], 2);
-    assert_eq!(end["restoredModel"], "prime-inference/mock-1");
+    assert_eq!(end["restoredModel"], "test-provider/mock-1");
 
     let answer = client
         .events
@@ -526,7 +525,7 @@ fn provider_failure_fails_over_to_the_next_provider_and_recovers() {
                     })
         })
         .expect("backup assistant message_end");
-    assert_eq!(answer["message"]["provider"], "prime-backup");
+    assert_eq!(answer["message"]["provider"], "backup-provider");
 
     // The turn ends clean with the TS `turn_end` payload: the terminal assistant
     // message (the backup's answer) and the empty tool-result list, no error anywhere.
@@ -539,7 +538,7 @@ fn provider_failure_fails_over_to_the_next_provider_and_recovers() {
     assert_eq!(turn_end.get("error"), None, "turn_end: {turn_end}");
     assert_eq!(turn_end["message"]["role"], "assistant");
     assert_eq!(turn_end["message"]["stopReason"], "stop");
-    assert_eq!(turn_end["message"]["provider"], "prime-backup");
+    assert_eq!(turn_end["message"]["provider"], "backup-provider");
     assert!(
         turn_end["message"]["content"]
             .as_array()
@@ -577,7 +576,7 @@ fn every_provider_failing_surfaces_the_final_error() {
     assert_eq!(starts.len(), 3, "events: {:?}", client.events);
     assert_eq!(starts[0].get("reason"), None);
     assert_eq!(starts[1]["reason"], "backup");
-    assert_eq!(starts[1]["backupModel"], "prime-backup/mock-1");
+    assert_eq!(starts[1]["backupModel"], "backup-provider/mock-1");
     assert_eq!(
         starts[2].get("reason"),
         None,
@@ -755,7 +754,7 @@ fn failover_switch_and_restore_rebind_the_kernel_model_facts() {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": primary.url(),
                     "apiKey": "sk-primary",
@@ -770,7 +769,7 @@ fn failover_switch_and_restore_rebind_the_kernel_model_facts() {
                         }
                     ]
                 },
-                "prime-backup": {
+                "backup-provider": {
                     "api": "openai-completions",
                     "baseUrl": backup.url(),
                     "apiKey": "sk-backup",
@@ -815,7 +814,7 @@ fn failover_switch_and_restore_rebind_the_kernel_model_facts() {
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": session_dir.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),
@@ -845,7 +844,7 @@ fn failover_switch_and_restore_rebind_the_kernel_model_facts() {
     let episode = read_receipt(&mut client, &session_id, &episode_receipt, "gm-e");
     assert_eq!(
         episode["model_info"],
-        json!({ "id": "mock-1", "provider": "prime-inference", "input": ["text"] }),
+        json!({ "id": "mock-1", "provider": "test-provider", "input": ["text"] }),
         "model.info must report the restored primary session before backup tools execute: {episode}"
     );
     assert_eq!(
@@ -869,7 +868,7 @@ fn failover_switch_and_restore_rebind_the_kernel_model_facts() {
     let restored = read_receipt(&mut client, &session_id, &restored_receipt, "gm-r");
     assert_eq!(
         restored["model_info"],
-        json!({ "id": "mock-1", "provider": "prime-inference", "input": ["text"] }),
+        json!({ "id": "mock-1", "provider": "test-provider", "input": ["text"] }),
         "model.info must rebind the primary on restore: {restored}"
     );
     assert_eq!(

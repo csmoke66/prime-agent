@@ -26,13 +26,13 @@ pub fn path_command_argument(text: &str, command: &str) -> Option<String> {
     }
 }
 
-/// The share viewer URL for a gist id: the `PI_SHARE_VIEWER_URL`
+/// The share viewer URL for a gist id: the `BEEHIVE_SHARE_VIEWER_URL`
 /// override, else the product default, with the id as the fragment. The
 /// default URL and the env var are the TS product's wire identifiers;
 /// they stay byte-identical until the product renames them.
 #[must_use]
 pub fn share_viewer_url(gist_id: &str) -> String {
-    let base = std::env::var("PI_SHARE_VIEWER_URL")
+    let base = std::env::var("BEEHIVE_SHARE_VIEWER_URL")
         .ok()
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_SHARE_VIEWER_URL.to_string());
@@ -217,16 +217,16 @@ mod tests {
     #[test]
     fn share_viewer_urls() {
         // SAFETY: single-threaded test setup for a std::env var.
-        std::env::remove_var("PI_SHARE_VIEWER_URL");
+        std::env::remove_var("BEEHIVE_SHARE_VIEWER_URL");
         assert_eq!(share_viewer_url("abc123"), "https://pi.dev/session/#abc123");
-        std::env::set_var("PI_SHARE_VIEWER_URL", "https://example.test/view/");
+        std::env::set_var("BEEHIVE_SHARE_VIEWER_URL", "https://example.test/view/");
         assert_eq!(
             share_viewer_url("abc123"),
             "https://example.test/view/#abc123"
         );
-        std::env::set_var("PI_SHARE_VIEWER_URL", "");
+        std::env::set_var("BEEHIVE_SHARE_VIEWER_URL", "");
         assert_eq!(share_viewer_url("abc123"), "https://pi.dev/session/#abc123");
-        std::env::remove_var("PI_SHARE_VIEWER_URL");
+        std::env::remove_var("BEEHIVE_SHARE_VIEWER_URL");
     }
 
     /// The full gh spawn path against a stub `gh` (the e2e harness uses the

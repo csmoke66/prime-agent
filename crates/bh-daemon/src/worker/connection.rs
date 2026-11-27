@@ -894,7 +894,7 @@ impl Worker {
         // order (the wire byte order), so non-slim keys insert at their TS
         // positions, not appended.
         let mut result = json!({
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "activeSessionId": active_session_id,
         });
         if !slim {

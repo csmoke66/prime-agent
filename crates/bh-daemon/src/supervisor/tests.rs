@@ -10,7 +10,7 @@ use proptest::test_runner::RngSeed;
 /// so these tests serialize through the crate-wide
 /// `test_support::TELEMETRY_ENV_MUTEX` (shared with `agent_engine`'s
 /// `telemetry_opt_in`) while they hold it.
-const TELEMETRY_ENV_VARS: [&str; 3] = ["DO_NOT_TRACK", "PI_OFFLINE", "PRIME_AGENT_TELEMETRY"];
+const TELEMETRY_ENV_VARS: [&str; 3] = ["DO_NOT_TRACK", "BEEHIVE_OFFLINE", "BEEHIVE_TELEMETRY"];
 
 struct CleanTelemetryEnv {
     saved: Vec<(&'static str, Option<String>)>,
@@ -1051,7 +1051,7 @@ fn saved_session_rows_match_the_catalog_row_golden() {
     session.append_session_info("golden name");
     // An assistant message with provider/model later overrides the change,
     // pinning the fold's last-write-wins row.
-    session.append_model_change("prime", "superb");
+    session.append_model_change("test-provider", "superb");
     session.append_thinking_level_change("high");
     session.append_session_state("active");
     session.append_message(&json!({

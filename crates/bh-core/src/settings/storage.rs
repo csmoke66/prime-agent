@@ -9,7 +9,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use anyhow::{anyhow, bail, Result};
 
-pub const CONFIG_DIR_NAME: &str = ".prime/agent";
+pub const CONFIG_DIR_NAME: &str = ".beehive";
 
 /// Upper bound on a project settings document, which comes from the checkout.
 const MAX_PROJECT_SETTINGS_BYTES: usize = 4 * 1024 * 1024;
@@ -405,15 +405,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let project = root.path().join("project");
         let settings = project.join(CONFIG_DIR_NAME).join("settings.json");
-        let shared = project.join(".prime/shared.json");
+        let shared = project.join(".beehive/shared.json");
         fs::create_dir_all(settings.parent().unwrap()).unwrap();
-        fs::write(&shared, r#"{"theme":"prime"}"#).unwrap();
-        std::os::unix::fs::symlink("../shared.json", &settings).unwrap();
+        fs::write(&shared, r#"{"theme":"beehive"}"#).unwrap();
+        std::os::unix::fs::symlink("shared.json", &settings).unwrap();
         let storage = FileSettingsStorage::new(&project, root.path().join("agent"));
 
         assert_eq!(
             storage.read(SettingsScope::Project).unwrap().as_deref(),
-            Some(r#"{"theme":"prime"}"#)
+            Some(r#"{"theme":"beehive"}"#)
         );
         let target_lock = LockGuard::acquire(&shared, STALE_AFTER).unwrap();
         assert!(storage
@@ -456,12 +456,12 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 assert_eq!(current, None);
-                Some(r#"{ "theme": "prime" }"#.to_string())
+                Some(r#"{ "theme": "beehive" }"#.to_string())
             })
             .unwrap();
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
-                assert!(current.unwrap().contains("prime"));
+                assert!(current.unwrap().contains("beehive"));
                 None
             })
             .unwrap();
@@ -474,12 +474,12 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 assert_eq!(current, None);
-                Some(r#"{ "defaultProvider": "prime-inference" }"#.to_string())
+                Some(r#"{ "defaultProvider": "test-provider" }"#.to_string())
             })
             .unwrap();
         let path = dir.path().join("agent").join("settings.json");
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("prime-inference"));
+        assert!(content.contains("test-provider"));
         // Owner-only mode is a Unix guarantee; Windows inherits ACLs.
         #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
@@ -519,7 +519,7 @@ mod tests {
     fn settings_write_takes_exactly_one_fsync() {
         let dir = tempfile::tempdir().unwrap();
         let storage = FileSettingsStorage::new(dir.path().join("cwd"), dir.path().join("agent"));
-        let document = "{ \"defaultProvider\": \"prime-inference\" }";
+        let document = "{ \"defaultProvider\": \"test-provider\" }";
         let before = opt_in_fsync_calls();
         storage
             .with_lock(SettingsScope::Global, &mut |_| Some(document.to_string()))
@@ -543,17 +543,17 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 assert_eq!(current, None);
-                Some(r#"{ "theme": "prime" }"#.to_string())
+                Some(r#"{ "theme": "beehive" }"#.to_string())
             })
             .unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "prime" }"#)
+            Some(r#"{ "theme": "beehive" }"#)
         );
         let other = FileSettingsStorage::new(dir.path().join("cwd"), dir.path().join("agent"));
         assert_eq!(
             other.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "prime" }"#)
+            Some(r#"{ "theme": "beehive" }"#)
         );
         std::fs::write(&global, r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(
@@ -584,17 +584,17 @@ mod tests {
         storage
             .with_lock(SettingsScope::Global, &mut |current| {
                 let _ = current;
-                Some(r#"{ "theme": "prime" }"#.to_string())
+                Some(r#"{ "theme": "beehive" }"#.to_string())
             })
             .unwrap();
         assert_eq!(
             storage.read(SettingsScope::Global).unwrap().as_deref(),
-            Some(r#"{ "theme": "prime" }"#)
+            Some(r#"{ "theme": "beehive" }"#)
         );
         assert_eq!(storage.read(SettingsScope::Project).unwrap(), None);
     }
 
-    /// A relative agent dir (a relative `PRIME_AGENT_CODING_AGENT_DIR`) locks and
+    /// A relative agent dir (a relative `BEEHIVE_CODING_AGENT_DIR`) locks and
     /// loads: the lock probe's `utimensat` resolves relative lock paths against `AT_FDCWD`.
     #[test]
     #[cfg(unix)]
@@ -606,10 +606,10 @@ mod tests {
         let storage = FileSettingsStorage::new(cwd.path(), relative.clone());
         let written = storage.with_lock(SettingsScope::Global, &mut |current| {
             assert_eq!(current, None);
-            Some(r#"{ "theme": "prime" }"#.to_string())
+            Some(r#"{ "theme": "beehive" }"#.to_string())
         });
         let read = storage.with_lock(SettingsScope::Global, &mut |current| {
-            assert!(current.unwrap().contains("prime"));
+            assert!(current.unwrap().contains("beehive"));
             None
         });
         std::env::set_current_dir(previous).unwrap();

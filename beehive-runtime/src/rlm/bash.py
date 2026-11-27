@@ -40,7 +40,7 @@ _READ_CHUNK = 65536
 # guarantee single-digit fds in redirection syntax.
 _STATUS_FD = 9
 _OUTPUT_FD = 8
-_COMPLETION_PREFIX = b"\x1eprime-agent-complete:"
+_COMPLETION_PREFIX = b"\x1ebeehive-complete:"
 _COMPLETION_SUFFIX = b"\x1f"
 # Cancelled one-shot awaits: TERM grace before the group KILL, then the bounded
 # wait for a confirmed group exit before CancelledError propagates.
@@ -49,7 +49,7 @@ _CANCEL_KILL_WAIT = 2.0
 _COMPLETION_NOTICE_COMMAND_CAP = 1000
 # Display MIME the host aggregates into a per-cell summary of the bash()
 # commands the cell ran (first capped command, count, line total).
-_BASH_COMMAND_MIME = "application/vnd.prime-agent.bash-command+json"
+_BASH_COMMAND_MIME = "application/vnd.beehive.bash-command+json"
 _ASYNCIO_WRAPPER_CALLBACKS = {
     ("asyncio.tasks", "gather.<locals>._done_callback"),
     ("asyncio.tasks", "shield.<locals>._inner_done_callback"),
@@ -148,11 +148,11 @@ _PERSISTENT_POLL = 1.0
 # Gate on stdin, then run the command in its own shell so exit/exec/set -e
 # cannot skip the atomic status write.
 _PERSISTENT_WRAPPER = (
-    "read -r _prime_agent_gate || exit 127\n"
+    "read -r _beehive_gate || exit 127\n"
     "exec 0</dev/null\n"
     '"$1" -c "$2"\n'
-    "__prime_status=$?\n"
-    "printf '%s\\n' \"$__prime_status\" > \"$3.tmp\" && mv -f \"$3.tmp\" \"$3\"\n"
+    "__beehive_status=$?\n"
+    "printf '%s\\n' \"$__beehive_status\" > \"$3.tmp\" && mv -f \"$3.tmp\" \"$3\"\n"
 )
 
 
@@ -823,14 +823,14 @@ class BashHandle:
 
         activity = {"id": self._activity_id, "pid": self._pid, "active": True}
         # Publish synchronously before bash() returns and the creating cell can end.
-        repl.emit({"application/vnd.prime-agent.bash-activity+json": activity})
+        repl.emit({"application/vnd.beehive.bash-activity+json": activity})
         notice = self._notify_background_completion(cell_finished, activity)
         try:
             task = loop.create_task(notice)
         except BaseException:
             self.kill(signal.SIGKILL if _IS_POSIX else signal.SIGTERM)
             notice.close()
-            repl.emit({"application/vnd.prime-agent.bash-activity+json": {**activity, "active": False}})
+            repl.emit({"application/vnd.beehive.bash-activity+json": {**activity, "active": False}})
             raise
         task.add_done_callback(_consume_notice_task)
 
@@ -870,7 +870,7 @@ class BashHandle:
             return
         finally:
             # Reap and deliver (or report rejection) before releasing kernel residency.
-            repl.emit({"application/vnd.prime-agent.bash-activity+json": {**activity, "active": False}})
+            repl.emit({"application/vnd.beehive.bash-activity+json": {**activity, "active": False}})
 
     def _arm_consumed_notice(self, command: str) -> None:
         # Armed only post-acceptance: the withdrawal can never overtake its notice.
@@ -1352,27 +1352,27 @@ def bash(command: str, persistent: bool = False) -> BashHandle:
 
 def _shell() -> str:
     # Read per call so env changes made in the REPL apply to later commands.
-    override = os.environ.get("PRIME_AGENT_BASH_SHELL")
+    override = os.environ.get("BEEHIVE_BASH_SHELL")
     if override:
         if not os.path.isabs(override):
-            raise ValueError("PRIME_AGENT_BASH_SHELL must be an absolute path")
+            raise ValueError("BEEHIVE_BASH_SHELL must be an absolute path")
         return override
     if not _IS_POSIX:
         # Never consult PATH on Windows: a repo-controlled PATH could supply
-        # the shell. The host injects PRIME_AGENT_BASH_SHELL when one exists.
+        # the shell. The host injects BEEHIVE_BASH_SHELL when one exists.
         raise RuntimeError(
-            "bash() needs PRIME_AGENT_BASH_SHELL set to the absolute path of a "
+            "bash() needs BEEHIVE_BASH_SHELL set to the absolute path of a "
             "POSIX shell on Windows (e.g. install Git Bash in its default "
             "location so the host injects it)"
         )
     # PATH fallback only serves bare/standalone POSIX runtime use: the host
-    # always injects PRIME_AGENT_BASH_SHELL (an absolute path) when a shell exists.
+    # always injects BEEHIVE_BASH_SHELL (an absolute path) when a shell exists.
     shell = shutil.which("bash")
     return shell or "/bin/sh"
 
 
 def _with_prefix(command: str) -> str:
-    prefix = os.environ.get("PRIME_AGENT_BASH_COMMAND_PREFIX")
+    prefix = os.environ.get("BEEHIVE_BASH_COMMAND_PREFIX")
     return f"{prefix}\n{command}" if prefix else command
 
 
@@ -1393,18 +1393,18 @@ def _status_script(command: str, completion_a: str, completion_b: str) -> str:
     emit = _fence_printf()
     return (
         f"exec {_STATUS_FD}>&0 {_OUTPUT_FD}>&1 0</dev/null\n"
-        f"read -r _prime_agent_gate <&{_STATUS_FD} || exit 127\n"
+        f"read -r _beehive_gate <&{_STATUS_FD} || exit 127\n"
         "{\n"
         f"{command}\n"
         f"}} {_OUTPUT_FD}>&- {_STATUS_FD}>&-\n"
-        "__prime_status=$?\n"
+        "__beehive_status=$?\n"
         "\\set +x\n"
-        f"{emit} '\\036prime-agent-complete:%s%s\\037' "
-        f"'{completion_a}' '{completion_b}' >&{_OUTPUT_FD} || exit \"$__prime_status\"\n"
-        f"{emit} '%s\\n' \"$__prime_status\" >&{_STATUS_FD}\n"
+        f"{emit} '\\036beehive-complete:%s%s\\037' "
+        f"'{completion_a}' '{completion_b}' >&{_OUTPUT_FD} || exit \"$__beehive_status\"\n"
+        f"{emit} '%s\\n' \"$__beehive_status\" >&{_STATUS_FD}\n"
         f"exec {_OUTPUT_FD}>&- {_STATUS_FD}>&-\n"
         "wait\n"
-        'exit "$__prime_status"\n'
+        'exit "$__beehive_status"\n'
     )
 
 
@@ -1461,7 +1461,7 @@ def _helper_env() -> dict[str, str]:
 
 
 def _persistent_home() -> str:
-    return os.path.join(os.environ["PRIME_AGENT_CODING_AGENT_DIR"], _PERSISTENT_DIR)
+    return os.path.join(os.environ["BEEHIVE_CODING_AGENT_DIR"], _PERSISTENT_DIR)
 
 
 def _persistent_file(home: str, shell_id: str, kind: str) -> str:
@@ -1545,11 +1545,11 @@ def _spawn_persistent(command: str) -> PersistentBashHandle:
     shell_id = secrets.token_hex(16)
     os.makedirs(home, mode=0o700, exist_ok=True)
     shell = _shell()
-    script = f'{{\n{_with_prefix(command)}\n}}\n__prime_status=$?\nwait\nexit "$__prime_status"\n'
+    script = f'{{\n{_with_prefix(command)}\n}}\n__beehive_status=$?\nwait\nexit "$__beehive_status"\n'
     out_fd = os.open(_persistent_file(home, shell_id, "out"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with open(out_fd, "wb") as out:
         proc = subprocess.Popen(
-            [shell, "-c", _PERSISTENT_WRAPPER, "prime-agent-persistent", shell, script,
+            [shell, "-c", _PERSISTENT_WRAPPER, "beehive-persistent", shell, script,
              _persistent_file(home, shell_id, "rc")],
             cwd=os.getcwd(),
             env=_child_env(),
@@ -1710,8 +1710,8 @@ def _record_journal(pid: int, active: bool) -> bool:
     # failures never fail the spawn - a misconfigured owner pid is the only
     # hard False. Identity-free records (no processStartId) are valid and
     # still safely reaped on POSIX (the group-scoped kill).
-    path = os.environ.get("PRIME_AGENT_INTERNAL_ORPHAN_PROCESS_JOURNAL")
-    owner = os.environ.get("PRIME_AGENT_KERNEL_OWNER_PID")
+    path = os.environ.get("BEEHIVE_INTERNAL_ORPHAN_PROCESS_JOURNAL")
+    owner = os.environ.get("BEEHIVE_KERNEL_OWNER_PID")
     if not path or not owner:
         return True
     try:

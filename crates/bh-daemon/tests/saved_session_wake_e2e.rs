@@ -120,8 +120,8 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
         .arg(agent_dir)
         // The woken worker has no create-config model: it falls back to the
         // process pair (like the TS daemon's default session config).
-        .env("PRIME_AGENT_MODEL_PROVIDER", "prime-inference")
-        .env("PRIME_AGENT_MODEL", "mock-1")
+        .env("BEEHIVE_MODEL_PROVIDER", "test-provider")
+        .env("BEEHIVE_MODEL", "mock-1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         // A supervisor killed at teardown must not leak its session workers
@@ -176,7 +176,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize command");
@@ -276,7 +276,7 @@ fn saved_session_wake(location: SavedLocation) {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": url.to_string_lossy(),
                     "apiKey": "sk-wake",
@@ -308,7 +308,7 @@ fn saved_session_wake(location: SavedLocation) {
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": sessions.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),

@@ -28,7 +28,6 @@ pub fn provider_category(provider: Option<&str>) -> String {
         "anthropic",
         "openai",
         "google",
-        "prime",
         "openrouter",
         "bedrock",
         "vertex",

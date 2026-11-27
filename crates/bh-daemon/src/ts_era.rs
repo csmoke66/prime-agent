@@ -3,7 +3,7 @@ use std::path::Path;
 pub(crate) fn sweep_ts_era_leftovers(agent_dir: &Path) -> usize {
     let mut removed = 0;
     for target in [
-        agent_dir.join("prime-inference-models-cache.json"),
+        agent_dir.join("test-provider-models-cache.json"),
         agent_dir.join("agent-traces-outbox.json"),
         agent_dir.join("worker-snapshot-cache"),
     ] {
@@ -29,8 +29,8 @@ mod tests {
         std::fs::create_dir_all(&models_dir).expect("models dir");
         let outbox_dir = agent_dir.join("agent-traces-outbox");
         std::fs::create_dir_all(&outbox_dir).expect("outbox dir");
-        std::fs::write(agent_dir.join("prime-inference-models-cache.json"), "{}").expect("stale");
-        std::fs::write(models_dir.join("prime-inference-models-cache.json"), "{}")
+        std::fs::write(agent_dir.join("test-provider-models-cache.json"), "{}").expect("stale");
+        std::fs::write(models_dir.join("test-provider-models-cache.json"), "{}")
             .expect("live cache");
         std::fs::write(agent_dir.join("agent-traces-outbox.json"), "{}").expect("outbox marker");
         std::fs::write(outbox_dir.join("hash.json"), "{}").expect("outbox entry");
@@ -40,11 +40,9 @@ mod tests {
 
         assert_eq!(sweep_ts_era_leftovers(&agent_dir), 2);
 
-        assert!(!agent_dir.join("prime-inference-models-cache.json").exists());
+        assert!(!agent_dir.join("test-provider-models-cache.json").exists());
         assert!(!agent_dir.join("agent-traces-outbox.json").exists());
-        assert!(models_dir
-            .join("prime-inference-models-cache.json")
-            .exists());
+        assert!(models_dir.join("test-provider-models-cache.json").exists());
         assert!(outbox_dir.join("hash.json").exists());
         assert!(agent_dir.join("cron-jobs.json").exists());
         assert!(agent_dir.join("harness/refinements.jsonl").exists());

@@ -212,12 +212,12 @@ fn parse_theme_json(raw: &str) -> Result<ExportThemeJson> {
 }
 
 /// The default theme when settings carry none: a light terminal background
-/// (`COLORFGBG`) selects the light theme, everything else gets Prime.
+/// (`COLORFGBG`) selects the light theme, everything else gets Beehive.
 pub(crate) fn default_theme_name() -> String {
     if detect_light_terminal_background(std::env::var("COLORFGBG").ok().as_deref()) {
         "light".to_string()
     } else {
-        "prime".to_string()
+        "beehive".to_string()
     }
 }
 
@@ -367,11 +367,11 @@ pub(crate) fn resolve_export_theme(
 mod tests {
     use super::*;
 
-    /// The bundled prime theme resolves like the TS exporter.
+    /// The bundled beehive theme resolves like the TS exporter, also under its pre-rename name.
     #[test]
-    fn prime_theme_resolves_like_the_ts_exporter() {
+    fn beehive_theme_resolves_like_the_ts_exporter() {
         let theme = resolve_export_theme(Some("prime"), Path::new("/nonexistent-agent-dir"))
-            .expect("resolve prime");
+            .expect("resolve prime alias");
         assert!(theme.theme_vars.contains("--accent: #7c6faf;"));
         assert!(theme.theme_vars.contains("--exportPageBg: #050506;"));
         assert_eq!(theme.body_bg, "#050506");

@@ -638,9 +638,9 @@ mod tests {
             // The captured pair carries a team header: a fresh
             // credential WITHOUT one must clear it, not keep serving it
             // on the new key (a re-login from a team key to a personal
-            // key leaves no X-Prime-Team-ID behind).
+            // key leaves no X-Team-ID behind).
             headers: Some(std::collections::BTreeMap::from([(
-                "X-Prime-Team-ID".to_string(),
+                "X-Team-ID".to_string(),
                 "team-old".to_string(),
             )])),
         })));
@@ -666,7 +666,7 @@ mod tests {
                         ok: true,
                         api_key: Some("fresh-access".to_string()),
                         headers: Some(std::collections::BTreeMap::from([(
-                            "X-Prime-Team-ID".to_string(),
+                            "X-Team-ID".to_string(),
                             "team-1".to_string(),
                         )])),
                         error: None,
@@ -732,7 +732,7 @@ mod tests {
             assert_eq!(
                 headers
                     .as_ref()
-                    .and_then(|headers| headers.get("X-Prime-Team-ID").map(String::as_str)),
+                    .and_then(|headers| headers.get("X-Team-ID").map(String::as_str)),
                 expected_header,
                 "the served headers: {headers:?}"
             );

@@ -64,7 +64,7 @@ pub async fn login_xai(
         &[
             ("client_id", XAI_CLIENT_ID),
             ("scope", SCOPE),
-            ("referrer", "pi"),
+            ("referrer", "beehive"),
         ],
         REQUEST_TIMEOUT_MS,
     )
@@ -532,7 +532,7 @@ mod tests {
             ),
             "{body}"
         );
-        assert!(body.contains("referrer=pi"));
+        assert!(body.contains("referrer=beehive"));
         let poll = &http.bodies_for(TOKEN_URL)[1];
         let body = poll.body.as_deref().unwrap();
         assert!(body.contains("device_code=dev-1"));

@@ -13,7 +13,7 @@
 		"apiKeyStrategy": 10,
 		"readinessOauthReady": 57,
 		"readinessUserSetup": 11,
-		"readinessPrimeRestricted": 0,
+		"readinessBeehiveRestricted": 0,
 		"readinessUnknown": 0
 	},
 	"entries": [
@@ -47,7 +47,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			],
 			"oauth": {
@@ -79,7 +79,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -108,7 +108,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -139,7 +139,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -168,7 +168,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -197,7 +197,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -229,7 +229,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -272,7 +272,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -306,7 +306,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -337,7 +337,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -366,7 +366,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -395,7 +395,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -426,7 +426,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -461,7 +461,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			],
 			"oauth": {
@@ -495,7 +495,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -527,7 +527,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -559,7 +559,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -591,7 +591,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -620,7 +620,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -653,7 +653,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -682,7 +682,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -711,7 +711,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -740,7 +740,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -793,7 +793,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -825,7 +825,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -858,7 +858,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -887,7 +887,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -920,7 +920,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -949,7 +949,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -978,7 +978,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1009,7 +1009,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1038,7 +1038,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1074,7 +1074,7 @@
 			"legacyBuiltin": true,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			],
 			"oauth": {
@@ -1108,7 +1108,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1137,7 +1137,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1166,7 +1166,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1197,7 +1197,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1229,7 +1229,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1258,7 +1258,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1290,7 +1290,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			],
 			"oauth": {
@@ -1324,7 +1324,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1359,7 +1359,7 @@
 			"legacyBuiltin": true,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			],
 			"oauth": {
@@ -1402,7 +1402,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1436,7 +1436,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1465,7 +1465,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1496,7 +1496,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1525,7 +1525,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1554,7 +1554,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1585,7 +1585,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1614,7 +1614,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1643,7 +1643,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1676,7 +1676,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1707,7 +1707,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1747,7 +1747,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1781,7 +1781,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1812,7 +1812,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1844,7 +1844,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1877,7 +1877,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1909,7 +1909,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1940,7 +1940,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -1969,7 +1969,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2012,7 +2012,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2056,7 +2056,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2100,7 +2100,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2148,7 +2148,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2192,7 +2192,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2236,7 +2236,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		},
@@ -2280,7 +2280,7 @@
 			"legacyBuiltin": false,
 			"provenance": [
 				{
-					"source": "prime"
+					"source": "beehive"
 				}
 			]
 		}

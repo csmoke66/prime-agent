@@ -181,7 +181,7 @@ impl super::SessionUi {
             {
                 Ok(result) => result,
                 Err(_) => (
-                    "timed out waiting for the Prime Agent daemon response".to_string(),
+                    "timed out waiting for the Beehive daemon response".to_string(),
                     crate::agents_view::StatusTone::Error,
                 ),
             };
@@ -372,8 +372,7 @@ impl super::SessionUi {
                     let _ = tx.send(FactoryUpdate::Error {
                         session: active_session_id,
                         epoch,
-                        message: "timed out waiting for the Prime Agent daemon response"
-                            .to_string(),
+                        message: "timed out waiting for the Beehive daemon response".to_string(),
                     });
                 }
             }

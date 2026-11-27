@@ -111,17 +111,17 @@ impl RunCtx {
 fn child_env(ctx: &RunCtx) -> Vec<(String, String)> {
     let mut env = vec![
         (
-            "PRIME_AGENT_CODING_AGENT_DIR".to_string(),
+            "BEEHIVE_CODING_AGENT_DIR".to_string(),
             ctx.agent_dir.display().to_string(),
         ),
         ("DO_NOT_TRACK".to_string(), "1".to_string()),
         ("TERM".to_string(), "xterm-ghostty".to_string()),
         ("TERM_PROGRAM".to_string(), "ghostty".to_string()),
     ];
-    // PI_PACKAGE_DIR carries the packaged runtime dir to the binary and its
-    // workers (a release binary resolves prime-agent-runtime/ beside the
+    // BEEHIVE_PACKAGE_DIR carries the packaged runtime dir to the binary and its
+    // workers (a release binary resolves beehive-runtime/ beside the
     // executable or through it); PATH/HOME/TMPDIR are the ambient basics.
-    for carry in ["PATH", "HOME", "TMPDIR", "PI_PACKAGE_DIR"] {
+    for carry in ["PATH", "HOME", "TMPDIR", "BEEHIVE_PACKAGE_DIR"] {
         if let Some(value) = std::env::var_os(carry) {
             env.push((carry.to_string(), value.to_string_lossy().to_string()));
         }
@@ -883,7 +883,7 @@ fn protocol_shutdown(socket: &Path) {
     let command = serde_json::json!({
         "type": "command",
         "id": "bench-shutdown",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": { "type": "shutdown" },
     });
     let Ok(mut line) = serde_json::to_string(&command) else {
@@ -1164,7 +1164,8 @@ mod idle {
                 "4242 (pa worker (x)) S 1 4242 4242 0 -1 4194560 900 0 0 0 31 7 0 0 20 0 9 0";
             assert_eq!(super::live_ticks(stat), Some(38));
             assert_eq!(super::live_ticks(&stat.replacen(") S", ") Z", 1)), None);
-            let status = "Name:\tprime-agent\nvoluntary_ctxt_switches:\t120\nnonvoluntary_ctxt_switches:\t5\n";
+            let status =
+                "Name:\tbeehive\nvoluntary_ctxt_switches:\t120\nnonvoluntary_ctxt_switches:\t5\n";
             assert_eq!(super::status_switches(status), 125);
         }
 
@@ -1463,7 +1464,7 @@ mod tests {
 
     #[test]
     fn roster_settled_accounts_for_unloaded_pages() {
-        let large = "   ▗█▛▐█▙   ▗▄█▀▗█▀       prime agent v0.10.0
+        let large = "   ▗█▛▐█▙   ▗▄█▀▗█▀       beehive v0.10.0
   ▗█▛ ▟██▙▄██▛ ▟▛         agents 0 running, 0 idle, 200 inactive
 
  >   Search sessions

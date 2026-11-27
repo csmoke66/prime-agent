@@ -170,7 +170,7 @@ fn graceful_shutdown(socket: &Path) {
     let command = json!({
         "type": "command",
         "id": "test-shutdown",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": { "type": "shutdown" },
     });
     let mut line = serde_json::to_string(&command).expect("serialize");
@@ -207,13 +207,13 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
         .to_string(),
     )
     .expect("write settings");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
-        .env("PRIME_AGENT_KERNEL_VENV", dir.join("kernel-venv"))
-        .env("PI_OFFLINE", "1")
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_KERNEL_VENV", dir.join("kernel-venv"))
+        .env("BEEHIVE_OFFLINE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -236,13 +236,11 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             }
         }
     }
-    command.env_remove("PRIME_TEAM_ID");
-    command.env_remove("PRIME_API_KEY");
     command.env(
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
     );
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -273,7 +271,7 @@ fn headless_options(socket: &Path, dir: &Path) -> bh_tui::interactive::Interacti
         client_settings: None,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

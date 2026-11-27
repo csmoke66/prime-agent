@@ -81,7 +81,7 @@ fn resolve_child_thinking<'a>(
 
 /// The `rlm.create_session` launch env (TS `createRlmRootSession`'s
 /// minimal map: `collectDaemonLaunchEnv({ PATH })` plus the provider's
-/// env API-key var plus `PRIME_TEAM_ID` for prime-inference), plus the
+/// env API-key var), plus the
 /// telemetry switch vars so the parent's opt-out carries over.
 fn create_session_launch_env(
     model: &str,
@@ -103,11 +103,6 @@ fn create_session_launch_env(
     {
         if let Some(value) = read_env(&env_key) {
             env.insert(env_key, value);
-        }
-    }
-    if provider == "prime-inference" {
-        if let Some(team) = read_env("PRIME_TEAM_ID") {
-            env.insert("PRIME_TEAM_ID".to_string(), team);
         }
     }
     env
@@ -894,8 +889,8 @@ mod tests {
         let expected = BTreeMap::from([
             ("PATH".to_string(), "/usr/bin".to_string()),
             ("DO_NOT_TRACK".to_string(), "1".to_string()),
-            ("PI_OFFLINE".to_string(), "1".to_string()),
-            ("PRIME_AGENT_TELEMETRY".to_string(), "0".to_string()),
+            ("BEEHIVE_OFFLINE".to_string(), "1".to_string()),
+            ("BEEHIVE_TELEMETRY".to_string(), "0".to_string()),
         ]);
         let mut parent = expected.clone();
         parent.insert("UNRELATED".to_string(), "not forwarded".to_string());

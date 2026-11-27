@@ -92,8 +92,8 @@ fn run_acp_mode(options: &RunOptions) -> Result<i32, String> {
 }
 
 async fn acp_mode_main(options: &RunOptions) -> Result<i32, String> {
-    // Flag > env > default: the same `PRIME_AGENT_DAEMON_SOCKET` contract
-    // as every other mode (the `prime-agent` launcher written by
+    // Flag > env > default: the same `BEEHIVE_DAEMON_SOCKET` contract
+    // as every other mode (the `beehive` launcher written by
     // install-rust.sh pins that env, so the ACP path must honor it or it
     // would target the TypeScript default socket and treat the schema
     // mismatch as a stale daemon).
@@ -189,13 +189,13 @@ fn daemon_acp_create(
     }
     // Verification seam (the interactive mode's contract): a scripted daemon
     // session from a script FILE path. The product never sets it.
-    if let Some(script) = std::env::var_os("PRIME_AGENT_FAUX_SCRIPT") {
+    if let Some(script) = std::env::var_os("BEEHIVE_FAUX_SCRIPT") {
         create_config["script"] = serde_json::Value::String(script.to_string_lossy().to_string());
     }
     // Verification seam (the TS child runtime inherits the parent's
     // `sessionConfig`): a scripted parent session's children run this script
     // FILE. The product never sets it.
-    if let Some(child_script) = std::env::var_os("PRIME_AGENT_FAUX_CHILD_SCRIPT") {
+    if let Some(child_script) = std::env::var_os("BEEHIVE_FAUX_CHILD_SCRIPT") {
         create_config["childScript"] =
             serde_json::Value::String(child_script.to_string_lossy().to_string());
     }
@@ -475,7 +475,7 @@ pub(crate) async fn build_engine(
     }
 }
 
-/// The faux-script verification seam (`PRIME_AGENT_FAUX_SCRIPT`; never
+/// The faux-script verification seam (`BEEHIVE_FAUX_SCRIPT`; never
 /// set by the product): the script env parse, the per-child queues, and
 /// the scripted engine build.
 mod faux;
@@ -686,7 +686,7 @@ pub(crate) async fn build_headless_engine_with(
             select_model(&mut registry, config, session.as_ref())?
         }
     };
-    // Resolve request auth once: the stored team / `PRIME_TEAM_ID` reach the wire through these
+    // Resolve request auth once: the stored team reaches the wire through these
     // headers (children resolve against the same catalog the spawn used).
     let resolved = registry.get_api_key_and_headers(&model, model.headers.as_ref());
 
@@ -1154,7 +1154,7 @@ fn select_model(
     });
     if let Some(saved_model) = saved_model {
         // Saved IDs must exist in the authenticated catalog. Do not synthesize
-        // a fallback model, especially an unauthorized private Prime model.
+        // a fallback model, especially an unauthorized private model.
         // The lookup is scoped like TS findInitialModel's saved default: the
         // flag, when given, has already matched the saved provider above.
         let scope = flag_provider.or(saved_provider);
@@ -1340,7 +1340,7 @@ fn lease_fresh_manager(
             ) {
                 Ok(lease) => Some(lease),
                 Err(error) => {
-                    eprintln!("prime-agent: could not lease the fresh session file: {error:#}");
+                    eprintln!("beehive: could not lease the fresh session file: {error:#}");
                     None
                 }
             }
@@ -1478,7 +1478,7 @@ fn stored_session_cwd(
 
 pub(crate) fn render_selector_error(error: &SessionSelectorError) -> String {
     format!(
-        "{}.{}\nOpen prime-agent and press left-arrow to browse sessions.",
+        "{}.{}\nOpen beehive and press left-arrow to browse sessions.",
         error.message(),
         error.suggestion().unwrap_or_default()
     )

@@ -303,7 +303,7 @@ fn resolve_cache_retention(cache_retention: Option<CacheRetention>) -> CacheRete
     if let Some(retention) = cache_retention {
         return retention;
     }
-    if std::env::var("PI_CACHE_RETENTION").as_deref() == Ok("long") {
+    if std::env::var("BEEHIVE_CACHE_RETENTION").as_deref() == Ok("long") {
         return CacheRetention::Long;
     }
     CacheRetention::Short
@@ -1067,7 +1067,7 @@ mod tests {
         let options = BedrockOptions::from_base(StreamOptions {
             session_id: Some("conversation".into()),
             headers: Some(HashMap::from([
-                ("X-PI-Session-Id".to_string(), "conversation".to_string()),
+                ("X-Session-Id".to_string(), "conversation".to_string()),
                 ("x-custom-gateway".to_string(), "value".to_string()),
                 ("Content-Type".to_string(), "text/plain".to_string()),
                 ("authorization".to_string(), "Bearer nope".to_string()),
@@ -1079,7 +1079,7 @@ mod tests {
             bedrock_caller_headers(&options),
             vec![
                 ("x-custom-gateway".to_string(), "value".to_string()),
-                ("x-pi-session-id".to_string(), "conversation".to_string()),
+                ("x-session-id".to_string(), "conversation".to_string()),
             ]
         );
         assert_eq!(
@@ -1098,7 +1098,7 @@ mod tests {
             headers: Some(HashMap::from([
                 ("X-Custom-Gateway".to_string(), "b".to_string()),
                 ("x-custom-gateway".to_string(), "a".to_string()),
-                ("x-pi-session-id".to_string(), "conversation".to_string()),
+                ("x-session-id".to_string(), "conversation".to_string()),
             ])),
             ..Default::default()
         });
@@ -1106,7 +1106,7 @@ mod tests {
             bedrock_caller_headers(&options),
             vec![
                 ("x-custom-gateway".to_string(), "a".to_string()),
-                ("x-pi-session-id".to_string(), "conversation".to_string()),
+                ("x-session-id".to_string(), "conversation".to_string()),
             ]
         );
     }
@@ -1123,7 +1123,7 @@ mod tests {
                         "X-Amzn-Bedrock-Request-Metadata".to_string(),
                         r#"{"caller": "copy"}"#.to_string(),
                     ),
-                    ("X-Pi-Session-Id".to_string(), "conversation".to_string()),
+                    ("X-Session-Id".to_string(), "conversation".to_string()),
                 ])),
                 ..Default::default()
             },
@@ -1140,7 +1140,7 @@ mod tests {
                     "x-amzn-bedrock-request-metadata".to_string(),
                     r#"{"team":"a"}"#.to_string(),
                 ),
-                ("x-pi-session-id".to_string(), "conversation".to_string()),
+                ("x-session-id".to_string(), "conversation".to_string()),
             ]
         );
     }
@@ -1152,15 +1152,15 @@ mod tests {
         let options = BedrockOptions::from_base(StreamOptions {
             session_id: Some("conversation".into()),
             headers: Some(HashMap::from([
-                ("X-Pi-Session-Id".to_string(), "conversation".to_string()),
-                ("x-pi-session-id".to_string(), "other".to_string()),
+                ("X-Session-Id".to_string(), "conversation".to_string()),
+                ("x-session-id".to_string(), "other".to_string()),
             ])),
             ..Default::default()
         });
         let merged = bedrock_extra_signed_headers(&options);
         assert_eq!(
             merged,
-            vec![("x-pi-session-id".to_string(), "conversation".to_string())]
+            vec![("x-session-id".to_string(), "conversation".to_string())]
         );
         let (amz_date, authorization, _) = sigv4_headers(
             &SigV4Params {
@@ -1184,10 +1184,7 @@ mod tests {
             .and_then(|rest| rest.split(", Signature").next())
             .unwrap_or_default();
         assert!(!amz_date.is_empty());
-        assert_eq!(
-            signed_headers,
-            "content-type;host;x-amz-date;x-pi-session-id"
-        );
+        assert_eq!(signed_headers, "content-type;host;x-amz-date;x-session-id");
     }
 
     #[test]

@@ -58,17 +58,17 @@ pub const KERNEL_STDERR_LOG_BUDGET_MARKER: &str = "[stderr log budget exhausted]
 pub const MAX_ATTACHMENT_DATA_CHARS: usize = 10_000_000;
 
 /// MIME tag the `edit` skill emits diff payloads under.
-pub const DIFF_DISPLAY_MIME: &str = "application/vnd.prime-agent.diff+json";
+pub const DIFF_DISPLAY_MIME: &str = "application/vnd.beehive.diff+json";
 /// MIME tag the `attach-image` skill emits media payloads under.
-pub const ATTACHMENT_DISPLAY_MIME: &str = "application/vnd.prime-agent.attachment+json";
+pub const ATTACHMENT_DISPLAY_MIME: &str = "application/vnd.beehive.attachment+json";
 /// MIME tag the `agent-message` skill emits after sending a message.
-pub const AGENT_MESSAGE_DISPLAY_MIME: &str = "application/vnd.prime-agent.agent-message+json";
+pub const AGENT_MESSAGE_DISPLAY_MIME: &str = "application/vnd.beehive.agent-message+json";
 /// Internal lifetime notices, consumed before user display rendering.
-pub const BASH_ACTIVITY_DISPLAY_MIME: &str = "application/vnd.prime-agent.bash-activity+json";
+pub const BASH_ACTIVITY_DISPLAY_MIME: &str = "application/vnd.beehive.bash-activity+json";
 /// One `bash()` call's command text (capped) and non-blank line count.
-pub const BASH_COMMAND_DISPLAY_MIME: &str = "application/vnd.prime-agent.bash-command+json";
+pub const BASH_COMMAND_DISPLAY_MIME: &str = "application/vnd.beehive.bash-command+json";
 /// One `rlm.session.messages` read: `{returned, first, total, roles}`.
-pub const TRANSCRIPT_READ_DISPLAY_MIME: &str = "application/vnd.prime-agent.transcript-read+json";
+pub const TRANSCRIPT_READ_DISPLAY_MIME: &str = "application/vnd.beehive.transcript-read+json";
 /// The kernel host request that reports a background bash completion
 /// (the `[bash-done]` lane). The daemon registers the handler
 /// (`bash_notices`), and the provisioner keys the bounded-await bootstrap

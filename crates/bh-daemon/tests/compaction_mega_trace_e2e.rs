@@ -142,7 +142,7 @@ fn serve(mut stream: TcpStream, requests: &Arc<Mutex<Vec<Value>>>) -> std::io::R
                 .first()
                 .and_then(|message| message.get("content"))
                 .and_then(Value::as_str)
-                .is_some_and(|content| content.starts_with("# prime-agent harness"))
+                .is_some_and(|content| content.starts_with("# beehive harness"))
         });
     let index = requests.lock().expect("mock lock").len();
     requests.lock().expect("mock lock").push(body);
@@ -164,7 +164,7 @@ fn serve(mut stream: TcpStream, requests: &Arc<Mutex<Vec<Value>>>) -> std::io::R
                             .first()
                             .and_then(|message| message.get("content"))
                             .and_then(Value::as_str)
-                            .is_some_and(|content| content.starts_with("# prime-agent harness"))
+                            .is_some_and(|content| content.starts_with("# beehive harness"))
                     })
             })
             .count()
@@ -222,8 +222,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, trace_path: &Path) -> Super
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         .env("PA_COMPACTION_TRACE", trace_path)
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
@@ -268,7 +267,7 @@ impl TimedClient {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -343,7 +342,7 @@ fn mega_session_threshold_compaction_phase_measurement() {
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": mock.url(),
                     "apiKey": "sk-battery",
@@ -382,7 +381,7 @@ fn mega_session_threshold_compaction_phase_measurement() {
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": session_dir.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),

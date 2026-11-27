@@ -85,7 +85,7 @@ async fn opencode_session_identity_reaches_every_transport_without_cache_retenti
             "{api}"
         );
         assert!(
-            headers.contains(&("user-agent".into(), "prime-agent".into())),
+            headers.contains(&("user-agent".into(), "beehive".into())),
             "{api}: {headers:?}"
         );
     }

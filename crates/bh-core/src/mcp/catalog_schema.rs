@@ -42,8 +42,12 @@ pub struct CatalogCounts {
     pub readiness_oauth_ready: Option<u64>,
     #[serde(rename = "readinessUserSetup")]
     pub readiness_user_setup: Option<u64>,
-    #[serde(rename = "readinessPrimeRestricted")]
-    pub readiness_prime_restricted: Option<u64>,
+    // "readinessPrimeRestricted" is the pre-rename spelling in cached catalogs.
+    #[serde(
+        rename = "readinessBeehiveRestricted",
+        alias = "readinessPrimeRestricted"
+    )]
+    pub readiness_beehive_restricted: Option<u64>,
     #[serde(rename = "readinessUnknown")]
     pub readiness_unknown: Option<u64>,
 }
@@ -194,8 +198,8 @@ pub enum Readiness {
     OauthReady,
     #[serde(rename = "user-setup")]
     UserSetup,
-    #[serde(rename = "prime-restricted")]
-    PrimeRestricted,
+    #[serde(rename = "beehive-restricted", alias = "prime-restricted")]
+    BeehiveRestricted,
     Unknown,
 }
 
@@ -279,7 +283,8 @@ pub enum ProvenanceSource {
     OpenAiPlugins,
     #[serde(rename = "claude-plugins-official")]
     ClaudePluginsOfficial,
-    Prime,
+    #[serde(alias = "prime")]
+    Beehive,
     User,
 }
 
@@ -526,7 +531,7 @@ pub fn compiled_builtin_services() -> Vec<McpServiceEntry> {
             "setup": { "status": "ready", "readiness": "oauth-ready" },
             "verification": { "status": "metadata-reviewed" },
             "legacyBuiltin": true,
-            "provenance": [{ "source": "prime" }],
+            "provenance": [{ "source": "beehive" }],
             "oauth": { "kind": "oauth" }
         },
         {
@@ -545,7 +550,7 @@ pub fn compiled_builtin_services() -> Vec<McpServiceEntry> {
             "setup": { "status": "ready", "readiness": "oauth-ready" },
             "verification": { "status": "metadata-reviewed" },
             "legacyBuiltin": true,
-            "provenance": [{ "source": "prime" }],
+            "provenance": [{ "source": "beehive" }],
             "oauth": { "kind": "oauth" }
         },
         {
@@ -564,7 +569,7 @@ pub fn compiled_builtin_services() -> Vec<McpServiceEntry> {
             "setup": { "status": "ready", "readiness": "oauth-ready" },
             "verification": { "status": "metadata-reviewed" },
             "legacyBuiltin": false,
-            "provenance": [{ "source": "prime" }],
+            "provenance": [{ "source": "beehive" }],
             "oauth": { "kind": "oauth" }
         }
     ]);
@@ -581,7 +586,7 @@ mod tests {
     use super::*;
 
     /// The REAL shipped catalog payload projected to the v2 client contract: envelope {version,
-    /// counts, entries}, 68 entries, provenance [{"source":"prime"}]).
+    /// counts, entries}, 68 entries, provenance [{"source":"beehive"}]).
     const REAL_PAYLOAD: &str = include_str!("../../tests/fixtures/mcp/plugins-catalog.v2.json");
 
     fn parse(bytes: &[u8]) -> PluginsCatalog {
@@ -621,7 +626,7 @@ mod tests {
         assert_eq!(counts.api_key_strategy, Some(10));
         assert_eq!(counts.readiness_oauth_ready, Some(57));
         assert_eq!(counts.readiness_user_setup, Some(11));
-        assert_eq!(counts.readiness_prime_restricted, Some(0));
+        assert_eq!(counts.readiness_beehive_restricted, Some(0));
         assert_eq!(counts.readiness_unknown, Some(0));
         // The pasteable credential shapes survive parsing (GitHub's
         // credentialSet alias pair).
@@ -667,7 +672,7 @@ mod tests {
                   "setup": {"status": "ready"},
                   "verification": {"status": "unverified"},
                   "legacyBuiltin": false,
-                  "provenance": [{"source": "prime"}] }
+                  "provenance": [{"source": "beehive"}] }
             ]
         }))
         .unwrap();
@@ -736,7 +741,7 @@ mod tests {
             "setup": { "status": "ready" },
             "verification": { "status": "unverified" },
             "legacyBuiltin": false,
-            "provenance": [{ "source": "prime" }],
+            "provenance": [{ "source": "beehive" }],
             "oauth": { "kind": "oauth" }
         })
     }

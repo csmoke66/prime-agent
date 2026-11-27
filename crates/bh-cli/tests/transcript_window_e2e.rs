@@ -47,7 +47,7 @@ impl Drop for Supervisor {
                 let _ = reader.read_line(&mut hello);
                 let command = json!({
                     "type": "command", "id": "test-shutdown",
-                    "protocol": { "name": "prime-agent.daemon", "version": 7 },
+                    "protocol": { "name": "beehive.daemon", "version": 7 },
                     "command": { "type": "shutdown" },
                 });
                 let _ = writeln!(writer, "{command}");
@@ -66,11 +66,11 @@ impl Drop for Supervisor {
 #[allow(clippy::zombie_processes)]
 fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = dir.join("daemon.sock");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", dir.join("agent"))
+        .env("BEEHIVE_CODING_AGENT_DIR", dir.join("agent"))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -90,7 +90,7 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
     );
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -239,7 +239,7 @@ fn chat_options(socket: &Path, dir: &Path, active: String) -> InteractiveOptions
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

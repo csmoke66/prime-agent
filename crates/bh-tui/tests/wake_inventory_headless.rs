@@ -55,7 +55,7 @@ impl MockBoot {
         let mut reader = BufReader::new(stream);
         let hello = json!({
             "type": "daemon_hello",
-            "protocol": {"name": "prime-agent.daemon", "version": 7},
+            "protocol": {"name": "beehive.daemon", "version": 7},
             "serverCapabilities": [],
             "clientId": "mock"
         });
@@ -96,7 +96,7 @@ impl MockBoot {
                                 json!({
                                     "type": "response", "id": value["id"], "command": "attach",
                                     "success": true,
-                                    "data": {"protocol": {"name": "prime-agent.daemon", "version": 7},
+                                    "data": {"protocol": {"name": "beehive.daemon", "version": 7},
                                              "activeSessionId": "s1",
                                              "snapshot": {"activeSessionId": "s1",
                                                           "summary": {"id": "s1", "cwd": "/tmp"},

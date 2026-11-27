@@ -1,5 +1,5 @@
 //! Headless e2e for the model picker's current-model resolution across
-//! providers: with the session on `prime-inference/z-ai/glm-5.3` and the
+//! providers: with the session on `test-provider/z-ai/glm-5.3` and the
 //! catalog listing the SAME id under openrouter too, the picker must
 //! resolve the session's OWN provider's entry, not the openrouter row.
 #![cfg(unix)]
@@ -34,15 +34,15 @@ fn duplicate_id_model(provider: &str, name: &str) -> Model {
 }
 
 /// The catalog the daemon serves and the run opens with: openrouter's z-ai/glm-5.3 entry FIRST,
-/// prime-inference's second — the first-match order the id-only find resolved from before the fix.
+/// test-provider's second — the first-match order the id-only find resolved from before the fix.
 fn duplicate_id_catalog() -> Vec<Model> {
     vec![
         duplicate_id_model("openrouter", "GLM 5.3 Open"),
-        duplicate_id_model("prime-inference", "GLM 5.3 Prime"),
+        duplicate_id_model("test-provider", "GLM 5.3 Test"),
     ]
 }
 
-/// The mock supervisor: one attached session whose state reports `prime-inference/z-ai/glm-5.3`,
+/// The mock supervisor: one attached session whose state reports `test-provider/z-ai/glm-5.3`,
 /// serving the duplicate-id catalog to both the startup snapshot and the refresh.
 struct MockSupervisor {
     listener: UnixListener,
@@ -77,7 +77,7 @@ impl MockSupervisor {
                             "success": true,
                             "data": {
                                 "models": self.catalog,
-                                "configuredProviders": ["prime-inference", "openrouter"],
+                                "configuredProviders": ["test-provider", "openrouter"],
                             },
                         }),
                     );
@@ -110,11 +110,11 @@ impl MockSupervisor {
     fn attach_data(id: &str) -> Value {
         let mut response = attach_response(id, "provider session");
         response["data"]["snapshot"]["state"]["model"] =
-            json!({ "id": "z-ai/glm-5.3", "provider": "prime-inference" });
+            json!({ "id": "z-ai/glm-5.3", "provider": "test-provider" });
         response
     }
 
-    /// The live session state: the same prime-inference model identity.
+    /// The live session state: the same test-provider model identity.
     fn state_data(id: &str, command: &str) -> Value {
         json!({
             "type": "response",
@@ -122,7 +122,7 @@ impl MockSupervisor {
             "command": command,
             "success": true,
             "data": {
-                "model": { "id": "z-ai/glm-5.3", "provider": "prime-inference" },
+                "model": { "id": "z-ai/glm-5.3", "provider": "test-provider" },
                 "isStreaming": false,
                 "isCompacting": false,
                 "sessionActions": { "queuedCount": 0, "steering": [], "followUps": [] },
@@ -135,7 +135,7 @@ fn options(socket: PathBuf, catalog: Vec<Model>) -> InteractiveOptions {
     // The startup snapshot mirrors the daemon's `get_model_catalog` answer exactly: the background
     // refresh can land before or after the picker opens; either snapshot must render the same rows.
     let mut configured_providers = std::collections::HashSet::new();
-    configured_providers.insert("prime-inference".to_string());
+    configured_providers.insert("test-provider".to_string());
     configured_providers.insert("openrouter".to_string());
     InteractiveOptions {
         model_catalog: catalog,
@@ -160,8 +160,8 @@ fn run_plan(steps: Vec<HeadlessStep>) -> Vec<String> {
     outcome.frames
 }
 
-/// The operator's duplicate-id repro: the session runs `prime-inference/z-ai/glm-5.3`, the catalog
-/// lists the same id under openrouter FIRST — the prime-inference row carries `current`.
+/// The operator's duplicate-id repro: the session runs `test-provider/z-ai/glm-5.3`, the catalog
+/// lists the same id under openrouter FIRST — the test-provider row carries `current`.
 #[test]
 fn settings_opens_the_picker_on_the_sessions_own_provider() {
     check_current_provider(&run_plan(vec![
@@ -170,7 +170,7 @@ fn settings_opens_the_picker_on_the_sessions_own_provider() {
         HeadlessStep::Key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)),
         HeadlessStep::Paste("primary".into()),
         HeadlessStep::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        wait_for("GLM 5.3 Prime"),
+        wait_for("GLM 5.3 Test"),
     ]));
 }
 
@@ -178,7 +178,7 @@ fn settings_opens_the_picker_on_the_sessions_own_provider() {
 fn keyboard_shortcut_opens_the_same_provider_aware_picker() {
     check_current_provider(&run_plan(vec![
         HeadlessStep::Key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL)),
-        wait_for("GLM 5.3 Prime"),
+        wait_for("GLM 5.3 Test"),
     ]));
 }
 
@@ -189,17 +189,17 @@ fn wait_for(needle: &str) -> HeadlessStep {
 fn check_current_provider(frames: &[String]) {
     let last = frames.last().expect("a frame with the picker open");
     let rows: Vec<&str> = last.split('\n').collect();
-    let prime_row = rows
+    let provider_row = rows
         .iter()
-        .find(|row| row.contains("GLM 5.3 Prime"))
-        .expect("the prime-inference row renders");
+        .find(|row| row.contains("GLM 5.3 Test"))
+        .expect("the test-provider row renders");
     assert!(
-        prime_row.contains("current") && prime_row.contains("prime-inference"),
-        "the session's own provider's row is the current model: {prime_row}"
+        provider_row.contains("current") && provider_row.contains("test-provider"),
+        "the session's own provider's row is the current model: {provider_row}"
     );
     assert!(
-        prime_row.starts_with("\u{203a}"),
-        "the selection band lands on the session's own provider's row: {prime_row}"
+        provider_row.starts_with("\u{203a}"),
+        "the selection band lands on the session's own provider's row: {provider_row}"
     );
     let open_row = rows
         .iter()

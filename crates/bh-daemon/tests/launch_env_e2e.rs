@@ -59,8 +59,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -87,8 +87,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
-        .env_remove("PRIME_API_KEY")
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .env_remove("PA_MARKER")
         // THE HOSTILE BOOT CONTEXT (audit #9): a supervisor started from
         // inside an agent's shell. Every worker it spawns would inherit
@@ -101,7 +100,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path
         .stdout(Stdio::null())
         .stderr(Stdio::from(log_err));
     if let Some(kernel_python) = kernel_python {
-        command.env("PRIME_AGENT_KERNEL_PYTHON", kernel_python);
+        command.env("BEEHIVE_KERNEL_PYTHON", kernel_python);
     }
     // A supervisor killed at teardown must not leak its session workers
     // into later test binaries: the worker's supervisor-lost exit runs
@@ -145,7 +144,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": {"name": "prime-agent.daemon", "version": 7},
+            "protocol": {"name": "beehive.daemon", "version": 7},
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");

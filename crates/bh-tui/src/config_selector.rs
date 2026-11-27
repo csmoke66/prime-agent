@@ -569,7 +569,7 @@ mod tests {
     }
 
     fn theme() -> Theme {
-        Theme::builtin("prime", crate::theme::ColorMode::TrueColor)
+        Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
     }
 
     fn rows() -> Vec<SelectorRow> {

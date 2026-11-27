@@ -35,8 +35,8 @@ const CUSTOM_TYPES: [&str; 8] = [
 /// z: the switch-b row's `zqmark` name must be the only z in the corpus so
 /// the switch query can never fuzzy-match another row.
 const MODELS: [(&str, &str); 5] = [
-    ("prime-inference", "glm-5.2"),
-    ("prime-inference", "openai/gpt-5.6-sol"),
+    ("test-provider", "glm-5.2"),
+    ("test-provider", "openai/gpt-5.6-sol"),
     ("anthropic", "claude-5-sonnet"),
     ("openai", "gpt-5.4"),
     ("google", "gemini-4-pro"),

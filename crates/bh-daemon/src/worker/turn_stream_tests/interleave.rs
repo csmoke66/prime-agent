@@ -130,7 +130,7 @@ impl StopAskProbe {
                     // the `daemon_hello` tag).
                     if write_half
                         .write_all(
-                            b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                            b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                         )
                         .await
                         .is_err()

@@ -558,12 +558,12 @@ mod tests {
     fn the_provider_disambiguates_duplicate_ids() {
         let catalog = vec![
             entry("openrouter", "z-ai/glm-5.3"),
-            entry("prime-inference", "z-ai/glm-5.3"),
+            entry("test-provider", "z-ai/glm-5.3"),
         ];
-        let resolved = find_current_model_entry(&catalog, Some("prime-inference"), "z-ai/glm-5.3");
+        let resolved = find_current_model_entry(&catalog, Some("test-provider"), "z-ai/glm-5.3");
         assert_eq!(
             resolved.map(|model| model.provider.as_str()),
-            Some("prime-inference"),
+            Some("test-provider"),
             "the session's own provider's entry wins, not the first same-id entry"
         );
     }
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn a_known_provider_never_adopts_another_providers_same_id() {
         let catalog = vec![entry("openrouter", "z-ai/glm-5.3")];
-        let resolved = find_current_model_entry(&catalog, Some("prime-inference"), "z-ai/glm-5.3");
+        let resolved = find_current_model_entry(&catalog, Some("test-provider"), "z-ai/glm-5.3");
         assert!(
             resolved.is_none(),
             "a missing own-provider entry must resolve no current model"
@@ -582,7 +582,7 @@ mod tests {
     fn a_missing_provider_falls_back_to_the_id() {
         let catalog = vec![
             entry("openrouter", "z-ai/glm-5.3"),
-            entry("prime-inference", "z-ai/glm-5.3"),
+            entry("test-provider", "z-ai/glm-5.3"),
         ];
         let resolved = find_current_model_entry(&catalog, None, "z-ai/glm-5.3");
         assert_eq!(

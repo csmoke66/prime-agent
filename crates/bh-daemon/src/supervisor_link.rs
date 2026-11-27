@@ -176,7 +176,7 @@ mod tests {
                 let tx = started_tx.take();
                 tokio::spawn(async move {
                     let (reader, mut writer) = stream.into_split();
-                    writer.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n").await.unwrap();
+                    writer.write_all(b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n").await.unwrap();
                     let mut reader = BufReader::new(reader);
                     let mut line = String::new();
                     reader.read_line(&mut line).await.unwrap();
@@ -257,7 +257,7 @@ mod tests {
             let mut reader = BufReader::new(reader);
             writer
                 .write_all(
-                    b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                    b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                 )
                 .await
                 .unwrap();

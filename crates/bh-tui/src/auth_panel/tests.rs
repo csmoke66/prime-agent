@@ -14,7 +14,7 @@ fn sink() -> crate::clipboard::OscSink {
 }
 
 fn theme() -> Theme {
-    Theme::builtin("prime", crate::theme::ColorMode::TrueColor)
+    Theme::builtin("beehive", crate::theme::ColorMode::TrueColor)
 }
 
 fn frame_text(panel: &mut AuthPanel) -> Vec<String> {
@@ -32,10 +32,10 @@ fn mount_paste() -> (AuthPanel, oneshot::Receiver<Option<String>>) {
 
 /// A paste prompt with its own tone.
 fn mount_paste_tone(tone: PastePromptTone) -> (AuthPanel, oneshot::Receiver<Option<String>>) {
-    let mut panel = AuthPanel::new("Login to Prime Inference");
+    let mut panel = AuthPanel::new("Login to the provider");
     let (reply, answer) = oneshot::channel();
     panel.mount_paste(
-        "Paste a Prime API key below:",
+        "Paste an API key below:",
         tone,
         PasteStyle::Visible,
         false,
@@ -46,12 +46,10 @@ fn mount_paste_tone(tone: PastePromptTone) -> (AuthPanel, oneshot::Receiver<Opti
 
 #[test]
 fn the_first_progress_line_lands_under_the_section_title() {
-    let mut panel = AuthPanel::new("Login to Prime Inference");
-    panel.push_progress("Checking existing Prime CLI credentials...");
+    let mut panel = AuthPanel::new("Login to the provider");
+    panel.push_progress("Checking existing Example CLI credentials...");
     let rows = frame_text(&mut panel);
-    assert!(rows
-        .iter()
-        .any(|row| row.contains("Login to Prime Inference")));
+    assert!(rows.iter().any(|row| row.contains("Login to the provider")));
     assert!(
         rows.iter()
             .any(|row| row.contains("Preparing authentication")),
@@ -59,7 +57,7 @@ fn the_first_progress_line_lands_under_the_section_title() {
     );
     assert!(rows
         .iter()
-        .any(|row| row.contains("Checking existing Prime CLI credentials...")));
+        .any(|row| row.contains("Checking existing Example CLI credentials...")));
 }
 
 #[test]
@@ -104,7 +102,7 @@ fn the_paste_prompt_submits_the_typed_value() {
     let rows = frame_text(&mut panel);
     assert!(rows
         .iter()
-        .any(|row| row.contains("Paste a Prime API key below:")));
+        .any(|row| row.contains("Paste an API key below:")));
     let field = rows
         .iter()
         .position(|row| row.contains("Paste value"))
@@ -314,7 +312,7 @@ fn the_auth_url_link_carries_the_url_as_display_text() {
 /// rule, NO leading blank (the content's own `startContent` blank opens the body).
 #[test]
 fn the_session_chrome_is_the_ts_inline_panel() {
-    let mut panel = AuthPanel::new("Login to Prime Inference");
+    let mut panel = AuthPanel::new("Login to the provider");
     let rows = frame_text(&mut panel);
     assert_eq!(
         rows.len(),
@@ -325,15 +323,12 @@ fn the_session_chrome_is_the_ts_inline_panel() {
         rows[0].chars().all(|c| c == '\u{2500}'),
         "the rule opens the panel: {rows:?}"
     );
-    assert_eq!(
-        rows[1], " Login to Prime Inference",
-        "the muted 1-space title"
-    );
+    assert_eq!(rows[1], " Login to the provider", "the muted 1-space title");
     panel.push_progress("Opening the browser challenge...");
     let rows = frame_text(&mut panel);
     assert_eq!(rows[2], "", "the startContent blank opens the body");
     assert!(
-        !rows.iter().any(|row| row == " Login to Prime Inference  "),
+        !rows.iter().any(|row| row == " Login to the provider  "),
         "no 2-space raw title rides the panel"
     );
     assert!(
@@ -346,7 +341,7 @@ fn the_session_chrome_is_the_ts_inline_panel() {
 
 #[test]
 fn the_onboarding_panel_is_chrome_less() {
-    let mut panel = AuthPanel::onboarding("Login to Prime Inference");
+    let mut panel = AuthPanel::onboarding("Login to the provider");
     let rows = frame_text(&mut panel);
     assert!(
         rows.is_empty(),
@@ -361,9 +356,7 @@ fn the_onboarding_panel_is_chrome_less() {
         "no rule rides the onboarding dialog: {rows:?}"
     );
     assert!(
-        !rows
-            .iter()
-            .any(|row| row.contains("Login to Prime Inference")),
+        !rows.iter().any(|row| row.contains("Login to the provider")),
         "no title rides the onboarding dialog: {rows:?}"
     );
     assert_eq!(rows[0], "");
@@ -464,7 +457,7 @@ fn the_waiting_line_joins_the_url_block_in_the_accent_colour() {
 
 #[test]
 fn escape_on_a_url_screen_marks_the_flow_cancelled() {
-    let mut panel = AuthPanel::onboarding("Login to Prime Inference");
+    let mut panel = AuthPanel::onboarding("Login to the provider");
     let handle = AuthPanelHandle::new(mpsc::unbounded_channel().0);
     let cancel = handle.cancel_signal();
     panel.set_cancel_signal(cancel.clone());
@@ -482,7 +475,7 @@ fn escape_on_a_url_screen_marks_the_flow_cancelled() {
 
 #[test]
 fn the_copy_binding_copies_the_mounted_url_into_the_actions_row() {
-    let mut panel = AuthPanel::onboarding("Login to Prime Inference");
+    let mut panel = AuthPanel::onboarding("Login to the provider");
     panel.show_auth_url("https://fixture.example/authorize".to_string(), None);
     panel.handle_key("c", &kb(), &mut sink());
     let rows = frame_text(&mut panel);

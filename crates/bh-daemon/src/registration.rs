@@ -366,7 +366,7 @@ mod tests {
         let mut reader = BufReader::new(read_half);
         write_half
             .write_all(
-                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
             )
             .await?;
         write_half.flush().await?;
@@ -544,7 +544,7 @@ mod tests {
                     let mut reader = BufReader::new(read_half);
                     write_half
                         .write_all(
-                            b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                            b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                         )
                         .await
                         .expect("hello");
@@ -603,7 +603,7 @@ mod tests {
         let mut reader = BufReader::new(reader);
         writer
             .write_all(
-                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
             )
             .await
             .expect("hello");
@@ -642,7 +642,7 @@ mod tests {
         let mut reader = BufReader::new(reader);
         writer
             .write_all(
-                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
             )
             .await
             .expect("hello");

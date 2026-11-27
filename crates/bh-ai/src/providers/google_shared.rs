@@ -550,7 +550,7 @@ pub fn get_disabled_thinking_config(model: &Model) -> Value {
     json!({ "thinkingLevel": "LOW" })
 }
 
-/// Map a Prime Agent thinking level to a Gemini thinking level: the catalog map's value when it
+/// Map a Beehive thinking level to a Gemini thinking level: the catalog map's value when it
 /// names one, else the per-family default.
 pub fn get_thinking_level(
     effort: crate::types::ModelThinkingLevel,

@@ -99,7 +99,7 @@ fn chat_open_first_frame_pins_the_first_paint() {
 
     // The brand splash never paints (no flash, no one-row shift under the title).
     assert!(
-        find_subsequence(stream, b"prime agent").is_none(),
+        find_subsequence(stream, b"beehive").is_none(),
         "the brand splash never paints for a direct open into content — \
          the whole stream carries the splash bytes"
     );
@@ -325,7 +325,7 @@ fn child_options(socket: PathBuf) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -368,7 +368,7 @@ impl MockSupervisor {
             &mut writer,
             &json!({
                 "type": "daemon_hello",
-                "protocol": { "name": "prime-agent.daemon", "version": 7 },
+                "protocol": { "name": "beehive.daemon", "version": 7 },
                 "serverCapabilities": ["kernel_bash_activity"],
                 "clientId": "mock",
             }),
@@ -475,7 +475,7 @@ fn attach_data(id: &str) -> Value {
         "command": "attach",
         "success": true,
         "data": {
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "activeSessionId": "s1",
             "snapshot": {
                 "activeSessionId": "s1",

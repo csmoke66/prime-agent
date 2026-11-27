@@ -176,7 +176,7 @@ fn live_summary_usage_is_the_catalog_fold() {
             "type": "message", "id": id, "parentId": parent,
             "timestamp": "2026-09-23T00:00:00.000Z",
             "message": {
-                "role": "assistant", "provider": "prime-inference",
+                "role": "assistant", "provider": "test-provider",
                 "model": "internal/glm-5.3-fast", "content": [], "stopReason": "stop",
                 "usage": usage(100, 10, cost),
             },

@@ -9,7 +9,7 @@ use crate::packages::source::SourceScope;
 use crate::packages::{PackageManager, PackageManagerOptions};
 use crate::settings::SettingsManager;
 
-/// Environment mutations (HOME, `PI_OFFLINE`) are process-wide: tests that
+/// Environment mutations (HOME, `BEEHIVE_OFFLINE`) are process-wide: tests that
 /// touch them, and tests that read the env-sensitive update flows,
 /// serialize through the shared packages lock.
 use crate::packages::test_support::ENV_MUTEX;
@@ -371,10 +371,10 @@ fn home_agents_skills_stays_user_scoped_when_cwd_is_under_home() {
     );
     let mut manager = PackageManager::new(
         fixture.temp_dir.join("scratch").join("nested"),
-        fixture.temp_dir.join(".prime").join("agent"),
+        fixture.temp_dir.join(".beehive"),
         SettingsManager::create(
             fixture.temp_dir.join("scratch").join("nested"),
-            fixture.temp_dir.join(".prime").join("agent"),
+            fixture.temp_dir.join(".beehive"),
         ),
     );
     let result = manager.resolve().unwrap();
@@ -442,7 +442,7 @@ fn skill_directories_respect_gitignore() {
 #[test]
 fn parent_gitignore_does_not_apply_to_auto_discovery() {
     let mut fixture = Fixture::new();
-    write(&fixture.temp_dir.join(".gitignore"), ".prime/agent\n");
+    write(&fixture.temp_dir.join(".gitignore"), ".beehive\n");
 
     let project_dir = fixture.manager.cwd().join(crate::settings::CONFIG_DIR_NAME);
     let skill_path = skill_md(&project_dir.join("skills"), "auto-skill", "Auto");
@@ -507,7 +507,7 @@ fn manifest_supports_glob_patterns_for_skills() {
     let pkg_dir = fixture.temp_dir.join("skill-manifest-pkg");
     write(
         &pkg_dir.join("package.json"),
-        r#"{"name":"skill-manifest-pkg","pi":{"skills":["skills","!**/bad-skill"]}}"#,
+        r#"{"name":"skill-manifest-pkg","beehive":{"skills":["skills","!**/bad-skill"]}}"#,
     );
     skill_md(&pkg_dir.join("skills"), "good-skill", "Good");
     skill_md(&pkg_dir.join("skills"), "bad-skill", "Bad");
@@ -530,7 +530,7 @@ fn manifest_expands_positive_glob_entries_before_collecting_skills() {
     let pkg_dir = fixture.temp_dir.join("skill-manifest-glob-pkg");
     write(
         &pkg_dir.join("package.json"),
-        r#"{"name":"skill-manifest-glob-pkg","pi":{"skills":["./plugins/*/skills"]}}"#,
+        r#"{"name":"skill-manifest-glob-pkg","beehive":{"skills":["./plugins/*/skills"]}}"#,
     );
     skill_md(
         &pkg_dir
@@ -565,7 +565,7 @@ fn user_filters_layer_on_top_of_manifest_filters() {
     let pkg_dir = fixture.temp_dir.join("layered-pkg");
     write(
         &pkg_dir.join("package.json"),
-        r#"{"name":"layered-pkg","pi":{"prompts":["prompts","!**/baz.md"]}}"#,
+        r#"{"name":"layered-pkg","beehive":{"prompts":["prompts","!**/baz.md"]}}"#,
     );
     for name in ["foo.md", "bar.md", "baz.md"] {
         write(&pkg_dir.join("prompts").join(name), "A prompt");
@@ -710,7 +710,7 @@ fn force_include_in_manifest_patterns() {
     let pkg_dir = fixture.temp_dir.join("manifest-force-pkg");
     write(
         &pkg_dir.join("package.json"),
-        r#"{"name":"manifest-force-pkg","pi":{"prompts":["prompts","!**/two.md","+prompts/two.md"]}}"#,
+        r#"{"name":"manifest-force-pkg","beehive":{"prompts":["prompts","!**/two.md","+prompts/two.md"]}}"#,
     );
     for name in ["one.md", "two.md", "three.md"] {
         write(&pkg_dir.join("prompts").join(name), "A prompt");
@@ -851,8 +851,8 @@ fn project_package_cannot_add_resources_beside_a_user_package() {
 #[test]
 fn offline_mode_skips_installing_missing_sources() {
     let _guard = ENV_MUTEX.lock().unwrap();
-    let previous = std::env::var("PI_OFFLINE").ok();
-    std::env::set_var("PI_OFFLINE", "1");
+    let previous = std::env::var("BEEHIVE_OFFLINE").ok();
+    std::env::set_var("BEEHIVE_OFFLINE", "1");
     let mut fixture = Fixture::new();
     fixture.set_user_packages(serde_json::json!(["npm:missing-package"]));
     let project_dir = fixture.manager.cwd().join(crate::settings::CONFIG_DIR_NAME);
@@ -873,8 +873,8 @@ fn offline_mode_skips_installing_missing_sources() {
         .any(|r| r.metadata.origin == ResourceOrigin::Package));
 
     match previous {
-        Some(value) => std::env::set_var("PI_OFFLINE", value),
-        None => std::env::remove_var("PI_OFFLINE"),
+        Some(value) => std::env::set_var("BEEHIVE_OFFLINE", value),
+        None => std::env::remove_var("BEEHIVE_OFFLINE"),
     }
 }
 

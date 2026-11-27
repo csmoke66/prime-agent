@@ -12,11 +12,11 @@ use super::super::source::path_relative;
 /// Ignore-file names consulted during resource discovery.
 const IGNORE_FILE_NAMES: [&str; 3] = [".gitignore", ".ignore", ".fdignore"];
 
-/// Skill discovery styles: `pi` reads root markdown skills in addition to
+/// Skill discovery styles: `beehive` reads root markdown skills in addition to
 /// `SKILL.md` packages; `agents` only reads `SKILL.md` packages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SkillDiscoveryMode {
-    Pi,
+    Beehive,
     Agents,
 }
 
@@ -295,8 +295,8 @@ fn collect_skill_entries_inner(
         }
         let (is_dir, is_file) = classify(&entry.path);
         let rel_path = path_relative(root, &entry.path);
-        // Root markdown skills apply only in `pi` mode at the scan root.
-        if mode == SkillDiscoveryMode::Pi
+        // Root markdown skills apply only in `beehive` mode at the scan root.
+        if mode == SkillDiscoveryMode::Beehive
             && dir == root
             && !is_dir
             && is_file
@@ -355,24 +355,28 @@ fn collect_top_level_files(dir: &Path, kind: FileKind) -> Vec<PathBuf> {
     entries
 }
 
-/// The `pi` manifest in a package's `package.json` (parse failures are no
+/// The `beehive` manifest in a package's `package.json` (parse failures are no
 /// manifest, per the TS product).
-pub(crate) fn read_pi_manifest(package_root: &Path) -> Option<super::PiManifest> {
+pub(crate) fn read_beehive_manifest(package_root: &Path) -> Option<super::BeehiveManifest> {
     let package_json = package_root.join("package.json");
     if !package_json.exists() {
         return None;
     }
-    read_pi_manifest_file(&package_json)
+    read_beehive_manifest_file(&package_json)
 }
 
-fn read_pi_manifest_file(package_json: &Path) -> Option<super::PiManifest> {
+fn read_beehive_manifest_file(package_json: &Path) -> Option<super::BeehiveManifest> {
     let content = std::fs::read_to_string(package_json).ok()?;
     let value: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let pi = value.get("pi")?.as_object()?;
-    Some(super::PiManifest {
-        skills: string_array(pi.get("skills")),
-        prompts: string_array(pi.get("prompts")),
-        themes: string_array(pi.get("themes")),
+    // Packages written before the rename declare their resources under a `pi` key.
+    let manifest = value
+        .get("beehive")
+        .or_else(|| value.get("pi"))?
+        .as_object()?;
+    Some(super::BeehiveManifest {
+        skills: string_array(manifest.get("skills")),
+        prompts: string_array(manifest.get("prompts")),
+        themes: string_array(manifest.get("themes")),
     })
 }
 
@@ -396,7 +400,7 @@ pub(crate) fn collect_resource_files(
     resource_type: super::ResourceType,
 ) -> Vec<PathBuf> {
     match resource_type {
-        super::ResourceType::Skills => collect_skill_entries(dir, SkillDiscoveryMode::Pi),
+        super::ResourceType::Skills => collect_skill_entries(dir, SkillDiscoveryMode::Beehive),
         super::ResourceType::Prompts => collect_files(dir, FileKind::Markdown),
         super::ResourceType::Themes => collect_files(dir, FileKind::Json),
     }

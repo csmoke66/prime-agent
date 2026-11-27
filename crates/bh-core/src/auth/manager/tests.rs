@@ -55,15 +55,15 @@ fn runtime_override_wins() {
 #[test]
 fn stale_marking_skips_source_and_clears() {
     let mut auth = storage_with(&serde_json::json!({
-        "prime-inference": { "type": "api_key", "key": "sk-stale" }
+        "test-provider": { "type": "api_key", "key": "sk-stale" }
     }));
-    assert!(auth.mark_auth_stale("prime-inference"));
-    assert_eq!(auth.get_api_key("prime-inference"), None);
-    let status = auth.get_auth_status("prime-inference");
+    assert!(auth.mark_auth_stale("test-provider"));
+    assert_eq!(auth.get_api_key("test-provider"), None);
+    let status = auth.get_auth_status("test-provider");
     assert_eq!(status.source, Some(AuthSource::Stale));
-    auth.clear_auth_stale("prime-inference");
+    auth.clear_auth_stale("test-provider");
     assert_eq!(
-        auth.get_api_key("prime-inference").as_deref(),
+        auth.get_api_key("test-provider").as_deref(),
         Some("sk-stale")
     );
 }
@@ -134,15 +134,6 @@ fn set_and_remove_credentials() {
     assert!(auth.has("anthropic"));
     assert!(auth.has_auth("anthropic"));
     assert_eq!(auth.get_api_key("anthropic").as_deref(), Some("sk-ant"));
-    // The generic `set` keeps the TS omit shape: a non-prime key
-    // carries no `primeTeam` property.
-    assert!(!auth
-        .get_all()
-        .get("anthropic")
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .contains_key("primeTeam"));
     auth.logout("anthropic");
     assert!(!auth.has("anthropic"));
     assert_eq!(auth.get_api_key("anthropic"), None);

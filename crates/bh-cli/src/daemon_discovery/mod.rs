@@ -594,12 +594,12 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn the_linux_default_socket_dir_belongs_to_its_root() {
-        // `/tmp/prime-agent-<uid>` is the product-default socket dir on Linux
+        // `/tmp/beehive-<uid>` is the product-default socket dir on Linux
         // with TMPDIR unset: uid 1000 (the first desktop user) and root.
-        for dir in ["/tmp/prime-agent-1000", "/tmp/prime-agent-0"] {
+        for dir in ["/tmp/beehive-1000", "/tmp/beehive-0"] {
             let dir = Path::new(dir);
             let root = DaemonStateRoot {
-                agent_dir: PathBuf::from("/home/user/.prime/agent"),
+                agent_dir: PathBuf::from("/home/user/.beehive"),
                 socket_dir: Some(dir.to_path_buf()),
                 default_socket_path: dir.join("daemon.sock"),
             };

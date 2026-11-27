@@ -1,4 +1,4 @@
-//! The faux-script verification seam (`PRIME_AGENT_FAUX_SCRIPT`): the
+//! The faux-script verification seam (`BEEHIVE_FAUX_SCRIPT`): the
 //! script env parse, one per-child response queue per spawned child, the
 //! scripted engine build, and the response-step parser. Never set by the
 //! product.
@@ -12,14 +12,14 @@ use crate::print_runtime::{
     RunOptions,
 };
 
-/// The parsed `PRIME_AGENT_FAUX_SCRIPT` (the whole-process verification
+/// The parsed `BEEHIVE_FAUX_SCRIPT` (the whole-process verification
 /// seam; never set by the product): `None` on a live run, an error when
 /// the script does not parse.
 pub(crate) fn faux_script_env() -> Result<Option<serde_json::Value>, String> {
-    match std::env::var("PRIME_AGENT_FAUX_SCRIPT") {
+    match std::env::var("BEEHIVE_FAUX_SCRIPT") {
         Ok(script) => serde_json::from_str(&script)
             .map(Some)
-            .map_err(|error| format!("invalid PRIME_AGENT_FAUX_SCRIPT: {error}")),
+            .map_err(|error| format!("invalid BEEHIVE_FAUX_SCRIPT: {error}")),
         Err(_) => Ok(None),
     }
 }
@@ -52,7 +52,7 @@ pub(crate) async fn build_faux_engine_with(
         script
             .get("responses")
             .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| "PRIME_AGENT_FAUX_SCRIPT requires a responses array".to_string())?,
+            .ok_or_else(|| "BEEHIVE_FAUX_SCRIPT requires a responses array".to_string())?,
     )?;
     // A `reasoning` model makes the harness script thinking-capable turns so
     // thinking-level resolution can be verified without the network.

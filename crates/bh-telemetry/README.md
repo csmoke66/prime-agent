@@ -27,7 +27,7 @@ pseudonymous installation identity. Events never leave the machine.
   workspace crate; bh-core re-exports it as `platform::rename_onto` so its
   platform wall stays the engine's single platform entry.
 - The TS boolean env parsing (`parse_bool_override`); the opt-out
-  precedence (`PI_OFFLINE`, `DO_NOT_TRACK`, `PRIME_AGENT_TELEMETRY`,
+  precedence (`BEEHIVE_OFFLINE`, `DO_NOT_TRACK`, `BEEHIVE_TELEMETRY`,
   settings) lives in bh-core's `telemetry_switch`.
 
 ## Non-goals

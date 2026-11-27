@@ -1,4 +1,4 @@
-//! bh-perf: the prime-agent performance corpus generator and TUI bench
+//! bh-perf: the beehive performance corpus generator and TUI bench
 //! harness. A dev/CI tooling crate at the top of the workspace dependency
 //! graph — nothing depends on it, and it never ships in a release.
 //!

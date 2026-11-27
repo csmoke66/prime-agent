@@ -1,7 +1,7 @@
-"""Read-only Prime Agent session observation skill.
+"""Read-only Beehive session observation skill.
 
 All session lookup and data access live in the daemon. These functions only
-call the host bridge exposed inside the Prime Agent Python kernel.
+call the host bridge exposed inside the Beehive Python kernel.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def context_health(
     agents = result.get("agents") if isinstance(result, dict) else None
     if not isinstance(agents, list):
         raise RuntimeError(
-            "agent_observe.context_health is unavailable; update or restart Prime Agent"
+            "agent_observe.context_health is unavailable; update or restart Beehive"
         )
     return agents
 

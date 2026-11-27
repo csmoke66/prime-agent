@@ -10,32 +10,32 @@
 )]
 
 //! End-to-end daemon-command tests: spawn the real `bh-daemon` supervisor on a
-//! temp socket, drive `prime-agent` list/stop/rename against it, and diff the
-//! output against goldens captured from the installed TS `prime-agent` binary.
+//! temp socket, drive `beehive` list/stop/rename against it, and diff the
+//! output against goldens captured from the installed TS `beehive` binary.
 //!
 //! Goldens (captured from the live TS binary, protocol 7):
 //!
 //! ```text
-//! $ prime-agent list            # one live session named "research"
+//! $ beehive list            # one live session named "research"
 //! name      id            status  age  model                         messages  clients
-//! research  b72ad7009b11  idle    3s   prime-inference/z-ai/glm-5.3  0         0
+//! research  b72ad7009b11  idle    3s   test-provider/z-ai/glm-5.3  0         0
 //!
-//! $ prime-agent list           # no live sessions
+//! $ beehive list           # no live sessions
 //! No active agents.
 //!
-//! $ prime-agent list --all     # no saved sessions
+//! $ beehive list --all     # no saved sessions
 //! No agents.
 //!
-//! $ prime-agent stop <id>
+//! $ beehive stop <id>
 //! ok
 //!
-//! $ prime-agent rename <id> gamma
+//! $ beehive rename <id> gamma
 //! Renamed 0f04b31cb2b6 to gamma
 //!
-//! $ prime-agent schedule add gamma "every 5 minutes" -- "do the thing"
+//! $ beehive schedule add gamma "every 5 minutes" -- "do the thing"
 //! Scheduled 0451e5a9-951c-457b-ae76-ea3142ea5d25 next=2026-09-16T18:36:59.287Z
 //!
-//! $ prime-agent schedule list
+//! $ beehive schedule list
 //! 0451e5a9-951c-457b-ae76-ea3142ea5d25 active next=9/16/2026, 6:36:59 PM last=- runs=0 schedule="every 5 minutes" prompt="do the thing"
 //! ```
 #![cfg(unix)]
@@ -49,26 +49,26 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 /// Env keys this box's own worker sets; they must not leak into spawned
-/// daemons. `PI_PACKAGE_DIR` too: it redirects the package dir both binaries resolve.
+/// daemons. `BEEHIVE_PACKAGE_DIR` too: it redirects the package dir both binaries resolve.
 const SCRUB_ENV: [&str; 10] = [
-    "PRIME_AGENT_INTERNAL_DAEMON_WORKER",
-    "PRIME_AGENT_INTERNAL_DAEMON_WORKER_TOKEN",
-    "PRIME_AGENT_INTERNAL_DAEMON_WORKER_ACTIVE_SESSION_ID",
-    "PRIME_AGENT_INTERNAL_DAEMON_WORKER_INSTANCE_ID",
-    "PRIME_AGENT_INTERNAL_DAEMON_WORKER_RECOVERY_JOURNAL",
-    "PRIME_AGENT_INTERNAL_DAEMON_SUPERVISOR_SOCKET",
-    "PRIME_AGENT_INTERNAL_ORPHAN_PROCESS_JOURNAL",
-    "PRIME_AGENT_INTERNAL_SESSION_LEASES",
-    "PRIME_AGENT_INTERNAL_SESSION_LEASE_OWNER_ID",
-    "PI_PACKAGE_DIR",
+    "BEEHIVE_INTERNAL_DAEMON_WORKER",
+    "BEEHIVE_INTERNAL_DAEMON_WORKER_TOKEN",
+    "BEEHIVE_INTERNAL_DAEMON_WORKER_ACTIVE_SESSION_ID",
+    "BEEHIVE_INTERNAL_DAEMON_WORKER_INSTANCE_ID",
+    "BEEHIVE_INTERNAL_DAEMON_WORKER_RECOVERY_JOURNAL",
+    "BEEHIVE_INTERNAL_DAEMON_SUPERVISOR_SOCKET",
+    "BEEHIVE_INTERNAL_ORPHAN_PROCESS_JOURNAL",
+    "BEEHIVE_INTERNAL_SESSION_LEASES",
+    "BEEHIVE_INTERNAL_SESSION_LEASE_OWNER_ID",
+    "BEEHIVE_PACKAGE_DIR",
 ];
 
-/// Locate the built `bh-daemon` binary next to this crate's `prime-agent`
+/// Locate the built `bh-daemon` binary next to this crate's `beehive`
 /// binary (cargo builds the tested crate's bins only).
 fn daemon_binary() -> PathBuf {
-    let profile_dir = Path::new(env!("CARGO_BIN_EXE_prime-agent"))
+    let profile_dir = Path::new(env!("CARGO_BIN_EXE_beehive"))
         .parent()
-        .expect("profile directory of the prime-agent binary")
+        .expect("profile directory of the beehive binary")
         .to_path_buf();
     let daemon = profile_dir.join("bh-daemon");
     assert!(
@@ -82,7 +82,7 @@ fn daemon_binary() -> PathBuf {
 
 /// A canonical fixture root short enough for every socket the product makes
 /// under it. macOS's `$TMPDIR` is too long: the product socket dir then falls
-/// back to the shared `/tmp/prime-agent-<uid>`, where the user's real daemon
+/// back to the shared `/tmp/beehive-<uid>`, where the user's real daemon
 /// listens. Canonical so the paths the product reports compare equal.
 fn fixture_dir() -> tempfile::TempDir {
     tempfile::tempdir_in(Path::new("/tmp").canonicalize().expect("canonical /tmp"))
@@ -109,7 +109,7 @@ fn spawn_daemon(binary: &Path, socket: &Path, agent_dir: &Path) -> Daemon {
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     for key in SCRUB_ENV {
@@ -166,7 +166,7 @@ impl Wire {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize command");
@@ -236,7 +236,7 @@ fn run_cli(binary: &Path, dir: &Path, agent_dir: &Path, args: &[&str]) -> Output
     command
         .args(args)
         .current_dir(dir)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .env("TMPDIR", dir);
     for key in SCRUB_ENV {
         command.env_remove(key);
@@ -346,7 +346,7 @@ fn list_args<'a>(socket: &'a str, rest: &[&'a str]) -> Vec<&'a str> {
     args
 }
 
-// Rust end-to-end: bh-daemon + prime-agent
+// Rust end-to-end: bh-daemon + beehive
 
 #[test]
 fn rust_daemon_cli_commands_end_to_end() {
@@ -355,7 +355,7 @@ fn rust_daemon_cli_commands_end_to_end() {
     let sessions = agent_dir.join("sessions");
     std::fs::create_dir_all(&sessions).expect("sessions dir");
     let socket = dir.path().join("daemon.sock");
-    let cli = PathBuf::from(env!("CARGO_BIN_EXE_prime-agent"));
+    let cli = PathBuf::from(env!("CARGO_BIN_EXE_beehive"));
     let daemon = spawn_daemon(&daemon_binary(), &socket, &agent_dir);
     let socket_str = socket.to_string_lossy().to_string();
 
@@ -575,7 +575,7 @@ fn cli_connect_error_matches_ts_golden() {
     let dir = fixture_dir();
     let agent_dir = dir.path().join("agent");
     let missing = dir.path().join("missing.sock");
-    let cli = PathBuf::from(env!("CARGO_BIN_EXE_prime-agent"));
+    let cli = PathBuf::from(env!("CARGO_BIN_EXE_beehive"));
     let output = run_cli(
         &cli,
         dir.path(),
@@ -590,7 +590,7 @@ fn cli_connect_error_matches_ts_golden() {
 
     let text = stderr(&output).trim_end().to_string();
     let expected_prefix = format!(
-        "Error: Failed to connect to the Prime Agent daemon: connect ENOENT {missing}. Socket: {missing}. Daemon log: ",
+        "Error: Failed to connect to the Beehive daemon: connect ENOENT {missing}. Socket: {missing}. Daemon log: ",
         missing = missing.display()
     );
     assert!(
@@ -630,26 +630,26 @@ fn schedule_usage_errors_and_valid_invocations() {
     let dir = fixture_dir();
     let agent_dir = dir.path().join("agent");
     std::fs::create_dir_all(agent_dir.join("sessions")).expect("sessions dir");
-    let cli = PathBuf::from(env!("CARGO_BIN_EXE_prime-agent"));
+    let cli = PathBuf::from(env!("CARGO_BIN_EXE_beehive"));
     let rotated_socket = dir.path().join("bogus.sock");
     let rotated_socket = rotated_socket.to_str().expect("socket path");
 
     let usage_shapes = [
         (
             vec!["schedule", "cancel"],
-            "Error: Usage: prime-agent schedule cancel <job-id>\n",
+            "Error: Usage: beehive schedule cancel <job-id>\n",
         ),
         (
             vec!["schedule", "cancel", "a", "b"],
-            "Error: Usage: prime-agent schedule cancel <job-id>\n",
+            "Error: Usage: beehive schedule cancel <job-id>\n",
         ),
         (
             vec!["schedule", "list", "--bogus-flag"],
-            "Error: Usage: prime-agent schedule list [--all] [agent] [--json]\n",
+            "Error: Usage: beehive schedule list [--all] [agent] [--json]\n",
         ),
         (
             vec!["--daemon-socket", rotated_socket, "schedule", "list"],
-            "Error: Usage: prime-agent schedule list [--all] [agent] [--json]\n",
+            "Error: Usage: beehive schedule list [--all] [agent] [--json]\n",
         ),
         (
             vec![
@@ -659,7 +659,7 @@ fn schedule_usage_errors_and_valid_invocations() {
                 "cancel",
                 "id",
             ],
-            "Error: Usage: prime-agent schedule cancel <job-id>\n",
+            "Error: Usage: beehive schedule cancel <job-id>\n",
         ),
     ];
     for (args, golden) in usage_shapes {
@@ -684,7 +684,7 @@ fn schedule_usage_errors_and_valid_invocations() {
         assert_eq!(out.status.code(), Some(1), "{args:?}");
         let err = stderr(&out);
         assert!(
-            err.starts_with("Error: Failed to connect to the Prime Agent daemon:"),
+            err.starts_with("Error: Failed to connect to the Beehive daemon:"),
             "{args:?}: {err}"
         );
     }

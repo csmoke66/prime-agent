@@ -1,10 +1,10 @@
 # bh-perf
 
-The prime-agent performance tooling: a deterministic corpus generator over
+The beehive performance tooling: a deterministic corpus generator over
 the product's real on-disk layout, and a pty bench harness that drives the
-REAL release binary (`target/release/prime-agent`) headlessly. A dev/CI
+REAL release binary (`target/release/beehive`) headlessly. A dev/CI
 crate at the top of the workspace dependency graph — nothing depends on it,
-and it never ships (the release lanes build `-p bh-cli --bin prime-agent`
+and it never ships (the release lanes build `-p bh-cli --bin beehive`
 only).
 
 ## Scope and non-goals
@@ -35,7 +35,7 @@ Writes the product's real layout under `DIR/`:
 DIR/
   corpus.json                      # manifest: counts, needle markers, the file-set baseline
   project/                         # the sessions' cwd + @-completion tree
-  agent/                           # point PRIME_AGENT_CODING_AGENT_DIR here
+  agent/                           # point BEEHIVE_CODING_AGENT_DIR here
     settings.json                  # onboarding pre-answered, traces off
     sessions/<uuid>.jsonl          # current-format session files (flat)
     sessions-archive/<uuid>.jsonl
@@ -98,10 +98,10 @@ records (`parentSession`/`child` are canonical paths).
 ```
 # the whole suite (CI + make perf): generates the corpora, routes every
 # scenario to the corpus state it needs, writes one results/<scenario>.json
-bh-perf run --binary target/release/prime-agent --profile medium --out DIR [--runs N]
+bh-perf run --binary target/release/beehive --profile medium --out DIR [--runs N]
 
 # one scenario over one corpus (investigation)
-bh-perf bench --binary target/release/prime-agent --corpus DIR --scenario S --runs 10 --json OUT
+bh-perf bench --binary target/release/beehive --corpus DIR --scenario S --runs 10 --json OUT
 ```
 
 Scenarios (timed from a triggering action to an observable needle — literal
@@ -157,7 +157,7 @@ paints unbracketed, so its needles see bytes as they arrive.
 Mechanics (the repo's pty-e2e discipline): the TUI child runs in its own
 session with NO controlling tty (`setsid` pre-exec; vendored crossterm
 falls back to the stdio pty), 120x36, kitty probe answered identically every
-run, `PRIME_AGENT_CODING_AGENT_DIR` + `--daemon-socket` isolate it, and the
+run, `BEEHIVE_CODING_AGENT_DIR` + `--daemon-socket` isolate it, and the
 env is rebuilt from scratch (no ambient credentials leak in). Between runs
 the harness restores the corpus to the manifest's file set (the product's
 new session files, sidecars, logs, and leases are deleted) so every run
@@ -194,7 +194,7 @@ Run it on a quiet machine; the numbers are wall-clock latencies.
 bh-perf adds ONE new third-party dependency: `vt100` (MIT), the screen
 model behind the content needles (the agents view's heading counts repaint
 as terminal cell diffs, which the raw byte stream cannot see). The crate
-never ships — the release lanes build `-p bh-cli --bin prime-agent` only —
+never ships — the release lanes build `-p bh-cli --bin beehive` only —
 and `make deny` stays clean.
 
 ## CI

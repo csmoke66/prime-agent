@@ -285,7 +285,7 @@ pub fn find_rlm_model_matches(
 }
 
 /// Models whose full selector ends with the reference, so a bare id like
-/// "z-ai/glm-5.3" also matches "prime-inference/z-ai/glm-5.3".
+/// "z-ai/glm-5.3" also matches "test-provider/z-ai/glm-5.3".
 fn find_rlm_short_form_model_matches<'a>(
     reference: &str,
     models: &'a [RlmModelInfo],
@@ -339,8 +339,7 @@ pub fn format_rlm_model_unavailable_error(
     let base = format!(
         "Requested {target} model \"{reference}\" is unavailable, unauthenticated, or expired"
     );
-    let hint =
-        "selectors use the form \"provider/model-id\" (e.g. \"prime-inference/z-ai/glm-5.3\")";
+    let hint = "selectors use the form \"provider/model-id\" (e.g. \"test-provider/z-ai/glm-5.3\")";
     let normalized_reference = normalize_model_search_text(reference);
     let close_matches: Vec<String> = if normalized_reference.is_empty() {
         Vec::new()
@@ -419,7 +418,7 @@ mod tests {
                 name: "GLM 5.3".into(),
             },
             RlmModelInfo {
-                provider: "pi".into(),
+                provider: "test-provider".into(),
                 id: "glm-5.3-turbo".into(),
                 name: "GLM".into(),
             },
@@ -438,7 +437,7 @@ mod tests {
     fn short_form_resolution_and_error_text() {
         let models = vec![
             RlmModelInfo {
-                provider: "prime-inference".into(),
+                provider: "test-provider".into(),
                 id: "z-ai/glm-5.3".into(),
                 name: "GLM".into(),
             },
@@ -452,7 +451,7 @@ mod tests {
         let one = vec![models[0].clone()];
         let resolved = find_unique_rlm_short_form_model_match("glm-5.3", &one, None)
             .map(super::RlmModelInfo::selector);
-        assert_eq!(resolved.as_deref(), Some("prime-inference/z-ai/glm-5.3"));
+        assert_eq!(resolved.as_deref(), Some("test-provider/z-ai/glm-5.3"));
         let message = format_rlm_model_unavailable_error("glm-5.3", "spawn", &models);
         assert!(message.contains("close matches"));
     }

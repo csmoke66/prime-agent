@@ -26,7 +26,7 @@ use bh_core::kernel::shared::{
 };
 use bh_core::kernel::state_snapshot::{manifest_path_in, snapshot_path_in};
 
-/// The kernel Python with prime-agent-runtime installed (the TS product's auto-bootstrapped kernel
+/// The kernel Python with beehive-runtime installed (the TS product's auto-bootstrapped kernel
 /// venv). Ambient product state, not test input: skipped (with a note) when absent;
 /// `PA_CORE_KERNEL_PYTHON` points at an explicit interpreter instead.
 fn kernel_python() -> Option<PathBuf> {
@@ -40,8 +40,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -236,7 +236,7 @@ async fn host_requests_round_trip_to_registered_handlers() {
             assert_eq!(payload.data["limit"], 2);
             Ok(serde_json::json!({
                 "models": [
-                    {"provider": "pi", "id": "glm-5.3", "name": "GLM", "selector": "pi/glm-5.3"}
+                    {"provider": "test-provider", "id": "glm-5.3", "name": "GLM", "selector": "test-provider/glm-5.3"}
                 ]
             }))
         }),
@@ -259,7 +259,7 @@ async fn host_requests_round_trip_to_registered_handlers() {
     )
     .await;
     assert_eq!(result.status, ExecuteStatus::Ok, "cell: {:?}", result.error);
-    assert_eq!(result.result.as_deref(), Some("'pi/glm-5.3'"));
+    assert_eq!(result.result.as_deref(), Some("'test-provider/glm-5.3'"));
 
     // An unregistered request type fails the cell with the TS error text.
     let error = execute(

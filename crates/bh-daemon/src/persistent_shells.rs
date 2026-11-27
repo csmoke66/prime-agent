@@ -1,4 +1,4 @@
-//! The kernel's persistent `bash()` shells (prime-agent-runtime `rlm/bash.py`,
+//! The kernel's persistent `bash()` shells (beehive-runtime `rlm/bash.py`,
 //! `bash(..., persistent=True)`): every session's shells live in one home,
 //! `<agent dir>/persistent-shells/`, as a `<id>.json` record assigned to the
 //! session that started it, plus the shell's `<id>.out` and `<id>.rc`. The

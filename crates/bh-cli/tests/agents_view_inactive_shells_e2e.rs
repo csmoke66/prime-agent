@@ -33,13 +33,13 @@ impl Drop for Supervisor {
 #[allow(clippy::zombie_processes)]
 fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = dir.join("daemon.sock");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", dir.join("agent"))
-        .env_remove("PRIME_AGENT_SESSION_DIR")
-        .env_remove("PRIME_AGENT_CODING_AGENT_SESSION_DIR")
+        .env("BEEHIVE_CODING_AGENT_DIR", dir.join("agent"))
+        .env_remove("BEEHIVE_SESSION_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_SESSION_DIR")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -55,7 +55,7 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     ] {
         command.env_remove(var);
     }
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while UnixStream::connect(&socket).is_err() {
         assert!(Instant::now() < deadline, "supervisor socket never came up");
@@ -131,7 +131,7 @@ fn view_options(socket: &Path, session_dir: &Path) -> AgentsViewOptions {
         socket_path: socket.to_path_buf(),
         cwd: PathBuf::from("/tmp"),
         session_dir: Some(session_dir.to_path_buf()),
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         version: "0.0.0".to_string(),
         anchor_session_id: None,
         scope: None,

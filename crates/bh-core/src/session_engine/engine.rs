@@ -248,7 +248,7 @@ pub async fn create_session(mut config: SessionEngineConfig) -> anyhow::Result<S
     let auto_refine_gates =
         super::refine::AutoRefineGates::from_settings(settings.settings().auto_refine.as_ref());
     // Request timing: the settings half of the flag is read once here
-    // (`settings` moves into the loader); the `PI_REQUEST_TIMING` half stays live.
+    // (`settings` moves into the loader); the `BEEHIVE_REQUEST_TIMING` half stays live.
     let request_timing_settings = settings.get_request_timing();
     // Captured before `settings` moves into the resource loader: the
     // factory host bridge's preflight facts (the daemon `allowedModels`

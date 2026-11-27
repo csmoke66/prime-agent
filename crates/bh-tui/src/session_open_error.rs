@@ -166,7 +166,7 @@ pub fn already_active_error(holder: &SessionHolder, session_path: &Path) -> Stri
     }
     lines.push(identity);
     lines.push(format!(
-        "Attach to it instead: prime-agent {}",
+        "Attach to it instead: beehive {}",
         quoted_resume_arg(&holder.id)
     ));
     lines.push("Or wait: the file unlocks when that session exits.".to_string());
@@ -196,12 +196,12 @@ pub fn decorate_interactive_refusal(
                 let _ = write!(identity, " \u{b7} model {model}");
             }
             format!(
-                "{identity} \u{b7} Attach instead: prime-agent {} \u{b7} The file unlocks when that session exits",
+                "{identity} \u{b7} Attach instead: beehive {} \u{b7} The file unlocks when that session exits",
                 quoted_resume_arg(&h.id)
             )
         }
         None if owner.starts_with("another process") => format!(
-            "The holder is {owner} \u{b7} It unlocks when that process exits \u{b7} Browse live sessions: prime-agent agents"
+            "The holder is {owner} \u{b7} It unlocks when that process exits \u{b7} Browse live sessions: beehive agents"
         ),
         // A session-id holder the roster cannot see: "retry shortly" would be a false promise — no
         // worker on THIS daemon will ever answer that id — so the guidance names what the holder
@@ -272,7 +272,7 @@ mod tests {
             file.display()
         )));
         assert!(text.contains("Holder: session holder-1 \u{201c}lane work\u{201d} \u{b7} cwd /w"));
-        assert!(text.contains("Attach to it instead: prime-agent --resume 'holder-1'"));
+        assert!(text.contains("Attach to it instead: beehive --resume 'holder-1'"));
         assert!(text.contains("the file unlocks when that session exits"));
     }
 
@@ -285,9 +285,8 @@ mod tests {
             model: None,
         };
         let text = already_active_error(&holder, Path::new("/s/a.jsonl"));
-        assert!(text.contains(
-            "Holder: session live-9\nAttach to it instead: prime-agent --resume 'live-9'"
-        ));
+        assert!(text
+            .contains("Holder: session live-9\nAttach to it instead: beehive --resume 'live-9'"));
     }
 
     #[test]
@@ -316,7 +315,7 @@ mod tests {
         let file = std::env::temp_dir().join("holder-model.jsonl");
         std::fs::write(&file, "{}").unwrap();
         let mut row = row(&file.display().to_string(), "h1", None, None);
-        row["model"] = json!({"id": "z-ai/glm-5.3", "provider": "prime-inference"});
+        row["model"] = json!({"id": "z-ai/glm-5.3", "provider": "test-provider"});
         let holder =
             holder_from_roster(std::slice::from_ref(&row), &file).expect("the row answers");
         assert_eq!(holder.model.as_deref(), Some("z-ai/glm-5.3"));
@@ -382,7 +381,7 @@ mod decorate_tests {
             "{text}"
         );
         assert!(
-            text.contains("Attach instead: prime-agent --resume 'abc123'"),
+            text.contains("Attach instead: beehive --resume 'abc123'"),
             "{text}"
         );
     }
@@ -483,7 +482,7 @@ mod decorate_tests {
             text.contains("The holder is another process (pid 42)"),
             "{text}"
         );
-        assert!(text.contains("prime-agent agents"), "{text}");
+        assert!(text.contains("beehive agents"), "{text}");
     }
 }
 

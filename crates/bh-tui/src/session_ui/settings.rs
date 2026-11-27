@@ -30,10 +30,10 @@ pub(super) enum PendingConfirm {
 }
 
 impl SessionUi {
-    /// The shipped CHANGELOG.md path: the package directory (`PI_PACKAGE_DIR`
+    /// The shipped CHANGELOG.md path: the package directory (`BEEHIVE_PACKAGE_DIR`
     /// wins, else the running executable's directory) plus `CHANGELOG.md`.
     pub(super) fn changelog_path() -> std::path::PathBuf {
-        let package_dir = match std::env::var("PI_PACKAGE_DIR") {
+        let package_dir = match std::env::var("BEEHIVE_PACKAGE_DIR") {
             Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
             _ => std::env::current_exe()
                 .ok()
@@ -368,7 +368,7 @@ impl SessionUi {
             values.quiet_startup = settings.quiet_startup();
             values.tree_filter_mode = settings.tree_filter_mode();
             values.warnings_anthropic_extra_usage = settings.warnings_anthropic_extra_usage();
-            values.theme = settings.theme().unwrap_or_else(|| "prime".to_string());
+            values.theme = settings.theme().unwrap_or_else(|| "beehive".to_string());
             // The tier row preselects the saved default instead of the struct default.
             values.default_service_tier = settings.default_service_tier();
         } else {
@@ -387,7 +387,7 @@ impl SessionUi {
             values.mermaid = "streaming".to_string();
             values.tree_filter_mode = "user-only".to_string();
             values.warnings_anthropic_extra_usage = true;
-            values.theme = "prime".to_string();
+            values.theme = "beehive".to_string();
             // No settings seam: the tier row reads "default", never a blank value.
             values.default_service_tier = "default".to_string();
         }

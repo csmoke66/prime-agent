@@ -61,8 +61,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -93,9 +93,8 @@ fn spawn_supervisor(
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env("PRIME_AGENT_KERNEL_PYTHON", kernel_python)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
-        .env_remove("PRIME_API_KEY")
+        .env("BEEHIVE_KERNEL_PYTHON", kernel_python)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         // THE HOSTILE BOOT CONTEXT: a Herdr pane identity in the daemon's
         // own process env. If the reporter ever read the ambient env (the
         // TS bug class), every report would carry `w0:boot`.
@@ -203,7 +202,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": {"name": "prime-agent.daemon", "version": 7},
+            "protocol": {"name": "beehive.daemon", "version": 7},
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -319,13 +318,13 @@ fn the_session_reports_its_payload_pane_across_the_lifecycle() {
     let params = &report["params"];
     assert_eq!(params["pane_id"], "w1:payload");
     assert_eq!(params["source"], "herdr:pi");
-    assert_eq!(params["agent"], "prime-agent");
+    assert_eq!(params["agent"], "beehive");
     assert_eq!(params["state"], "idle");
     assert!(params.get("message").is_none(), "idle carries no message");
     assert_eq!(params["agent_session_path"], session_file);
     assert_eq!(
         params["resume_argv"],
-        json!(["prime-agent", "--resume", session_file])
+        json!(["beehive", "--resume", session_file])
     );
     assert!(params["seq"].as_u64().expect("seq") > 0);
     assert_no_boot_pane(&requests, "w1:payload");

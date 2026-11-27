@@ -59,7 +59,7 @@ fn spawn_worker_with_window(
             bh_daemon::worker::WORKER_RECOVERY_JOURNAL_ENV,
             dir.join("recovery.jsonl"),
         )
-        .env("PRIME_AGENT_CODING_AGENT_DIR", dir.join("agent"))
+        .env("BEEHIVE_CODING_AGENT_DIR", dir.join("agent"))
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             lost_exit_ms,

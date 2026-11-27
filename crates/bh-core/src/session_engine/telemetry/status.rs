@@ -1,6 +1,6 @@
 //! The telemetry on/off switch and its explanation: one resolution shared by
 //! the live client switch, the CLI opt-out check, `/telemetry`, and
-//! `prime-agent telemetry`.
+//! `beehive telemetry`.
 
 use std::path::Path;
 
@@ -9,8 +9,8 @@ use bh_telemetry::parse_bool_override;
 use crate::settings::SettingsManager;
 
 /// What decides whether telemetry is on, in precedence order (TS
-/// `isTelemetryEnabled`): `PI_OFFLINE` / `DO_NOT_TRACK` force off,
-/// `PRIME_AGENT_TELEMETRY` forces either way, then settings
+/// `isTelemetryEnabled`): `BEEHIVE_OFFLINE` / `DO_NOT_TRACK` force off,
+/// `BEEHIVE_TELEMETRY` forces either way, then settings
 /// `telemetry.enabled`, then the default (on).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetrySwitch {
@@ -39,10 +39,10 @@ impl TelemetrySwitch {
             Self::Settings(true) => "turned on in settings".to_string(),
             Self::Settings(false) => "turned off in settings".to_string(),
             Self::Env {
-                var: "PRIME_AGENT_TELEMETRY",
+                var: "BEEHIVE_TELEMETRY",
                 enabled,
             } => format!(
-                "forced {} by PRIME_AGENT_TELEMETRY={}",
+                "forced {} by BEEHIVE_TELEMETRY={}",
                 if enabled { "on" } else { "off" },
                 if enabled { "1" } else { "0" }
             ),
@@ -62,7 +62,7 @@ pub fn telemetry_switch(settings: &SettingsManager) -> TelemetrySwitch {
 
 /// The environment variables that decide the switch (see [`TelemetrySwitch`]).
 pub const TELEMETRY_SWITCH_VARS: [&str; 3] =
-    ["PI_OFFLINE", "DO_NOT_TRACK", "PRIME_AGENT_TELEMETRY"];
+    ["BEEHIVE_OFFLINE", "DO_NOT_TRACK", "BEEHIVE_TELEMETRY"];
 
 fn switch_from(env: impl Fn(&str) -> Option<String>, setting: Option<bool>) -> TelemetrySwitch {
     let [offline, do_not_track, forced] = TELEMETRY_SWITCH_VARS;
@@ -165,15 +165,15 @@ mod tests {
             TelemetrySwitch::Settings(false)
         );
         assert_eq!(
-            switch_from(env(&[("PRIME_AGENT_TELEMETRY", "1")]), Some(false)),
+            switch_from(env(&[("BEEHIVE_TELEMETRY", "1")]), Some(false)),
             TelemetrySwitch::Env {
-                var: "PRIME_AGENT_TELEMETRY",
+                var: "BEEHIVE_TELEMETRY",
                 enabled: true
             }
         );
         assert_eq!(
             switch_from(
-                env(&[("PRIME_AGENT_TELEMETRY", "1"), ("DO_NOT_TRACK", "1")]),
+                env(&[("BEEHIVE_TELEMETRY", "1"), ("DO_NOT_TRACK", "1")]),
                 None
             ),
             TelemetrySwitch::Env {
@@ -182,12 +182,12 @@ mod tests {
             }
         );
         assert_eq!(
-            switch_from(env(&[("PI_OFFLINE", "true")]), Some(true)).reason(),
-            "forced off by PI_OFFLINE"
+            switch_from(env(&[("BEEHIVE_OFFLINE", "true")]), Some(true)).reason(),
+            "forced off by BEEHIVE_OFFLINE"
         );
         assert_eq!(
-            switch_from(env(&[("PRIME_AGENT_TELEMETRY", "0")]), None).reason(),
-            "forced off by PRIME_AGENT_TELEMETRY=0"
+            switch_from(env(&[("BEEHIVE_TELEMETRY", "0")]), None).reason(),
+            "forced off by BEEHIVE_TELEMETRY=0"
         );
         // Falsy DO_NOT_TRACK is no override.
         assert_eq!(

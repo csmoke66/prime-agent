@@ -11,7 +11,7 @@ from rlm import repl
 from websearch import websearch
 
 
-QUERY = "Prime Agent release"
+QUERY = "Beehive release"
 LINKED = "Result 0: Release notes\nURL: https://example.org/releases"
 REAL_HOST_REQUEST = repl.host_request
 LOGIN_REQUIRED = "ChatGPT web search requires a ChatGPT login"
@@ -42,7 +42,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_direct_chatgpt_uses_only_the_host_and_returns_links(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "chatgpt"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "chatgpt"
         self.assertIn(LINKED, await websearch.run(QUERY, num_results=3))
         self.host.assert_awaited_once_with({"type": "chatgpt_web_search", "query": QUERY, "numResults": 3})
         self.key.assert_not_called()
@@ -50,19 +50,19 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.eco.assert_not_awaited()
 
     async def test_chatgpt_failure_does_not_retry(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "chatgpt"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "chatgpt"
         self.host.return_value = {"status": "error", "error": LOGIN_REQUIRED}
         self.assertIn(LOGIN_REQUIRED, await websearch.run(QUERY))
         self.host.assert_awaited_once()
         self.key.assert_not_called()
 
     async def test_chatgpt_rejects_invalid_count_without_sending_a_request(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "chatgpt"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "chatgpt"
         self.assertIn("positive integer", await websearch.run(QUERY, num_results=0))
         self.host.assert_not_awaited()
 
     async def test_direct_claude_uses_only_the_host_and_returns_links(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "claude"
         self.assertIn(LINKED, await websearch.run(QUERY, num_results=3))
         self.host.assert_awaited_once_with({"type": "claude_web_search", "query": QUERY, "numResults": 3})
         self.key.assert_not_called()
@@ -70,7 +70,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.eco.assert_not_awaited()
 
     async def test_claude_error_or_empty_text_falls_back_to_chatgpt_once(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "claude"
         for primary_reply in (
             {"status": "error", "error": CLAUDE_LOGIN_REQUIRED},
             {"status": "ok", "result": {"text": " "}},
@@ -86,7 +86,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.key.assert_not_called()
 
     async def test_claude_failure_is_preserved_when_chatgpt_fails(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "claude"
         self.host.side_effect = [
             {"status": "error", "error": CLAUDE_LOGIN_REQUIRED},
             {"status": "error", "error": LOGIN_REQUIRED},
@@ -101,14 +101,14 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.key.assert_not_called()
 
     async def test_standalone_claude_does_not_call_host_or_resolve_api_keys(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "claude"
         self.active.return_value = False
-        self.assertIn("requires a Prime Agent kernel", await websearch.run(QUERY))
+        self.assertIn("requires a Beehive kernel", await websearch.run(QUERY))
         self.host.assert_not_awaited()
         self.key.assert_not_called()
 
     async def test_claude_timeout_cancels_host_wait_and_falls_back_once(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "claude"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "claude"
         stopped = asyncio.Event()
 
         async def host(request):
@@ -136,7 +136,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.key.return_value = ""
         for provider in ("serper", "eco"):
             with self.subTest(provider=provider):
-                self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = provider
+                self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = provider
                 self.host.reset_mock()
                 self.assertIn(LINKED, await websearch.run(QUERY))
                 self.host.assert_awaited_once()
@@ -149,8 +149,8 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.serper.assert_awaited_once_with(QUERY, "test-key", timeout=30, num_results=5)
         self.host.assert_awaited_once()
 
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "eco"
-        self.env["PRIME_AGENT_WEBSEARCH_TIMEOUT"] = "29"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "eco"
+        self.env["BEEHIVE_WEBSEARCH_TIMEOUT"] = "29"
         self.eco.side_effect = httpx.ReadTimeout("Eco request timed out")
         self.host.reset_mock()
         self.assertIn(LINKED, await websearch.run(QUERY))
@@ -164,7 +164,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Serper search error (401): expired key", result)
         self.assertNotIn(LOGIN_REQUIRED, result)
 
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "eco"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "eco"
         self.key.return_value = ""
         result = await websearch.run(QUERY)
         self.assertIn("no You.com Eco API key is configured", result)
@@ -200,7 +200,7 @@ class WebSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[output truncated,", result)
 
     async def test_chatgpt_timeout_cancels_host_wait(self):
-        self.env["PRIME_AGENT_WEBSEARCH_PROVIDER"] = "chatgpt"
+        self.env["BEEHIVE_WEBSEARCH_PROVIDER"] = "chatgpt"
         stopped = asyncio.Event()
 
         async def stalled_host(_request):

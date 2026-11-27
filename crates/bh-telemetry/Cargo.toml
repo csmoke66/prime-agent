@@ -3,7 +3,7 @@ name = "bh-telemetry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Modular telemetry: event schema, queueing, and sinks for Prime Agent."
+description = "Modular telemetry: event schema, queueing, and sinks for Beehive."
 
 [dependencies]
 anyhow.workspace = true

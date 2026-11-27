@@ -149,7 +149,7 @@ mod tabs_tests {
     use super::*;
 
     fn theme() -> crate::theme::Theme {
-        crate::theme::Theme::builtin("prime", crate::theme::ColorMode::Color256)
+        crate::theme::Theme::builtin("beehive", crate::theme::ColorMode::Color256)
     }
 
     #[test]

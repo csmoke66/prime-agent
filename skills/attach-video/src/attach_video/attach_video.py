@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 # Keep in sync with ATTACHMENT_DISPLAY_MIME in crates/bh-core/src/kernel/shared.rs.
-_ATTACHMENT_DISPLAY_MIME = "application/vnd.prime-agent.attachment+json"
+_ATTACHMENT_DISPLAY_MIME = "application/vnd.beehive.attachment+json"
 
 # Keep in sync with MAX_ATTACHMENT_DATA_CHARS in crates/bh-core/src/kernel/shared.rs: the kernel drops a
 # larger attachment. Videos are attached as-is (no transcoding), so the largest file is what fits in it.
@@ -151,7 +151,7 @@ def _validate_video(path: str) -> tuple[Path, str, bytes]:
     if size > _MAX_VIDEO_BYTES:
         raise ValueError(
             f"{path} is {size / 1_000_000:.1f}MB; videos must be at most "
-            f"{_MAX_VIDEO_BYTES / 1_000_000:.1f}MB, prime-agent's attachment limit. Trim or downscale it first "
+            f"{_MAX_VIDEO_BYTES / 1_000_000:.1f}MB, beehive's attachment limit. Trim or downscale it first "
             "(for example with ffmpeg -t and -vf scale)."
         )
 

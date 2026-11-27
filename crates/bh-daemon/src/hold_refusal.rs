@@ -50,7 +50,7 @@ pub enum HolderFlavor {
     /// This Rust build (another window/daemon of this binary, the takeover
     /// or pre-takeover install dirs, or a cargo dev build).
     ThisBuild,
-    /// The TypeScript product: its release binary is named `prime-agent`,
+    /// The TypeScript product: its release binary is named `beehive`,
     /// and source/dev installs run under node, bun, or deno.
     TypeScriptProduct,
     /// A process the classifier cannot name.
@@ -100,30 +100,24 @@ fn classify_from(exe: Option<&Path>, own_exe: Option<&Path>) -> HolderFlavor {
             .to_string();
         *components.last_mut().unwrap() = stripped;
     }
-    if components
-        .iter()
-        .any(|component| component == "prime-agent-rust")
-    {
-        return HolderFlavor::ThisBuild;
-    }
     // The keyword-takeover install layout: the payload sits DIRECTLY
-    // inside the share dir (`.../share/prime-agent/prime-agent`), while a
+    // inside the share dir (`.../share/beehive/beehive`), while a
     // TS release binary sits one level deeper
-    // (`.../releases/<name>/prime-agent`), so the parent component claims
+    // (`.../releases/<name>/beehive`), so the parent component claims
     // this product.
-    if components.len() >= 2 && components.last().map(String::as_str) == Some("prime-agent") {
+    if components.len() >= 2 && components.last().map(String::as_str) == Some("beehive") {
         let parent = components[components.len() - 2].as_str();
         // The parent alone is the layout signal (a TS release binary's
-        // parent is the release name, never `prime-agent`).
+        // parent is the release name, never `beehive`).
         let is_publish_byproduct =
-            parent.starts_with("prime-agent.old.") || parent.starts_with("prime-agent.stage.");
-        if parent == "prime-agent" || is_publish_byproduct {
+            parent.starts_with("beehive.old.") || parent.starts_with("beehive.stage.");
+        if parent == "beehive" || is_publish_byproduct {
             return HolderFlavor::ThisBuild;
         }
     }
     // The exe filename gate keeps a node/bun/deno runtime that merely runs
-    // FROM a `prime-agent`-named directory from claiming this build: only
-    // the payload binary named `prime-agent` is claimed.
+    // FROM a `beehive`-named directory from claiming this build: only
+    // the payload binary named `beehive` is claimed.
     if let Some(index) = components
         .iter()
         .position(|component| component == "target")
@@ -146,7 +140,7 @@ fn classify_from(exe: Option<&Path>, own_exe: Option<&Path>) -> HolderFlavor {
     if name.contains("node") || name.contains("bun") || name.contains("deno") {
         return HolderFlavor::TypeScriptProduct;
     }
-    if name.contains("prime-agent") {
+    if name.contains("beehive") {
         return HolderFlavor::TypeScriptProduct;
     }
     HolderFlavor::AnotherProcess
@@ -286,24 +280,24 @@ pub fn refusal_for_flavor(
     match flavor {
         HolderFlavor::TypeScriptProduct => {
             lines.push(format!(
-                "This session is currently open in your TypeScript version of Prime Agent \
+                "This session is currently open in your TypeScript version of Beehive \
 (active in {holder_id}). The Rust and TS versions share the same session store but not \
 the same daemon, so this build cannot open the file while that process holds it."
             ));
             lines.push(String::new());
             lines.push("• Continue where you left off:".to_string());
-            // The Rust port owns the `prime-agent` keyword, so naming
-            // `prime-agent --resume` here would launch THIS build. The
+            // The Rust port owns the `beehive` keyword, so naming
+            // `beehive --resume` here would launch THIS build. The
             // continue path names the TypeScript binary that holds the
             // lease, derived from the holder's live process image.
             match (holder_exe, id) {
                 // The holder binary rides quoted, and only when the image
                 // IS the TypeScript payload binary (control-free, named
-                // `prime-agent`): a runtime holder would be a broken
+                // `beehive`): a runtime holder would be a broken
                 // command, so those fall back to the takeover wording below.
                 (Some(exe), Some(id))
                     if !exe.to_string_lossy().chars().any(char::is_control)
-                        && exe.file_name().is_some_and(|name| name == "prime-agent") =>
+                        && exe.file_name().is_some_and(|name| name == "beehive") =>
                 {
                     lines.push(format!(
                         "  {} --resume {}",
@@ -317,17 +311,17 @@ the same daemon, so this build cannot open the file while that process holds it.
                 }
                 _ => {
                     lines.push(
-                        "  (continue in the TypeScript product — its daemon owns this session; the prime-agent keyword launches this Rust build, so use the TypeScript binary from its preserved install)"
+                        "  (continue in the TypeScript product — its daemon owns this session; the beehive keyword launches this Rust build, so use the TypeScript binary from its preserved install)"
                             .to_string(),
                     );
                 }
             }
             lines.push(String::new());
-            lines.extend(take_over_lines(hold, "prime-agent", holder_exe));
+            lines.extend(take_over_lines(hold, "beehive", holder_exe));
         }
         HolderFlavor::ThisBuild => {
             lines.push(format!(
-                "This session is currently open in another Rust build of Prime Agent \
+                "This session is currently open in another Rust build of Beehive \
 (active in {holder_id}) — another daemon or window of this product holds the file's \
 runtime lease."
             ));
@@ -335,7 +329,7 @@ runtime lease."
             lines.push("• Continue where you left off:".to_string());
             if let Some(id) = id {
                 lines.push(format!(
-                    "  prime-agent --daemon-socket <socket> --resume {}",
+                    "  beehive --daemon-socket <socket> --resume {}",
                     shell_quote(&single_line(id))
                 ));
                 lines.push(
@@ -344,7 +338,7 @@ you started it — that daemon owns this session)"
                         .to_string(),
                 );
             } else {
-                lines.push("  prime-agent --resume".to_string());
+                lines.push("  beehive --resume".to_string());
                 lines.push(
                     "  (switch to the window or shell where that instance is running — its \
 daemon owns this session)"
@@ -352,7 +346,7 @@ daemon owns this session)"
                 );
             }
             lines.push(String::new());
-            lines.extend(take_over_lines(hold, "prime-agent", holder_exe));
+            lines.extend(take_over_lines(hold, "beehive", holder_exe));
         }
         HolderFlavor::AnotherProcess => {
             lines.push(format!(
@@ -361,7 +355,7 @@ daemon owns this session)"
 runtime lease."
             ));
             lines.push(String::new());
-            lines.extend(take_over_lines(hold, "prime-agent", holder_exe));
+            lines.extend(take_over_lines(hold, "beehive", holder_exe));
         }
     }
     lines.push(String::new());
@@ -404,19 +398,19 @@ mod tests {
             &hold,
             None,
             Some(Path::new(
-                "/home/k/.local/share/prime-agent-legacy/releases/9.9.9/prime-agent",
+                "/home/k/.local/share/beehive-legacy/releases/9.9.9/beehive",
             )),
         );
-        let expected = "This session is currently open in your TypeScript version of Prime Agent \
+        let expected = "This session is currently open in your TypeScript version of Beehive \
 (active in ts01ab). The Rust and TS versions share the same session store but not \
 the same daemon, so this build cannot open the file while that process holds it.
 
 • Continue where you left off:
-  '/home/k/.local/share/prime-agent-legacy/releases/9.9.9/prime-agent' --resume 'ts01ab'
+  '/home/k/.local/share/beehive-legacy/releases/9.9.9/beehive' --resume 'ts01ab'
   (that TypeScript binary holds the lease — its daemon owns this session)
 
 • Take over on this daemon:
-  kill 4242 # the holder is prime-agent
+  kill 4242 # the holder is beehive
   Then retry — the file unlocks when the holder exits.
 
 Session: ts01ab";
@@ -424,12 +418,12 @@ Session: ts01ab";
 
         let message = refusal_for_flavor(HolderFlavor::TypeScriptProduct, &hold, None, None);
         assert!(
-            message.contains("the prime-agent keyword launches this Rust build"),
+            message.contains("the beehive keyword launches this Rust build"),
             "the unresolvable-exe continue path states the takeover: {message}"
         );
         assert!(
-            !message.contains("prime-agent --resume"),
-            "no bare `prime-agent --resume` hint remains (it launches this build): {message}"
+            !message.contains("beehive --resume"),
+            "no bare `beehive --resume` hint remains (it launches this build): {message}"
         );
     }
 
@@ -462,10 +456,10 @@ Session: ts01ab";
             HolderFlavor::TypeScriptProduct,
             &hold,
             None,
-            Some(std::path::Path::new("/opt/hold bin/prime-agent")),
+            Some(std::path::Path::new("/opt/hold bin/beehive")),
         );
         assert!(
-            message.contains("'/opt/hold bin/prime-agent' --resume 'evil'\\''; rm -rf ~'"),
+            message.contains("'/opt/hold bin/beehive' --resume 'evil'\\''; rm -rf ~'"),
             "the binary and the id each ride as one quoted word: {message}"
         );
 
@@ -480,7 +474,7 @@ Session: ts01ab";
             "a runtime image never becomes the resume command: {message}"
         );
         assert!(
-            message.contains("the prime-agent keyword launches this Rust build"),
+            message.contains("the beehive keyword launches this Rust build"),
             "the runtime holder gets the takeover wording: {message}"
         );
 
@@ -492,10 +486,10 @@ Session: ts01ab";
             HolderFlavor::TypeScriptProduct,
             &hold,
             None,
-            Some(std::path::Path::new("/opt/ts/prime-agent")),
+            Some(std::path::Path::new("/opt/ts/beehive")),
         );
         assert!(
-            message.contains("'/opt/ts/prime-agent' --resume 'li ne'"),
+            message.contains("'/opt/ts/beehive' --resume 'li ne'"),
             "control characters in the id collapse before quoting: {message}"
         );
     }
@@ -508,7 +502,7 @@ Session: ts01ab";
         };
         let message = refusal_for_flavor(HolderFlavor::ThisBuild, &hold, None, None);
         assert!(
-            message.contains("prime-agent --daemon-socket <socket> --resume 'rs01cd'"),
+            message.contains("beehive --daemon-socket <socket> --resume 'rs01cd'"),
             "the attach command names the flag and the session: {message}"
         );
         assert!(
@@ -530,7 +524,7 @@ Session: ts01ab";
             "the anonymous holder id renders: {message}"
         );
         assert!(
-            message.contains("prime-agent shutdown --force"),
+            message.contains("beehive shutdown --force"),
             "without a pid the sweep command is the take-over path: {message}"
         );
     }
@@ -589,15 +583,15 @@ Session: ts01ab";
     }
 
     /// The classification matrix. The rust shapes contain the
-    /// `prime-agent` substring family, so their checks must win first.
+    /// `beehive` substring family, so their checks must win first.
     #[test]
     fn the_holder_classification_matrix() {
-        let own = Path::new("/Users/k/.local/share/prime-agent/prime-agent");
+        let own = Path::new("/Users/k/.local/share/beehive/beehive");
         assert_eq!(classify_from(Some(own), Some(own)), HolderFlavor::ThisBuild);
         assert_eq!(
             classify_from(
-                Some(Path::new("/Users/k/.local/share/prime-agent/prime-agent")),
-                Some(Path::new("/opt/pa/prime-agent"))
+                Some(Path::new("/Users/k/.local/share/beehive/beehive")),
+                Some(Path::new("/opt/pa/beehive"))
             ),
             HolderFlavor::ThisBuild
         );
@@ -605,24 +599,24 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/Users/k/.local/share/prime-agent.old.123/prime-agent"
+                    "/Users/k/.local/share/beehive.old.123/beehive"
                 )),
-                Some(Path::new("/opt/pa/prime-agent"))
+                Some(Path::new("/opt/pa/beehive"))
             ),
             HolderFlavor::ThisBuild
         );
-        // The pre-takeover install dir: still this product.
+        // This product's install dir.
         assert_eq!(
             classify_from(
-                Some(Path::new("/opt/pa/prime-agent-rust")),
-                Some(Path::new("/opt/pa/prime-agent"))
+                Some(Path::new("/opt/pa/beehive")),
+                Some(Path::new("/opt/pa/beehive"))
             ),
             HolderFlavor::ThisBuild
         );
         // A cargo dev build: the /target/ shape names this product.
         assert_eq!(
             classify_from(
-                Some(Path::new("/w/repo/target/release/prime-agent")),
+                Some(Path::new("/w/repo/target/release/beehive")),
                 Some(own)
             ),
             HolderFlavor::ThisBuild
@@ -632,7 +626,7 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/Users/k/.local/share/prime-agent/releases/9.9.9-darwin-arm64-deadbeef/prime-agent"
+                    "/Users/k/.local/share/beehive/releases/9.9.9-darwin-arm64-deadbeef/beehive"
                 )),
                 Some(own)
             ),
@@ -641,16 +635,16 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/Users/k/.local/share/prime-agent-legacy/releases/9.9.9-darwin-arm64-deadbeef/prime-agent"
+                    "/Users/k/.local/share/beehive-legacy/releases/9.9.9-darwin-arm64-deadbeef/beehive"
                 )),
                 Some(own)
             ),
             HolderFlavor::TypeScriptProduct
         );
-        // A node runtime running FROM a prime-agent-named directory: the
+        // A node runtime running FROM a beehive-named directory: the
         // TypeScript product.
         assert_eq!(
-            classify_from(Some(Path::new("/work/prime-agent/node")), Some(own)),
+            classify_from(Some(Path::new("/work/beehive/node")), Some(own)),
             HolderFlavor::TypeScriptProduct
         );
         // A prefix that happens to CONTAIN a `releases` component does not
@@ -658,7 +652,7 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/opt/releases/user/share/prime-agent/prime-agent"
+                    "/opt/releases/user/share/beehive/beehive"
                 )),
                 Some(own)
             ),
@@ -667,18 +661,18 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/Users/k/.local/share/prime-agent.old.123/prime-agent (deleted)"
+                    "/Users/k/.local/share/beehive.old.123/beehive (deleted)"
                 )),
                 Some(own)
             ),
             HolderFlavor::ThisBuild
         );
-        // The TS public-bin symlink shape inside a dir NAMED prime-agent:
+        // The TS public-bin symlink shape inside a dir NAMED beehive:
         // still the TS product.
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/Users/k/.local/share/prime-agent/bin/prime-agent"
+                    "/Users/k/.local/share/beehive/bin/beehive"
                 )),
                 Some(own)
             ),
@@ -686,7 +680,7 @@ Session: ts01ab";
         );
         // An npm-style TS bin.
         assert_eq!(
-            classify_from(Some(Path::new("/usr/local/bin/prime-agent")), Some(own)),
+            classify_from(Some(Path::new("/usr/local/bin/beehive")), Some(own)),
             HolderFlavor::TypeScriptProduct
         );
         // A TS binary one level deeper than the takeover layout never
@@ -694,7 +688,7 @@ Session: ts01ab";
         assert_eq!(
             classify_from(
                 Some(Path::new(
-                    "/opt/other/prime-agent/9.9.9-release/prime-agent"
+                    "/opt/other/beehive/9.9.9-release/beehive"
                 )),
                 Some(own)
             ),
@@ -715,8 +709,8 @@ Session: ts01ab";
             classify_from(Some(Path::new("/usr/bin/less")), Some(own)),
             HolderFlavor::AnotherProcess
         );
-        // The own-exe equality wins even under the prime-agent substring.
-        let dev = Path::new("/w/repo/target/debug/prime-agent");
+        // The own-exe equality wins even under the beehive substring.
+        let dev = Path::new("/w/repo/target/debug/beehive");
         assert_eq!(classify_from(Some(dev), Some(dev)), HolderFlavor::ThisBuild);
     }
 

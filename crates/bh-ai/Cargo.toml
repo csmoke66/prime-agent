@@ -3,7 +3,7 @@ name = "bh-ai"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Provider APIs, model registry, and streaming for Prime Agent."
+description = "Provider APIs, model registry, and streaming for Beehive."
 
 [dependencies]
 bh-types = { path = "../bh-types" }

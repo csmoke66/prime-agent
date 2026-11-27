@@ -10,7 +10,7 @@
 use serde::Deserialize as _;
 use serde_json::{json, Value};
 
-use super::meta::{prime_agent_meta, PrimeAgentCompactionMeta, PrimeAgentSessionMeta};
+use super::meta::{beehive_meta, BeehiveCompactionMeta, BeehiveSessionMeta};
 use super::types::{AcpSessionUpdate, AcpToolKind, AcpToolStatus, TextBlock};
 
 /// Correlates streamed chunks with their owning assistant message (the
@@ -26,10 +26,7 @@ pub struct WireMappingState {
 impl WireMappingState {
     fn start_assistant_message(&mut self) -> String {
         self.next_assistant_message_sequence += 1;
-        let id = format!(
-            "prime-agent-assistant-{}",
-            self.next_assistant_message_sequence
-        );
+        let id = format!("beehive-assistant-{}", self.next_assistant_message_sequence);
         self.active_assistant_message_id = Some(id.clone());
         id
     }
@@ -181,7 +178,7 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
                 }),
                 content: text.map(|text| vec![super::types::ToolCallContent::new(text)]),
                 meta: rich.map(|rich| {
-                    prime_agent_meta(&PrimeAgentSessionMeta {
+                    beehive_meta(&BeehiveSessionMeta {
                         ipython: Some(rich),
                         ..Default::default()
                     })
@@ -250,8 +247,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
         "goal_update" => {
             let goal = event.get("goal");
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    goal: Some(super::meta::PrimeAgentGoalMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    goal: Some(super::meta::BeehiveGoalMeta {
                         status: goal
                             .and_then(|goal| goal.get("status"))
                             .and_then(Value::as_str)
@@ -275,8 +272,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
         "compaction_end" => {
             let result = event.get("result");
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    compaction: Some(PrimeAgentCompactionMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    compaction: Some(BeehiveCompactionMeta {
                         tokens_before: result
                             .and_then(|result| result.get("tokensBefore"))
                             .and_then(Value::as_u64),
@@ -292,8 +289,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
         "rlm_child_update" => {
             let child = event.get("child");
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    subagents: Some(vec![super::meta::PrimeAgentSubagentMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    subagents: Some(vec![super::meta::BeehiveSubagentMeta {
                         id: child
                             .and_then(|child| child.get("id"))
                             .and_then(Value::as_str)
@@ -343,8 +340,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
                         .collect::<Vec<String>>()
                 });
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    refinement: Some(super::meta::PrimeAgentRefinementMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    refinement: Some(super::meta::BeehiveRefinementMeta {
                         status: "complete".to_string(),
                         summary: result
                             .and_then(|result| result.get("summary"))
@@ -359,8 +356,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
         }
         "refine_failed" => {
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    refinement: Some(super::meta::PrimeAgentRefinementMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    refinement: Some(super::meta::BeehiveRefinementMeta {
                         status: "failed".to_string(),
                         summary: None,
                         changes: None,
@@ -376,8 +373,8 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
         "ipython_sent_agent_message" => {
             let message = event.get("message");
             vec![AcpSessionUpdate::SessionInfoUpdate {
-                meta: prime_agent_meta(&PrimeAgentSessionMeta {
-                    agent_message: Some(super::meta::PrimeAgentAgentMessageMeta {
+                meta: beehive_meta(&BeehiveSessionMeta {
+                    agent_message: Some(super::meta::BeehiveAgentMessageMeta {
                         tool_call_id: event
                             .get("toolCallId")
                             .and_then(Value::as_str)
@@ -406,12 +403,12 @@ pub fn wire_updates(event: &Value, state: &mut WireMappingState) -> Vec<AcpSessi
 }
 
 /// The synthetic tool-call id of a user-level bash run:
-/// `prime-agent-bash-<runId>`; a run without an id keys the bare prefix
+/// `beehive-bash-<runId>`; a run without an id keys the bare prefix
 /// (TS `bashToolCallId`).
 fn bash_tool_call_id(run_id: Option<String>) -> String {
     match run_id {
-        Some(run_id) => format!("prime-agent-bash-{run_id}"),
-        None => "prime-agent-bash".to_string(),
+        Some(run_id) => format!("beehive-bash-{run_id}"),
+        None => "beehive-bash".to_string(),
     }
 }
 
@@ -561,7 +558,7 @@ mod tests {
         let value = serde_json::to_value(&updates[0]).unwrap();
         assert_eq!(value["sessionUpdate"], "session_info_update");
         assert_eq!(
-            value["_meta"]["ai.primeintellect.prime-agent"]["goal"],
+            value["_meta"]["ai.beehive"]["goal"],
             json!({
                 "status": "active",
                 "objective": "Name a river",
@@ -634,7 +631,7 @@ mod tests {
         let value = serde_json::to_value(&updates[0]).unwrap();
         assert_eq!(value["sessionUpdate"], "session_info_update");
         assert_eq!(
-            value["_meta"]["ai.primeintellect.prime-agent"]["compaction"],
+            value["_meta"]["ai.beehive"]["compaction"],
             json!({ "tokensBefore": 4200, "summary": "a summary" })
         );
     }
@@ -692,7 +689,7 @@ mod tests {
     }
 
     fn namespaced(update: &AcpSessionUpdate) -> Value {
-        update.to_bare_value()["_meta"]["ai.primeintellect.prime-agent"].clone()
+        update.to_bare_value()["_meta"]["ai.beehive"].clone()
     }
 
     #[test]

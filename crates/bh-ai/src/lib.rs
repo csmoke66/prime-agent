@@ -1,4 +1,4 @@
-//! Provider APIs and model registry for Prime Agent.
+//! Provider APIs and model registry for Beehive.
 //!
 //! The wire/domain types live in `bh-types` (the only dependency, one-way) and are re-exported
 //! from [`types`]; per-provider internals are `pub(crate)`.

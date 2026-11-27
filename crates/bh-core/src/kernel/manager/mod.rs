@@ -1,7 +1,7 @@
 //! Kernel client for the REPL runtime: the kernel is a JSON-lines subprocess
 //! (`python -m rlm.repl`) — requests on stdin, events on stdout, stderr kept
 //! as a diagnostics tail. The protocol is documented in
-//! prime-agent-runtime/src/rlm/repl.md (protocol version 3).
+//! beehive-runtime/src/rlm/repl.md (protocol version 3).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};

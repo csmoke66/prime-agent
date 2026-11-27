@@ -226,7 +226,7 @@ mod tests {
     use serde_json::json;
 
     fn theme() -> Theme {
-        Theme::builtin("prime", ColorMode::TrueColor)
+        Theme::builtin("beehive", ColorMode::TrueColor)
     }
 
     /// The instant `ms` milliseconds ago: the live timer's start.
@@ -321,16 +321,16 @@ mod tests {
                     "outputLines": 2,
                     "totalLines": 10,
                 },
-                "fullOutputPath": "/tmp/pi-bash-abc",
+                "fullOutputPath": "/tmp/beehive-bash-abc",
             }),
             is_error: false,
         });
         let rows = render(&card, 0, Detail::Overview, &theme(), 120, true);
         let flat: Vec<String> = rows.iter().map(text_of).collect();
         assert!(
-            flat.iter()
-                .any(|r| r
-                    .contains("[Full output: /tmp/pi-bash-abc. Truncated: showing 2 of 10 lines]")),
+            flat.iter().any(|r| r.contains(
+                "[Full output: /tmp/beehive-bash-abc. Truncated: showing 2 of 10 lines]"
+            )),
             "got: {flat:?}"
         );
     }

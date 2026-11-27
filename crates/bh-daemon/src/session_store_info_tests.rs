@@ -536,7 +536,7 @@ fn a_persisted_scan_state_resumes_like_the_full_fold() {
 }
 
 /// The sidecar round trip through a real lease, for a session opened by
-/// a symlinked dir (macOS `/var`, a symlinked `~/.prime`): the release
+/// a symlinked dir (macOS `/var`, a symlinked `~/.beehive`): the release
 /// persists what the holder's raw-path reads cached, though the lease
 /// keys the file canonically. The next read then serves a valid sidecar
 /// (here a name the file does not carry - a cold scan cannot produce

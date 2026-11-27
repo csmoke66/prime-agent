@@ -30,7 +30,7 @@ mod time;
 static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// Set the product version stamped on every event and on outgoing requests
-/// (`prime-agent/<version>`). The binary passes its runtime version: a
+/// (`beehive/<version>`). The binary passes its runtime version: a
 /// release restamps the packaged manifest, not the compiled-in crate
 /// version. The first call wins.
 pub fn set_version(version: &str) {

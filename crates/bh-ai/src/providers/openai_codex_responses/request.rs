@@ -79,7 +79,7 @@ pub fn build_sse_headers(
     }
     set_header(&mut headers, "Authorization", &format!("Bearer {token}"));
     set_header(&mut headers, "chatgpt-account-id", account_id);
-    set_header(&mut headers, "originator", "pi");
+    set_header(&mut headers, "originator", "beehive");
     set_header(&mut headers, "User-Agent", &platform_user_agent());
     set_header(&mut headers, "OpenAI-Beta", "responses=experimental");
     set_header(&mut headers, "accept", "text/event-stream");
@@ -107,7 +107,7 @@ pub fn build_websocket_headers(
     }
     set_header(&mut headers, "Authorization", &format!("Bearer {token}"));
     set_header(&mut headers, "chatgpt-account-id", account_id);
-    set_header(&mut headers, "originator", "pi");
+    set_header(&mut headers, "originator", "beehive");
     set_header(&mut headers, "User-Agent", &platform_user_agent());
     // The WebSocket handshake drops the SSE beta header (matches the TS `delete
     // wsHeaders["OpenAI-Beta"]`).
@@ -127,11 +127,11 @@ fn set_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
     headers.push((name.to_string(), value.to_string()));
 }
 
-/// The `User-Agent` builder: `pi (<platform> <release>; <arch>)`.
+/// The `User-Agent` builder: `beehive (<platform> <release>; <arch>)`.
 fn platform_user_agent() -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
-    format!("pi ({os}; {arch})")
+    format!("beehive ({os}; {arch})")
 }
 
 #[cfg(test)]
@@ -201,7 +201,7 @@ mod tests {
         };
         assert_eq!(get("Authorization"), "Bearer tok");
         assert_eq!(get("chatgpt-account-id"), "acct");
-        assert_eq!(get("originator"), "pi");
+        assert_eq!(get("originator"), "beehive");
         assert_eq!(get("OpenAI-Beta"), "responses=experimental");
         assert_eq!(get("accept"), "text/event-stream");
         assert_eq!(get("content-type"), "application/json");

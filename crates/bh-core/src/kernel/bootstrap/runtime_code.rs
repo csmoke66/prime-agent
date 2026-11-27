@@ -6,8 +6,7 @@ use super::KernelPythonSkill;
 
 /// Line the runtime bootstrap prints when one or more pre-imported Python skills failed to import.
 /// The host scans the bootstrap cell's stdout for this marker.
-pub const PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER: &str =
-    "__PRIME_AGENT_PYTHON_SKILL_IMPORT_ERRORS__";
+pub const PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER: &str = "__BEEHIVE_PYTHON_SKILL_IMPORT_ERRORS__";
 
 /// Failed skill imports reported by a bootstrap cell: `(import name, import error)` pairs in import
 /// order (TS `UnavailablePythonSkills = Record<string, string>`).
@@ -31,13 +30,13 @@ pub fn parse_unavailable_python_skills(stdout: &str) -> Option<UnavailablePython
 }
 
 const RLM_BOOTSTRAP_HEADER_CODE: &str =
-    "import asyncio\nimport os as _prime_agent_os\n\n_prime_agent_os.environ[\"NO_COLOR\"] = \"1\"";
+    "import asyncio\nimport os as _beehive_os\n\n_beehive_os.environ[\"NO_COLOR\"] = \"1\"";
 
 const RLM_BOOTSTRAP_RUNTIME_HEAD_CODE: &str = "
 try:
-    import rlm as _prime_agent_rlm_module
-    rlm = _prime_agent_rlm_module.rlm
-    bash = _prime_agent_rlm_module.bash
+    import rlm as _beehive_rlm_module
+    rlm = _beehive_rlm_module.rlm
+    bash = _beehive_rlm_module.bash
     import rlm.mcp as mcp
 ";
 
@@ -47,19 +46,19 @@ try:
 /// the notice nothing wakes a cell that ended its turn on a degraded command,
 /// so daemonless sessions keep the unbounded await.
 const RLM_BOOTSTRAP_BASH_NOTICES_LINE_CODE: &str =
-    "    _prime_agent_rlm_module._set_completion_notices_wired(True)\n";
+    "    _beehive_rlm_module._set_completion_notices_wired(True)\n";
 
 const RLM_BOOTSTRAP_RUNTIME_TAIL_CODE: &str = r#"
-except Exception as _prime_agent_rlm_error:
-    _PRIME_AGENT_RLM_IMPORT_ERROR = str(_prime_agent_rlm_error)
+except Exception as _beehive_rlm_error:
+    _BEEHIVE_RLM_IMPORT_ERROR = str(_beehive_rlm_error)
 
-    class _PrimeAgentMissingRlm:
+    class _BeehiveMissingRlm:
         def _raise_missing(self):
             raise RuntimeError(
-                "prime-agent-runtime is not installed in this kernel. "
-                "Remove ~/.prime/agent/kernel-venv so prime-agent can rebuild it, or set "
-                "PRIME_AGENT_KERNEL_PYTHON to a kernel environment with prime-agent-runtime installed. "
-                f"Import error: {_PRIME_AGENT_RLM_IMPORT_ERROR}"
+                "beehive-runtime is not installed in this kernel. "
+                "Remove ~/.beehive/kernel-venv so beehive can rebuild it, or set "
+                "BEEHIVE_KERNEL_PYTHON to a kernel environment with beehive-runtime installed. "
+                f"Import error: {_BEEHIVE_RLM_IMPORT_ERROR}"
             )
 
         async def spawn(self, prompt, **kwargs):
@@ -77,7 +76,7 @@ except Exception as _prime_agent_rlm_error:
         async def delete_subagent(self, target):
             self._raise_missing()
 
-    rlm = _PrimeAgentMissingRlm()
+    rlm = _BeehiveMissingRlm()
 
     def bash(command, persistent=False):
         rlm._raise_missing()
@@ -114,78 +113,78 @@ pub fn build_rlm_bootstrap_code(
         r#"
 {base_code}
 
-import importlib as _prime_agent_importlib
-import inspect as _prime_agent_inspect
-import sys as _prime_agent_sys
-import types as _prime_agent_types
+import importlib as _beehive_importlib
+import inspect as _beehive_inspect
+import sys as _beehive_sys
+import types as _beehive_types
 
-class _PrimeAgentCallableSkillModule(_prime_agent_types.ModuleType):
+class _BeehiveCallableSkillModule(_beehive_types.ModuleType):
     async def __call__(self, *args, **kwargs):
         result = self.run(*args, **kwargs)
-        if _prime_agent_inspect.isawaitable(result):
+        if _beehive_inspect.isawaitable(result):
             return await result
         return result
 
-class _PrimeAgentUnavailableSkill:
+class _BeehiveUnavailableSkill:
     def __init__(self, name, error):
         self.__name__ = name
-        self._prime_agent_import_error = error
+        self._beehive_import_error = error
         self.__doc__ = f"Python skill {{name}} is unavailable: {{error}}"
 
     async def run(self, *args, **kwargs):
         raise RuntimeError(
             f"Python skill {{self.__name__}} is unavailable in this kernel. "
-            f"Import error: {{self._prime_agent_import_error}}"
+            f"Import error: {{self._beehive_import_error}}"
         )
 
     async def __call__(self, *args, **kwargs):
         return await self.run()
 
     def __repr__(self):
-        return f"<unavailable Python skill {{self.__name__!r}}: {{self._prime_agent_import_error}}>"
+        return f"<unavailable Python skill {{self.__name__!r}}: {{self._beehive_import_error}}>"
 
-def _prime_agent_wrap_skill_module(module):
+def _beehive_wrap_skill_module(module):
     run = getattr(module, "run", None)
     if not callable(run):
         return module
-    if isinstance(module, _PrimeAgentCallableSkillModule):
+    if isinstance(module, _BeehiveCallableSkillModule):
         return module
-    wrapped = _PrimeAgentCallableSkillModule(module.__name__)
+    wrapped = _BeehiveCallableSkillModule(module.__name__)
     wrapped.__dict__.update(module.__dict__)
     try:
-        wrapped.__signature__ = _prime_agent_inspect.signature(run)
+        wrapped.__signature__ = _beehive_inspect.signature(run)
     except Exception:
         pass
     doc = getattr(run, "__doc__", None)
     if doc:
         wrapped.__doc__ = doc
-    _prime_agent_sys.modules[module.__name__] = wrapped
+    _beehive_sys.modules[module.__name__] = wrapped
     return wrapped
 
-_PRIME_AGENT_SKILL_IMPORT_ERRORS = {{}}
+_BEEHIVE_SKILL_IMPORT_ERRORS = {{}}
 
-for _prime_agent_skill_name in {imports_json}:
+for _beehive_skill_name in {imports_json}:
     try:
-        globals()[_prime_agent_skill_name] = _prime_agent_wrap_skill_module(
-            _prime_agent_importlib.import_module(_prime_agent_skill_name)
+        globals()[_beehive_skill_name] = _beehive_wrap_skill_module(
+            _beehive_importlib.import_module(_beehive_skill_name)
         )
-    except Exception as _prime_agent_skill_error:
+    except Exception as _beehive_skill_error:
         # An empty exception message would otherwise be dropped by the
         # host-side parser; fall back to the exception type name.
-        _prime_agent_skill_error_text = (
-            str(_prime_agent_skill_error) or type(_prime_agent_skill_error).__name__
+        _beehive_skill_error_text = (
+            str(_beehive_skill_error) or type(_beehive_skill_error).__name__
         )
-        _PRIME_AGENT_SKILL_IMPORT_ERRORS[_prime_agent_skill_name] = _prime_agent_skill_error_text
-        globals()[_prime_agent_skill_name] = _PrimeAgentUnavailableSkill(
-            _prime_agent_skill_name,
-            _prime_agent_skill_error_text,
+        _BEEHIVE_SKILL_IMPORT_ERRORS[_beehive_skill_name] = _beehive_skill_error_text
+        globals()[_beehive_skill_name] = _BeehiveUnavailableSkill(
+            _beehive_skill_name,
+            _beehive_skill_error_text,
         )
 
-if _PRIME_AGENT_SKILL_IMPORT_ERRORS:
-    import json as _prime_agent_json
+if _BEEHIVE_SKILL_IMPORT_ERRORS:
+    import json as _beehive_json
     print(
         "{PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER}"
-        + _prime_agent_json.dumps(_PRIME_AGENT_SKILL_IMPORT_ERRORS)
+        + _beehive_json.dumps(_BEEHIVE_SKILL_IMPORT_ERRORS)
     )
 "#
     )
@@ -201,8 +200,8 @@ mod tests {
     #[test]
     fn bootstrap_code_without_skills_binds_rlm() {
         let code = build_rlm_bootstrap_code(&[], false);
-        assert!(code.contains("import rlm as _prime_agent_rlm_module"));
-        assert!(!code.contains("_PrimeAgentUnavailableSkill"));
+        assert!(code.contains("import rlm as _beehive_rlm_module"));
+        assert!(!code.contains("_BeehiveUnavailableSkill"));
     }
 
     #[test]
@@ -228,8 +227,8 @@ mod tests {
             pyproject_path: PathBuf::from("/pkg/edit/pyproject.toml"),
         }];
         let code = build_rlm_bootstrap_code(&skills, false);
-        assert!(code.contains(r#"for _prime_agent_skill_name in ["edit"]"#));
-        assert!(code.contains("_PrimeAgentUnavailableSkill"));
+        assert!(code.contains(r#"for _beehive_skill_name in ["edit"]"#));
+        assert!(code.contains("_BeehiveUnavailableSkill"));
     }
 
     /// The TS #2381 parser table: marker+JSON, noise-prefixed marker, no marker, non-JSON payload

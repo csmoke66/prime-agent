@@ -1,4 +1,4 @@
-//! `prime-agent config`: the resource-configuration view — resolve session
+//! `beehive config`: the resource-configuration view — resolve session
 //! resources, report settings errors, then open the interactive selector.
 
 use std::path::PathBuf;
@@ -17,7 +17,10 @@ pub fn run() -> i32 {
     let agent_dir = crate::config::get_agent_dir();
     let mut resolve_settings = SettingsManager::create(&cwd, &agent_dir);
     crate::package_command::report_settings_errors(&mut resolve_settings, "config command");
-    let theme_name = resolve_settings.get_theme().unwrap_or("prime").to_string();
+    let theme_name = resolve_settings
+        .get_theme()
+        .unwrap_or("beehive")
+        .to_string();
     let mut manager = PackageManager::new(cwd.clone(), agent_dir.clone(), resolve_settings);
     let resolved = match manager.resolve() {
         Ok(resolved) => resolved,
@@ -103,7 +106,7 @@ mod tests {
         };
         let group = resource_config::ResourceGroup {
             key: "g".to_string(),
-            label: "User (~/.prime/agent/)".to_string(),
+            label: "User (~/.beehive/)".to_string(),
             scope: bh_core::packages::SourceScope::User,
             origin: ResourceOrigin::TopLevel,
             source: MetadataSource::Auto,
@@ -115,7 +118,7 @@ mod tests {
         };
         let (rows, items) = selector_rows(&[group]);
         assert_eq!(rows.len(), 3);
-        assert!(matches!(&rows[0], SelectorRow::Group(label) if label == "User (~/.prime/agent/)"));
+        assert!(matches!(&rows[0], SelectorRow::Group(label) if label == "User (~/.beehive/)"));
         assert!(matches!(&rows[1], SelectorRow::Subgroup(label) if label == "Skills"));
         match &rows[2] {
             SelectorRow::Item {

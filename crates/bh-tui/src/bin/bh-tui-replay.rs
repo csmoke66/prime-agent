@@ -26,15 +26,12 @@ use bh_tui::theme::{ColorMode, Theme};
 use bh_tui::view::AgentView;
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "bh-tui-replay",
-    about = "Replay a prime-agent session in the TUI"
-)]
+#[command(name = "bh-tui-replay", about = "Replay a beehive session in the TUI")]
 struct Args {
     /// Path to the session JSONL file (defaults to the newest session).
     session: Option<String>,
-    /// Theme: prime | dark | light.
-    #[arg(long, default_value = "prime")]
+    /// Theme: beehive | dark | light.
+    #[arg(long, default_value = "beehive")]
     theme: String,
     /// Headless single-frame dump at this size, e.g. 80x24.
     #[arg(long)]
@@ -54,7 +51,7 @@ struct Args {
 fn newest_session() -> Result<std::path::PathBuf> {
     let dir = bh_types::platform::home_dir()
         .context("home directory not found (HOME, or USERPROFILE on Windows)")?
-        .join(".prime/agent/sessions");
+        .join(".beehive/sessions");
     let mut best: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
     for entry in std::fs::read_dir(&dir)? {
         let entry = entry?;
@@ -68,7 +65,7 @@ fn newest_session() -> Result<std::path::PathBuf> {
         }
     }
     best.map(|(_, p)| p)
-        .context("no session files found in ~/.prime/agent/sessions")
+        .context("no session files found in ~/.beehive/sessions")
 }
 
 fn main() -> Result<()> {

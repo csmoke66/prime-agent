@@ -626,7 +626,7 @@ mod tests {
             dir.join("agent").join("models.json"),
             json!({
                 "providers": {
-                    "prime-inference": {
+                    "test-provider": {
                         "api": "openai-completions",
                         "baseUrl": "http://127.0.0.1:9/v1",
                         "apiKey": "sk-test",
@@ -678,7 +678,7 @@ mod tests {
                 &json!({
                     "noSession": true,
                     "cwd": dir,
-                    "models": ["prime-inference/mock-2:high", "prime-inference/mock-1"],
+                    "models": ["test-provider/mock-2:high", "test-provider/mock-1"],
                 }),
             )
             .await;
@@ -703,7 +703,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             scoped_keys,
-            vec!["prime-inference/mock-2", "prime-inference/mock-1"],
+            vec!["test-provider/mock-2", "test-provider/mock-1"],
             "the scope keeps the request's order: {data}"
         );
         // No explicit model flags: the startup chain starts on the first scoped model.
@@ -717,7 +717,7 @@ mod tests {
         // Settings `enabledModels` fallback: a create without `models` resolves the same way.
         std::fs::write(
             dir.join("agent").join("settings.json"),
-            json!({ "enabledModels": ["prime-inference/mock-1", "prime-inference/mock-2"] })
+            json!({ "enabledModels": ["test-provider/mock-1", "test-provider/mock-2"] })
                 .to_string(),
         )
         .unwrap();
@@ -766,7 +766,7 @@ mod tests {
                 &json!({
                     "sessionPath": session_path,
                     "cwd": dir,
-                    "models": ["prime-inference/mock-2:high", "prime-inference/mock-1"],
+                    "models": ["test-provider/mock-2:high", "test-provider/mock-1"],
                 }),
             )
             .await;
@@ -787,7 +787,7 @@ mod tests {
         let file = std::fs::read_to_string(&session_path).expect("the session file");
         assert!(
             file.contains("\"type\":\"model_change\"")
-                && file.contains("\"provider\":\"prime-inference\"")
+                && file.contains("\"provider\":\"test-provider\"")
                 && file.contains("\"modelId\":\"mock-2\""),
             "the prefix's model_change carries the scoped pick: {file}"
         );
@@ -802,9 +802,9 @@ mod tests {
     async fn set_scoped_models_stores_and_validates() {
         let worker = created_worker().await;
         let scoped = json!([
-            { "model": { "provider": "prime-inference", "id": "mock-1" } },
+            { "model": { "provider": "test-provider", "id": "mock-1" } },
             {
-                "model": { "provider": "prime-inference", "id": "mock-2" },
+                "model": { "provider": "test-provider", "id": "mock-2" },
                 "thinkingLevel": "high",
             },
         ]);

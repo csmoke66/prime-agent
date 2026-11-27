@@ -31,8 +31,8 @@ socket2 = "0.6"
 # The supervisor property suite draws sibling rosters for the live
 # rename ladder; the plain std features are enough (no fork/timeout).
 proptest = { workspace = true }
-# Test-only: `ModelCatalog::with_urls` + the compiled offline Prime
-# Inference entries build the loopback catalog the session-model restore
+# Test-only: `ModelCatalog::with_urls` + the compiled offline
+# model entries build the loopback catalog the session-model restore
 # tests script (the bh-core tests/common pattern, in-crate), and the
 # catalog-repo child-resolution regression writes the layer-A disk cache
 # in the bh-models snapshot shape; the crate's runtime surface goes

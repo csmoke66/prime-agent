@@ -174,19 +174,18 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Supervisor {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         // The wake's saved-session catalog derives the sessions dir from
-        // the agent dir: a PRIME_AGENT_SESSION_DIR inherited from the
+        // the agent dir: a BEEHIVE_SESSION_DIR inherited from the
         // surrounding process (a daemon worker's test run) would point
         // that scan away from the files the test's sessions wrote.
-        .env_remove("PRIME_AGENT_SESSION_DIR")
+        .env_remove("BEEHIVE_SESSION_DIR")
         // The wake create carries no model: an inherited
-        // PRIME_AGENT_MODEL / PRIME_AGENT_MODEL_PROVIDER pair would become
+        // BEEHIVE_MODEL / BEEHIVE_MODEL_PROVIDER pair would become
         // the woken worker's spawn fallback and win over the saved
         // session's model.
-        .env_remove("PRIME_AGENT_MODEL")
-        .env_remove("PRIME_AGENT_MODEL_PROVIDER")
+        .env_remove("BEEHIVE_MODEL")
+        .env_remove("BEEHIVE_MODEL_PROVIDER")
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             "15000",
@@ -296,7 +295,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");

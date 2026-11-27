@@ -144,12 +144,12 @@ fn session_model_reads_every_wire_shape() {
     let bare = json!({"model": "internal/glm-5.3-fast", "thinkingLevel": "high"});
     assert_eq!(session_model(&bare), "glm-5.3-fast:high");
     let live = json!({
-        "model": {"id": "internal/glm-5.3-fast", "name": "GLM", "provider": "prime-inference"},
+        "model": {"id": "internal/glm-5.3-fast", "name": "GLM", "provider": "test-provider"},
         "thinkingLevel": "high",
     });
     assert_eq!(session_model(&live), "glm-5.3-fast:high");
     let seeded = json!({
-        "model": {"provider": "prime-inference", "modelId": "internal/glm-5.3-fast"},
+        "model": {"provider": "test-provider", "modelId": "internal/glm-5.3-fast"},
         "thinkingLevel": "high",
     });
     assert_eq!(session_model(&seeded), "glm-5.3-fast:high");
@@ -1203,10 +1203,10 @@ fn one_dropdown_renders_the_full_fleet_roster() {
 /// too).
 #[test]
 fn a_ledger_child_nests_across_the_windows_path_forms() {
-    let raw_parent = r"C:\Users\kevin\.prime\agent\sessions\0f1e2-parent.jsonl";
-    let verbatim_parent = r"\\?\C:\Users\kevin\.prime\agent\sessions\0f1e2-parent.jsonl";
+    let raw_parent = r"C:\Users\kevin\.beehive\sessions\0f1e2-parent.jsonl";
+    let verbatim_parent = r"\\?\C:\Users\kevin\.beehive\sessions\0f1e2-parent.jsonl";
     let verbatim_child =
-        r"\\?\C:\Users\kevin\.prime\agent\session-artifacts\0f1e2-parent\sub-1\c1.jsonl";
+        r"\\?\C:\Users\kevin\.beehive\session-artifacts\0f1e2-parent\sub-1\c1.jsonl";
     let mut parent = parent_summary("0f1e2-parent");
     parent["sessionFile"] = json!(raw_parent);
     let mut seeded = child_summary("c1", "0f1e2-parent", "worker one");

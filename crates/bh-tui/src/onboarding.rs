@@ -225,12 +225,8 @@ impl OnboardingScreen {
         let mut row: Line = vec![Span::styled(" ".to_string(), Style::default())];
         row.push(Span::styled("Welcome to ".to_string(), text));
         row.push(Span::styled(
-            "PRIME".to_string(),
+            "Beehive".to_string(),
             text.add_modifier(Modifier::BOLD),
-        ));
-        row.push(Span::styled(
-            " Agent".to_string(),
-            text.add_modifier(Modifier::ITALIC),
         ));
         row
     }
@@ -469,7 +465,7 @@ mod tests {
 
     #[test]
     fn welcome_keeps_login_and_skip_visible_on_a_short_terminal() {
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let rows = OnboardingScreen::welcome().render(&theme, 40, 12, &kb());
         let text: Vec<String> = rows
             .iter()
@@ -499,7 +495,7 @@ mod tests {
 
     #[test]
     fn the_welcome_skip_hint_and_key_follow_the_cancel_binding() {
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let mut screen = OnboardingScreen::welcome();
         let mut sink = crate::clipboard::OscSink::Buffer(Vec::new());
         for (keys, expected_hint) in [(vec!["f2".to_string()], true), (Vec::new(), false)] {
@@ -559,9 +555,9 @@ mod tests {
     fn wash_falls_back_to_the_hardcoded_canvas() {
         // The built-in themes carry no background key: dark canvas (16,16,16)
         // lifted toward white — blend(255, 16) = 35.
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         assert_eq!(highlight_wash(&theme), Color::Rgb(35, 35, 35));
-        let theme = Theme::builtin("prime", ColorMode::Color256);
+        let theme = Theme::builtin("beehive", ColorMode::Color256);
         assert_eq!(
             highlight_wash(&theme),
             Color::Indexed(crate::theme::rgb_to_256((35, 35, 35)))
@@ -596,7 +592,7 @@ mod tests {
             message: "Generating the browser challenge...".to_string(),
             chatter: true,
         });
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let rows = screen.render(&theme, 80, 24, &kb());
         let text = rows
             .iter()
@@ -656,7 +652,7 @@ mod tests {
         screen.apply_auth_request(crate::auth_panel::AuthPanelRequest::Waiting {
             message: "Waiting for browser authentication...".to_string(),
         });
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let rows = screen.render(&theme, 80, 24, &kb());
         let text = rows
             .iter()
@@ -703,7 +699,7 @@ mod tests {
             allow_empty: false,
             reply: tokio::sync::oneshot::channel().0,
         });
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let rows = screen.render(&theme, 40, 24, &kb());
         let text: Vec<String> = rows
             .iter()
@@ -746,7 +742,7 @@ mod tests {
             .nth(1)
             .and_then(|rest| rest.split("# BANNER_AWK_END").next())
             .expect("the installer carries the banner program");
-        let theme = Theme::builtin("prime", ColorMode::TrueColor);
+        let theme = Theme::builtin("beehive", ColorMode::TrueColor);
         let tone = |color: Option<Color>| match color {
             Some(Color::Rgb(113, 113, 122)) => 'D',
             Some(Color::Rgb(82, 82, 91)) => 'B',

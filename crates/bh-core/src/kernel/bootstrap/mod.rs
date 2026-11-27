@@ -20,7 +20,7 @@ pub use runtime_code::{
     PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER,
 };
 use venv::{
-    bootstrap_venv, ensure_uv, expand_home, has_prime_agent_runtime,
+    bootstrap_venv, ensure_uv, expand_home, has_beehive_runtime,
     missing_python_skill_import_labels, missing_rlm_extra_import_labels, normalize_python_skills,
     resolve_writable_kernel_venv_dir, sync_python_skills, BootstrapPythonSkill, UvCommand,
 };
@@ -99,16 +99,16 @@ impl EnsureKernelPythonOptions {
 fn format_bootstrap_failure(error: &anyhow::Error) -> anyhow::Error {
     let mut message = format!(
         "Failed to set up the Python kernel runtime. {error:#}\n\
-         First-time setup needs the bundled local runtime and internet to install uv, Python, and default Python packages; once set up, Prime Agent runs offline. \
+         First-time setup needs the bundled local runtime and internet to install uv, Python, and default Python packages; once set up, Beehive runs offline. \
          An interrupted runtime upgrade needs network once more, so re-run this while online. \
-         Set PRIME_AGENT_KERNEL_PYTHON to a Python with a current prime-agent-runtime and default Python packages installed to skip auto-bootstrap."
+         Set BEEHIVE_KERNEL_PYTHON to a Python with a current beehive-runtime and default Python packages installed to skip auto-bootstrap."
     );
     // The packaged exe-adjacent sidecar is the kernel runtime source; when it is missing everywhere
     // (packaged layout and source checkout), name it.
     if venv::packaged_runtime_dir().is_none() {
         let package = venv::package_dir();
         let _ = write!(message,
-            "\nThe packaged prime-agent-runtime directory was not found (looked next to the executable at {} and PI_PACKAGE_DIR); reinstall prime-agent so the kernel runtime ships beside the binary.",
+            "\nThe packaged beehive-runtime directory was not found (looked next to the executable at {} and BEEHIVE_PACKAGE_DIR); reinstall beehive so the kernel runtime ships beside the binary.",
             package.display()
         );
     }
@@ -123,7 +123,7 @@ type InFlightBootstrap = Option<(
 
 static IN_FLIGHT: Mutex<InFlightBootstrap> = Mutex::new(None);
 
-/// Resolve the Python interpreter for the kernel: the `PRIME_AGENT_KERNEL_PYTHON`
+/// Resolve the Python interpreter for the kernel: the `BEEHIVE_KERNEL_PYTHON`
 /// override when valid, else the auto-bootstrapped venv python.
 ///
 /// # Errors
@@ -148,8 +148,8 @@ pub(crate) async fn ensure_kernel_python_for_project(
         project
             .as_ref()
             .map_or_else(String::new, |path| path.to_string_lossy().into_owned()),
-        std::env::var("PRIME_AGENT_KERNEL_PYTHON").unwrap_or_default(),
-        std::env::var("PRIME_AGENT_KERNEL_VENV").unwrap_or_default(),
+        std::env::var("BEEHIVE_KERNEL_PYTHON").unwrap_or_default(),
+        std::env::var("BEEHIVE_KERNEL_VENV").unwrap_or_default(),
         std::env::var("HOME").unwrap_or_default(),
         std::env::var("XDG_DATA_HOME").unwrap_or_default(),
         serde_json::to_string(&python_skills).unwrap_or_default(),
@@ -191,14 +191,14 @@ async fn ensure_kernel_python_uncached(
     python_skills: &[BootstrapPythonSkill],
     project: Option<&std::path::Path>,
 ) -> anyhow::Result<PathBuf> {
-    if let Ok(override_python) = std::env::var("PRIME_AGENT_KERNEL_PYTHON") {
+    if let Ok(override_python) = std::env::var("BEEHIVE_KERNEL_PYTHON") {
         if !override_python.is_empty() {
             let python = expand_home(&override_python);
             let python_str = python.to_string_lossy().to_string();
             let mut missing = Vec::new();
-            if !has_prime_agent_runtime(&python_str) {
+            if !has_beehive_runtime(&python_str) {
                 missing.push(
-                    "a current prime-agent-runtime (including rlm.release, configurable rlm.list_subagents, and harness CRUD)".to_string(),
+                    "a current beehive-runtime (including rlm.release, configurable rlm.list_subagents, and harness CRUD)".to_string(),
                 );
             }
             if missing.is_empty() {
@@ -215,7 +215,7 @@ async fn ensure_kernel_python_uncached(
                     missing_python_skill_import_labels(&python_str, &options.python_skills);
                 if !missing_skills.is_empty() {
                     options.report(&format!(
-                        "Warning: Python skills unavailable in PRIME_AGENT_KERNEL_PYTHON and will be disabled: {}",
+                        "Warning: Python skills unavailable in BEEHIVE_KERNEL_PYTHON and will be disabled: {}",
                         missing_skills.join(", ")
                     ));
                 }
@@ -224,7 +224,7 @@ async fn ensure_kernel_python_uncached(
                 return Ok(python);
             }
             return Err(anyhow!(
-                "PRIME_AGENT_KERNEL_PYTHON points to a Python missing {}: {}",
+                "BEEHIVE_KERNEL_PYTHON points to a Python missing {}: {}",
                 missing.join(" and "),
                 python.display()
             ));
@@ -307,7 +307,7 @@ async fn ensure_kernel_venv(
 }
 
 /// The venv's directory denies writes to this user, so the bootstrap lock cannot be
-/// created: a base-ready venv degrades the way a `PRIME_AGENT_KERNEL_PYTHON` override
+/// created: a base-ready venv degrades the way a `BEEHIVE_KERNEL_PYTHON` override
 /// does (uncovered skills disabled with a warning, nothing installed), and anything
 /// less is a setup error naming the venv and both env overrides.
 fn unwritable_venv(
@@ -321,9 +321,9 @@ fn unwritable_venv(
     if !kernel_base_ready(&python_str, venv, runtime_identity) {
         return Err(anyhow!(
             "cannot set up the Python kernel runtime: the kernel venv at {} is not writable by \
-             this user and does not hold a current runtime. Set PRIME_AGENT_KERNEL_VENV to a \
-             writable directory, or set PRIME_AGENT_KERNEL_PYTHON to a Python with a current \
-             prime-agent-runtime and the default Python packages installed. ({lock_error:#})",
+             this user and does not hold a current runtime. Set BEEHIVE_KERNEL_VENV to a \
+             writable directory, or set BEEHIVE_KERNEL_PYTHON to a Python with a current \
+             beehive-runtime and the default Python packages installed. ({lock_error:#})",
             venv.display()
         ));
     }

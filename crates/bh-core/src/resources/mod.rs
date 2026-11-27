@@ -377,18 +377,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let agent_dir = tmp.path().join("agent");
         let project = tmp.path().join("proj");
-        fs::create_dir_all(agent_dir.join(".prime").join("agent")).unwrap();
-        fs::create_dir_all(project.join(".prime").join("agent")).unwrap();
+        fs::create_dir_all(agent_dir.join(".beehive")).unwrap();
+        fs::create_dir_all(project.join(".beehive")).unwrap();
         fs::write(
-            agent_dir.join(".prime").join("agent").join("SYSTEM.md"),
+            agent_dir.join(".beehive").join("SYSTEM.md"),
             "global system",
         )
         .unwrap();
-        fs::write(
-            project.join(".prime").join("agent").join("SYSTEM.md"),
-            "project system",
-        )
-        .unwrap();
+        fs::write(project.join(".beehive").join("SYSTEM.md"), "project system").unwrap();
         let found = discover_system_prompt_file(&project, &agent_dir).unwrap();
         assert!(found.to_string_lossy().contains("proj"));
         assert_eq!(
@@ -403,7 +399,7 @@ mod tests {
         let agent_dir = tmp.path().join("agent");
         let cwd = tmp.path().join("proj");
         fs::create_dir_all(agent_dir.join("skills").join("alpha")).unwrap();
-        fs::create_dir_all(cwd.join(".prime").join("agent").join("prompts")).unwrap();
+        fs::create_dir_all(cwd.join(".beehive").join("prompts")).unwrap();
         fs::create_dir_all(&cwd).unwrap();
         fs::write(
             agent_dir.join("skills").join("alpha").join("SKILL.md"),
@@ -411,19 +407,12 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            cwd.join(".prime")
-                .join("agent")
-                .join("prompts")
-                .join("fix.md"),
+            cwd.join(".beehive").join("prompts").join("fix.md"),
             "Fix $1",
         )
         .unwrap();
         fs::write(cwd.join("AGENTS.md"), "Project rules").unwrap();
-        fs::write(
-            cwd.join(".prime").join("agent").join("SYSTEM.md"),
-            "custom system",
-        )
-        .unwrap();
+        fs::write(cwd.join(".beehive").join("SYSTEM.md"), "custom system").unwrap();
         let resources = load_resources(ResourceLoaderOptions {
             cwd,
             agent_dir,
@@ -489,7 +478,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let cwd = tmp.path().join("project");
         let agent_dir = tmp.path().join("agent");
-        let project_skill = cwd.join(".prime/agent/skills/project-code");
+        let project_skill = cwd.join(".beehive/skills/project-code");
         let configured_skill = tmp.path().join("configured/configured-code");
         let ancestor_skill = tmp.path().join(".agents/skills/ancestor-code");
         let user_skill = agent_dir.join("skills/user-code");
@@ -519,7 +508,7 @@ mod tests {
             .unwrap();
         }
         fs::write(
-            cwd.join(".prime/agent/settings.json"),
+            cwd.join(".beehive/settings.json"),
             serde_json::json!({"skills": [configured_skill.display().to_string()] }).to_string(),
         )
         .unwrap();
@@ -558,13 +547,7 @@ mod tests {
         let agent_dir = tmp.path().join("agent");
         let cwd = tmp.path().join("proj");
         fs::create_dir_all(agent_dir.join("skills").join("alpha")).unwrap();
-        fs::create_dir_all(
-            cwd.join(".prime")
-                .join("agent")
-                .join("skills")
-                .join("alpha"),
-        )
-        .unwrap();
+        fs::create_dir_all(cwd.join(".beehive").join("skills").join("alpha")).unwrap();
         fs::create_dir_all(&cwd).unwrap();
         fs::write(
             agent_dir.join("skills").join("alpha").join("SKILL.md"),
@@ -572,8 +555,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            cwd.join(".prime")
-                .join("agent")
+            cwd.join(".beehive")
                 .join("skills")
                 .join("alpha")
                 .join("SKILL.md"),
@@ -640,7 +622,7 @@ mod tests {
         let agent_dir = tmp.path().join("agent");
         let bundled = tmp.path().join("bundled");
         let cwd = tmp.path().join("proj");
-        let project_skills = cwd.join(".prime/agent/skills");
+        let project_skills = cwd.join(".beehive/skills");
         let user_skills = agent_dir.join("skills");
         let bundled_goal = write_skill_dir(&bundled.join("goal"), &named("goal"), Some("goal"));
         let project_goal = write_skill_dir(&project_skills.join("goal"), &named("goal"), None);

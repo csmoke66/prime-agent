@@ -1,15 +1,15 @@
 # bh-cli
 
-The `prime-agent` binary.
+The `beehive` binary.
 
 ## Scope
-Argument parsing, mode selection (interactive/headless/json/daemon subcommands), binary wiring of crates into processes, exit codes and user-facing errors. The daemon-forensics CLI (`incident.rs`, TS `src/cli/incident.ts`): the `prime-agent incident` timeline command — log-source discovery (agent.jsonl plus its `.old` rotation, falling back to the newest per-daemon log), `--since`/`--until` window and `--session` filter parsing, and the report rendering; the shared classifier lives in bh-types (`bh_types::incident`) and the agents-view notice in bh-tui. Client-side MCP auth flows (`mcp_login.rs`): the `/mcp login`/`/mcp logout` hook the TUI calls — the TS interactive client's placement — resolving a server (settings `mcpServers` + the builtin catalog), running the bh-core OAuth login on the suspended terminal, and persisting through the shared auth store. The same placement serves the TUI's client-command hooks: provider auth (`provider_login.rs` — the `/login`/`/logout` catalog, the API-key store, the MCP device flow; the subscription OAuth stays unported and reports it).
+Argument parsing, mode selection (interactive/headless/json/daemon subcommands), binary wiring of crates into processes, exit codes and user-facing errors. The daemon-forensics CLI (`incident.rs`, TS `src/cli/incident.ts`): the `beehive incident` timeline command — log-source discovery (agent.jsonl plus its `.old` rotation, falling back to the newest per-daemon log), `--since`/`--until` window and `--session` filter parsing, and the report rendering; the shared classifier lives in bh-types (`bh_types::incident`) and the agents-view notice in bh-tui. Client-side MCP auth flows (`mcp_login.rs`): the `/mcp login`/`/mcp logout` hook the TUI calls — the TS interactive client's placement — resolving a server (settings `mcpServers` + the builtin catalog), running the bh-core OAuth login on the suspended terminal, and persisting through the shared auth store. The same placement serves the TUI's client-command hooks: provider auth (`provider_login.rs` — the `/login`/`/logout` catalog, the API-key store, the MCP device flow; the subscription OAuth stays unported and reports it).
 
 ## Non-goals
 No business logic; it composes bh-daemon, bh-core, bh-tui, bh-ai via their public APIs only.
 
 ## Public API
-The `prime-agent` executable surface (flags, subcommands, exit codes). Internal lib types `pub(crate)`, plus the daemon wiring (`interactive_mode::{ensure_daemon_running, ensure_daemon_running_with, resolve_socket_path}`) exported for the integration verifier.
+The `beehive` executable surface (flags, subcommands, exit codes). Internal lib types `pub(crate)`, plus the daemon wiring (`interactive_mode::{ensure_daemon_running, ensure_daemon_running_with, resolve_socket_path}`) exported for the integration verifier.
 
 ## Depends on
 bh-types, bh-ai, bh-agent, bh-core, bh-daemon, bh-tui (one-way, composition root).
@@ -79,10 +79,10 @@ the internal `daemon start`/`open` commands, which are not reachable from the pu
 
 The release artifact is exe-adjacent (TS install.sh native layout): the binary
 plus `package.json` (the version manifest `--version` reads at runtime, with
-the compiled-in version as the fallback), `prime-agent-runtime/` (the kernel
+the compiled-in version as the fallback), `beehive-runtime/` (the kernel
 sidecar), `skills/`, and `docs/`. `scripts/package_release.py` (`make package`)
 assembles, validates, version-pins, hashes, and tars it; the hidden
-`--prime-agent-bootstrap` flag is the installer handoff that pre-bootstraps the
+`--beehive-bootstrap` flag is the installer handoff that pre-bootstraps the
 kernel venv. Verifier: `tests/packaged_layout_e2e.rs`.
 
 ## Daemon discovery

@@ -750,7 +750,7 @@ mod connection_view_tests {
                 "setup": { "status": "ready" },
                 "verification": { "status": "unverified" },
                 "legacyBuiltin": legacy_builtin,
-                "provenance": [{ "source": "prime" }]
+                "provenance": [{ "source": "beehive" }]
             }))
             .expect("fixture entry parses"),
             false,

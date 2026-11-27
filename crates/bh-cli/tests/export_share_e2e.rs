@@ -130,7 +130,7 @@ fn graceful_shutdown(socket: &Path) {
     let command = serde_json::json!({
         "type": "command",
         "id": "test-shutdown",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": { "type": "shutdown" },
     });
     let mut line = serde_json::to_string(&command).expect("serialize");
@@ -151,11 +151,11 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = dir.join("daemon.sock");
     let agent_dir = dir.join("agent");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -178,12 +178,11 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
             }
         }
     }
-    command.env_remove("PRIME_TEAM_ID");
     command.env(
         bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
         "15000",
     );
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if socket.exists() {
@@ -236,7 +235,7 @@ async fn tui_export_and_share_surface() {
     std::fs::create_dir_all(&stub_dir).expect("bin dir");
     write_stub_gh(&stub_dir);
     let previous_path = std::env::var("PATH").unwrap_or_default();
-    let previous_viewer_url = std::env::var("PI_SHARE_VIEWER_URL").ok();
+    let previous_viewer_url = std::env::var("BEEHIVE_SHARE_VIEWER_URL").ok();
     std::env::set_var("PATH", format!("{}:{}", stub_dir.display(), previous_path));
 
     // The faux engine (`engine: "faux"`) drives the real agent engine, so
@@ -294,7 +293,7 @@ async fn tui_export_and_share_surface() {
         show_images: false,
         fullscreen_mouse: true,
         initial_message: None,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -333,8 +332,8 @@ async fn tui_export_and_share_surface() {
 
     std::env::set_var("PATH", previous_path);
     match previous_viewer_url {
-        Some(value) => std::env::set_var("PI_SHARE_VIEWER_URL", value),
-        None => std::env::remove_var("PI_SHARE_VIEWER_URL"),
+        Some(value) => std::env::set_var("BEEHIVE_SHARE_VIEWER_URL", value),
+        None => std::env::remove_var("BEEHIVE_SHARE_VIEWER_URL"),
     }
 
     let rendered = outcome.frames.join("\n");

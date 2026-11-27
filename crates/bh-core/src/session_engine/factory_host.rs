@@ -361,7 +361,7 @@ fn resolve_declared_model(searchable: &[AiModel], selector: &str) -> Option<AiMo
 
 /// The TS short form: a reference names a model when the full selector ends
 /// with `"/<reference>"`, so a bare id like "glm-5.3" also matches
-/// "prime-inference/z-ai/glm-5.3".
+/// "test-provider/z-ai/glm-5.3".
 fn is_short_form_selector(reference: &str, selector: &str) -> bool {
     let normalized = reference.trim().to_lowercase();
     !normalized.is_empty() && selector.to_lowercase().ends_with(&format!("/{normalized}"))
@@ -371,7 +371,7 @@ fn is_short_form_selector(reference: &str, selector: &str) -> bool {
 /// base wording).
 fn unavailable_error(reference: &str) -> anyhow::Error {
     anyhow!(
-        "Requested factory model \"{reference}\" is unavailable, unauthenticated, or expired; selectors use the form \"provider/model-id\" (e.g. \"prime-inference/internal/glm-5.3-fast\")"
+        "Requested factory model \"{reference}\" is unavailable, unauthenticated, or expired; selectors use the form \"provider/model-id\" (e.g. \"test-provider/internal/glm-5.3-fast\")"
     )
 }
 

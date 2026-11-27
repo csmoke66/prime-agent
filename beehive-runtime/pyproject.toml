@@ -1,7 +1,7 @@
 [project]
-name = "prime-agent-runtime"
+name = "beehive-runtime"
 version = "0.1.0"
-description = "Kernel-side runtime shim for Prime Agent recursion"
+description = "Kernel-side runtime shim for Beehive recursion"
 requires-python = ">=3.11"
 dependencies = [
   "mcp>=2.2,<3",

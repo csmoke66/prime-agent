@@ -27,16 +27,16 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _agent_dir() -> Path:
-    """Resolve the Prime Agent config dir the same way the runtime does."""
+    """Resolve the Beehive config dir the same way the runtime does."""
     raw = (
-        os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
-        or os.environ.get("PI_CODING_AGENT_DIR")
-        or str(Path.home() / ".prime" / "agent")
+        os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+        or os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+        or str(Path.home() / ".beehive")
     )
     return Path(raw).expanduser()
 
 
-# Per provider id (the host passes the /settings choice as PRIME_AGENT_WEBSEARCH_PROVIDER;
+# Per provider id (the host passes the /settings choice as BEEHIVE_WEBSEARCH_PROVIDER;
 # the id is also the key's auth.json slot): the key's env var, the provider's name (its
 # /mcp row is "<name> (web search)"), and where to get a key.
 _PROVIDERS = {
@@ -180,7 +180,7 @@ async def _fetch_eco(query: str, api_key: str, timeout: int = 45, num_results: i
 async def _fetch_host_search(
     provider: str, query: str, *, timeout: int, num_results: int
 ) -> str:
-    """Search through the Prime Agent host using its provider login."""
+    """Search through the Beehive host using its provider login."""
     from rlm import host_request
 
     name = "Claude" if provider == "claude" else "ChatGPT"
@@ -205,7 +205,7 @@ def _missing_key(provider: str) -> str:
         f"Web search is not set up yet: no {name} API key is configured.\n"
         "Tell the user how to enable it:\n"
         f"  1. Get a free API key at {signup_url} (sign up, copy the key).\n"
-        f"  2. In Prime Agent, run /mcp, choose \"{name} (web search)\", and paste the key.\n"
+        f"  2. In Beehive, run /mcp, choose \"{name} (web search)\", and paste the key.\n"
         "Do not ask the user to set environment variables. Once the key is saved, web search works automatically."
     )
 
@@ -254,12 +254,12 @@ async def run(
     """
     from rlm import repl
 
-    provider = os.environ.get("PRIME_AGENT_WEBSEARCH_PROVIDER") or "serper"
-    default_timeout = timeout is None and "PRIME_AGENT_WEBSEARCH_TIMEOUT" not in os.environ
+    provider = os.environ.get("BEEHIVE_WEBSEARCH_PROVIDER") or "serper"
+    default_timeout = timeout is None and "BEEHIVE_WEBSEARCH_TIMEOUT" not in os.environ
     if timeout is None:
-        timeout = _env_int("PRIME_AGENT_WEBSEARCH_TIMEOUT", 45)
+        timeout = _env_int("BEEHIVE_WEBSEARCH_TIMEOUT", 45)
     if num_results is None:
-        num_results = _env_int("PRIME_AGENT_WEBSEARCH_NUM_RESULTS", 5)
+        num_results = _env_int("BEEHIVE_WEBSEARCH_NUM_RESULTS", 5)
 
     if provider == "chatgpt":
         try:
@@ -275,7 +275,7 @@ async def run(
         try:
             if provider == "claude":
                 if not active:
-                    raise RuntimeError("Claude web search requires a Prime Agent kernel")
+                    raise RuntimeError("Claude web search requires a Beehive kernel")
                 result = await _fetch_host_search(
                     provider,
                     query,

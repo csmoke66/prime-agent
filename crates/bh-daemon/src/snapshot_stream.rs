@@ -307,7 +307,7 @@ mod tests {
 
     fn attach_result(messages: &[Value]) -> Value {
         json!({
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "activeSessionId": "s1",
             "snapshot": {
                 "activeSessionId": "s1",

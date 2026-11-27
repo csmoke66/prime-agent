@@ -222,7 +222,7 @@ impl Connection {
             (Event::ShutdownNotice, state) if !matches!(state, Connection::Recovering(_)) => {
                 *self = Connection::Recovering(ReconnectLoop::start_shutdown());
                 ConnectionEffect::Warning(
-                    "the Prime Agent daemon shut down; waiting for it to come back…".to_string(),
+                    "the Beehive daemon shut down; waiting for it to come back…".to_string(),
                 )
             }
             // An unexpected loss is a daemon hiccup, not a session end: the pane keeps its
@@ -231,9 +231,10 @@ impl Connection {
                 *self = Connection::Recovering(ReconnectLoop::start_lost());
                 ConnectionEffect::Warning(LOST_NOTE.to_string())
             }
-            (Event::SupervisorDied { .. }, Connection::Recovering(_) | Connection::SupervisorLost) => {
-                ConnectionEffect::None
-            }
+            (
+                Event::SupervisorDied { .. },
+                Connection::Recovering(_) | Connection::SupervisorLost,
+            ) => ConnectionEffect::None,
             // A supervisor socket loss while a live direct link still serves the session is not a
             // pane-level loss: retain it until the direct link dies.
             (
@@ -313,7 +314,7 @@ impl Connection {
             (Event::ReattachFailed(error), Connection::Recovering(driver)) => match driver.kind {
                 RecoveryKind::Update => ConnectionEffect::Exit {
                     note: format!(
-                        "reattach after the update failed: {error} — run `prime-agent attach` to resume"
+                        "reattach after the update failed: {error} — run `beehive attach` to resume"
                     ),
                     reason: "update_reattach_failed",
                 },
@@ -344,15 +345,15 @@ fn expiry(kind: RecoveryKind) -> ConnectionEffect {
     let (note, reason) = match kind {
         // The saved-transcript close (the session file survives on disk).
         RecoveryKind::Shutdown => (
-            "The Prime Agent daemon shut down while this window was attached. The session transcript remains saved; restart Prime Agent and reopen it from Agents View.",
+            "The Beehive daemon shut down while this window was attached. The session transcript remains saved; restart Beehive and reopen it from Agents View.",
             "daemon_closed",
         ),
         RecoveryKind::Lost => (
-            "could not reconnect to the daemon within 10 minutes — run `prime-agent attach` to resume.",
+            "could not reconnect to the daemon within 10 minutes — run `beehive attach` to resume.",
             "daemon_reconnect_failed",
         ),
         RecoveryKind::Update => (
-            "could not reconnect to the daemon within 10 minutes — the update finished but this window is detached. Run `prime-agent attach` to resume.",
+            "could not reconnect to the daemon within 10 minutes — the update finished but this window is detached. Run `beehive attach` to resume.",
             "update_reconnect_failed",
         ),
     };

@@ -163,7 +163,7 @@ impl SettingsManager {
         self.save_global_scope(&["terminal.showImages"])
     }
 
-    /// `terminal.clearOnShrink` (TS default: the `PI_CLEAR_ON_SHRINK`
+    /// `terminal.clearOnShrink` (TS default: the `BEEHIVE_CLEAR_ON_SHRINK`
     /// environment value; this port has no such override).
     #[must_use]
     pub fn get_clear_on_shrink(&self) -> bool {
@@ -282,7 +282,7 @@ impl SettingsManager {
         self.save_global_scope(&["enableBuiltinSkills"])
     }
 
-    /// `showHardwareCursor` (TS default false; the `PI_HARDWARE_CURSOR`
+    /// `showHardwareCursor` (TS default false; the `BEEHIVE_HARDWARE_CURSOR`
     /// override is not part of this port).
     #[must_use]
     pub fn get_show_hardware_cursor(&self) -> bool {
@@ -470,7 +470,7 @@ impl SettingsManager {
     /// `/factory on`. The read is GLOBAL SCOPE ONLY, exactly the agent-dir
     /// document `set_factory_enabled` writes and the kernel's factory gate
     /// reads, so no project-scope override can flip the gate out from
-    /// under the kernel (a project `.prime/agent/settings.json` with
+    /// under the kernel (a project `.beehive/settings.json` with
     /// `factory.enabled` never diverges the daemon's lane advertisement
     /// or the client's `/factory status` from what the kernel will do).
     #[must_use]

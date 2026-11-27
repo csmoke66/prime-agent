@@ -76,7 +76,7 @@ pub(crate) fn fake_supervisor(
                 let (reader, mut writer) = stream.into_split();
                 writer
                     .write_all(
-                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                     )
                     .await
                     .unwrap();

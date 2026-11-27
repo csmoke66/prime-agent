@@ -210,7 +210,7 @@ mod tests {
     /// collide in the global `\.\pipe\` namespace).
     fn test_pipe(tag: &str) -> PathBuf {
         PathBuf::from(format!(
-            r"\\.\pipe\prime-agent-bh-types-test-{}-{tag}",
+            r"\\.\pipe\beehive-bh-types-test-{}-{tag}",
             std::process::id()
         ))
     }

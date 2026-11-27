@@ -191,7 +191,7 @@ pub(crate) fn resolve_cache_retention(cache_retention: Option<CacheRetention>) -
     if let Some(retention) = cache_retention {
         return retention;
     }
-    if std::env::var("PI_CACHE_RETENTION").as_deref() == Ok("long") {
+    if std::env::var("BEEHIVE_CACHE_RETENTION").as_deref() == Ok("long") {
         return CacheRetention::Long;
     }
     CacheRetention::Short

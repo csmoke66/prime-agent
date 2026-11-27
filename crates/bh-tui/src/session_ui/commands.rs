@@ -169,7 +169,7 @@ impl SessionUi {
             // become the request.
             view.editor.set_text(&format!("{text} "));
             self.note(
-                "add your request after the skill, e.g. /skill:prime-agent-release make a release of PR #2731",
+                "add your request after the skill, e.g. /skill:beehive-release make a release of PR #2731",
                 view,
             );
             return Ok(());

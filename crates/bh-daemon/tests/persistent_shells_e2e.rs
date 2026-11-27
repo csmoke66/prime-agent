@@ -29,7 +29,7 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(PathBuf::from(explicit));
     }
     let candidate = PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".prime/agent/kernel-venv/bin/python");
+        .join(".beehive/kernel-venv/bin/python");
     if candidate.exists() {
         return Some(candidate);
     }
@@ -86,7 +86,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path
         .arg(socket)
         .arg("--agent-dir")
         .arg(agent_dir)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", agent_dir)
+        .env("BEEHIVE_CODING_AGENT_DIR", agent_dir)
         .env_remove("RLM_SESSION_DIR")
         .env_remove("RLM_HARNESS_STATE_DIR")
         .env(
@@ -96,7 +96,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, kernel_python: Option<&Path
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     if let Some(python) = kernel_python {
-        command.env("PRIME_AGENT_KERNEL_PYTHON", python);
+        command.env("BEEHIVE_KERNEL_PYTHON", python);
     }
     let child = command.spawn().expect("spawn bh-daemon supervisor");
     let deadline = Instant::now() + Duration::from_secs(15);
@@ -131,7 +131,7 @@ impl Client {
         let mut line = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         })
         .to_string();
@@ -187,7 +187,7 @@ fn persistent_python_unit_regressions() {
         );
         return;
     };
-    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../prime-agent-runtime");
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../beehive-runtime");
     let output = Command::new(python)
         .current_dir(&runtime)
         .env("PYTHONPATH", runtime.join("src"))

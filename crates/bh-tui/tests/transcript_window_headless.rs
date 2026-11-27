@@ -124,7 +124,7 @@ impl MockSupervisor {
 
 fn attach_data() -> Value {
     json!({
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "activeSessionId": "s1",
         "snapshot": {
             "activeSessionId": "s1",

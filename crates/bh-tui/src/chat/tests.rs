@@ -6,7 +6,7 @@ use crate::theme::{ColorMode, Theme, ThemeColor};
 use ratatui::style::Modifier;
 
 fn theme() -> Theme {
-    Theme::builtin("prime", ColorMode::TrueColor)
+    Theme::builtin("beehive", ColorMode::TrueColor)
 }
 
 #[test]
@@ -19,7 +19,7 @@ fn backup_switch_loader_renders_the_failover_message() {
         ends_at: std::time::Instant::now(),
         error_message: "Connection failed".to_string(),
         reason: RetryStartReason::Backup {
-            backup_model: "prime-backup/mock-1".to_string(),
+            backup_model: "backup-provider/mock-1".to_string(),
         },
     };
     let rows = render_retry(&retry, 0, &theme(), 60);
@@ -29,7 +29,7 @@ fn backup_switch_loader_renders_the_failover_message() {
         .collect::<String>();
     assert!(
         text.contains(
-            "Primary model unavailable (Connection failed) — retrying on backup model prime-backup/mock-1..."
+            "Primary model unavailable (Connection failed) — retrying on backup model backup-provider/mock-1..."
         ),
         "got: {text}"
     );
@@ -583,12 +583,12 @@ fn login_recovery_merges_the_exact_daemon_error_wording() {
         has_tool_calls: false,
         streaming: false,
         error: Some(
-            "Authentication failed for \"prime-inference\". Credentials may have expired or network is unavailable.\n\nRun /login to update credentials."
+            "Authentication failed for \"test-provider\". Credentials may have expired or network is unavailable.\n\nRun /login to update credentials."
                 .into(),
         ),
         aborted: false,
     };
-    let merged = "Authentication failed for \"prime-inference\". Credentials may have expired or network is unavailable. · Run /login to update credentials.";
+    let merged = "Authentication failed for \"test-provider\". Credentials may have expired or network is unavailable. · Run /login to update credentials.";
     let rows = render_assistant(
         &message,
         Detail::Overview,
@@ -606,7 +606,7 @@ fn login_recovery_merges_the_exact_daemon_error_wording() {
                 Span::raw(crate::osc133::ZONE_END_PREFIX),
                 Span::raw(" "),
                 Span::styled(merged, error_style),
-                Span::raw(" ".repeat(3)),
+                Span::raw(" ".repeat(5)),
             ],
         ]
     );
@@ -635,7 +635,7 @@ fn login_recovery_merges_the_exact_daemon_error_wording() {
         flat[1..],
         vec![
             format!(
-                " Authentication failed for \"prime-inference\". Credentials{}",
+                " Authentication failed for \"test-provider\". Credentials{}",
                 " ".repeat(3)
             ),
             " may have expired or network is unavailable. · Run /login to".to_string(),

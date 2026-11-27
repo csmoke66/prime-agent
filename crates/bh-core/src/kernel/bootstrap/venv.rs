@@ -35,9 +35,9 @@ use probe::{installed_rlm_dir, lock_probe_memo, runtime_probe_key};
 #[cfg(all(test, unix))]
 use probe::{clear_in_process_probe_memo_for_tests, installed_package_dir};
 pub(crate) use probe::{
-    has_prime_agent_runtime, missing_python_skill_import_labels, missing_rlm_extra_import_labels,
+    has_beehive_runtime, missing_python_skill_import_labels, missing_rlm_extra_import_labels,
 };
-use probe::{has_prime_agent_runtime_memoized, installed_runtime_identity};
+use probe::{has_beehive_runtime_memoized, installed_runtime_identity};
 use runtime_source::collect_python_files;
 pub(super) use runtime_source::{hash_runtime_source, require_runtime_source_dir};
 pub(super) use runtime_source::{package_dir, packaged_runtime_dir};
@@ -333,7 +333,7 @@ pub(crate) async fn sync_python_skills(
 pub(crate) fn kernel_base_ready(python: &str, venv: &Path, runtime_identity: &str) -> bool {
     let (version, raw) = read_bootstrap_version_raw(venv);
     bootstrap_base_version_current(version, runtime_identity)
-        && has_prime_agent_runtime_memoized(
+        && has_beehive_runtime_memoized(
             python,
             runtime_identity,
             &raw,
@@ -350,7 +350,7 @@ pub(crate) fn kernel_ready(
 ) -> bool {
     let (version, raw) = read_bootstrap_version_raw(venv);
     bootstrap_version_current(version.as_ref(), runtime_identity, python_skills)
-        && has_prime_agent_runtime_memoized(
+        && has_beehive_runtime_memoized(
             python,
             runtime_identity,
             &raw,

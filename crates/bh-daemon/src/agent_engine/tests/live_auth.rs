@@ -883,7 +883,7 @@ fn a_stored_command_key_resolves_once_and_never_re_runs_per_call() {
     registration.unregister();
 }
 
-/// A stored Prime Inference `!command` key never runs for ANOTHER
+/// A stored the provider `!command` key never runs for ANOTHER
 /// provider's provider call: the request-auth registry resolves it at
 /// construction (the session build), never per call, and its candidate
 /// building defers command-backed fingerprints. The counter key
@@ -891,21 +891,21 @@ fn a_stored_command_key_resolves_once_and_never_re_runs_per_call() {
 /// differently), so the test runs on Unix only.
 #[cfg(unix)]
 #[test]
-fn a_prime_command_key_never_runs_for_another_providers_call() {
+fn a_provider_command_key_never_runs_for_another_providers_call() {
     let _faux = FAUX_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
     write_credential_backed_faux_provider(&agent_dir);
-    let counter = dir.path().join("prime-command-runs");
-    let key = format!("!echo run >> {} ; echo prime-key", counter.display());
+    let counter = dir.path().join("provider-command-runs");
+    let key = format!("!echo run >> {} ; echo provider-key", counter.display());
     std::fs::write(
         agent_dir.join("auth.json"),
         json!({
             "battery": { "type": "oauth", "access": "battery-access", "refresh": "r",
                 "expires": 4_102_444_800_000i64 },
-            "prime-inference": { "type": "api_key", "key": key }
+            "test-provider": { "type": "api_key", "key": key }
         })
         .to_string(),
     )
@@ -924,7 +924,7 @@ fn a_prime_command_key_never_runs_for_another_providers_call() {
         assert_eq!(
             command_runs(&counter) - before,
             0,
-            "a battery provider call must not run the Prime Inference credential command"
+            "a battery provider call must not run the the provider credential command"
         );
         assert_eq!(
             served_keys(&registration).last(),
@@ -934,7 +934,7 @@ fn a_prime_command_key_never_runs_for_another_providers_call() {
     registration.unregister();
 }
 
-/// A stored Prime Inference `!command` key whose command FAILS never runs
+/// A stored the provider `!command` key whose command FAILS never runs
 /// for another provider's provider call: a failed command is retried on
 /// every lookup (never cached), so the per-call request-auth resolution
 /// must not rebuild the registry that resolves it. The counter
@@ -942,21 +942,21 @@ fn a_prime_command_key_never_runs_for_another_providers_call() {
 /// it differently), so the test runs on Unix only.
 #[cfg(unix)]
 #[test]
-fn a_failed_prime_command_key_never_runs_for_another_providers_call() {
+fn a_failed_provider_command_key_never_runs_for_another_providers_call() {
     let _faux = FAUX_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = tempfile::TempDir::new().unwrap();
     let agent_dir = dir.path().join("agent");
     write_credential_backed_faux_provider(&agent_dir);
-    let counter = dir.path().join("failed-prime-command-runs");
+    let counter = dir.path().join("failed-provider-command-runs");
     let key = format!("!echo run >> {} ; exit 1", counter.display());
     std::fs::write(
         agent_dir.join("auth.json"),
         json!({
             "battery": { "type": "oauth", "access": "battery-access", "refresh": "r",
                 "expires": 4_102_444_800_000i64 },
-            "prime-inference": { "type": "api_key", "key": key }
+            "test-provider": { "type": "api_key", "key": key }
         })
         .to_string(),
     )
@@ -975,7 +975,7 @@ fn a_failed_prime_command_key_never_runs_for_another_providers_call() {
         assert_eq!(
             command_runs(&counter) - before,
             0,
-            "a battery provider call must not run the failed Prime Inference credential command"
+            "a battery provider call must not run the failed the provider credential command"
         );
         assert_eq!(
             served_keys(&registration).last(),

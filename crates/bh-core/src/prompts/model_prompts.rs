@@ -189,7 +189,7 @@ fn resolve_model_prompts(
     agent_dir: &Path,
 ) -> ModelPromptResolution {
     // Both layers are validated regardless; the selector only gates which
-    // rules match, so `prime-agent prompt` with no `--model` still reports
+    // rules match, so `beehive prompt` with no `--model` still reports
     // a broken map.
     let segments = selector.map(selector_segments);
     let mut errors = Vec::new();
@@ -337,18 +337,18 @@ mod tests {
             ("glm-5.3*", "internal/glm-5.3-fast", true),
             (
                 "internal/glm-5.3*",
-                "prime-inference/internal/glm-5.3-fast",
+                "test-provider/internal/glm-5.3-fast",
                 true,
             ),
             ("internal/glm-5.3*", "z-ai/glm-5.3-fast", false),
-            ("internal/*", "prime-inference/internal/glm-5.3", true),
+            ("internal/*", "test-provider/internal/glm-5.3", true),
             (
-                "prime-inference/anthropic/claude-fable-5.1",
-                "prime-inference/anthropic/claude-fable-5.1",
+                "test-provider/anthropic/claude-fable-5.1",
+                "test-provider/anthropic/claude-fable-5.1",
                 true,
             ),
             (
-                "prime-inference/anthropic/claude-fable-5.1",
+                "test-provider/anthropic/claude-fable-5.1",
                 "anthropic/claude-fable-5.1",
                 false,
             ),
@@ -359,7 +359,7 @@ mod tests {
             ),
             (
                 "anthropic/claude-sonnet-4",
-                "prime-inference/anthropic/claude-sonnet-4",
+                "test-provider/anthropic/claude-sonnet-4",
                 true,
             ),
             // case-insensitive
@@ -517,7 +517,7 @@ files = ["shared.md", "user-only.md"]
     fn shipped_glm_bash_rule_applies_to_glm_models_only() {
         let empty = tempfile::tempdir().unwrap();
         let resolution =
-            load_model_prompts(Some("prime-inference/internal/glm-5.3-fast"), empty.path());
+            load_model_prompts(Some("test-provider/internal/glm-5.3-fast"), empty.path());
         assert!(resolution.errors.is_empty(), "{:#?}", resolution.errors);
         let expected = super::super::layers::text(&super::super::layers::BASH_OVER_SUBPROCESS);
         assert_eq!(resolution.extras, Some(expected));

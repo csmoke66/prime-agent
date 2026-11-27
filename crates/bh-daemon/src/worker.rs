@@ -448,8 +448,8 @@ impl Worker {
                     match AgentSessionEngine::new(AgentEngineConfig {
                         cwd,
                         agent_dir: config.agent_dir.clone(),
-                        provider: std::env::var("PRIME_AGENT_MODEL_PROVIDER").ok(),
-                        model: std::env::var("PRIME_AGENT_MODEL").ok(),
+                        provider: std::env::var("BEEHIVE_MODEL_PROVIDER").ok(),
+                        model: std::env::var("BEEHIVE_MODEL").ok(),
                         api_key: None,
                         thinking: None,
                         session_dir: None,

@@ -48,7 +48,7 @@ impl AgentSessionEngine {
         // TS runs the summarizer on the session's live model; a fresh
         // startup-chain resolution can land it on a provider the session
         // never used (R8: "No AWS credentials available for Bedrock" in a
-        // prime-inference session), so the arm follows the target.
+        // test-provider session), so the arm follows the target.
         let Ok(model) = self.session_model() else {
             return AutoCompactionRun::NotDue;
         };

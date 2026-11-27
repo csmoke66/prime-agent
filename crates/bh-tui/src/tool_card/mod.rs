@@ -395,7 +395,7 @@ mod tests {
 
     fn theme() -> crate::theme::Theme {
         use crate::theme::{ColorMode, Theme};
-        Theme::builtin("prime", ColorMode::TrueColor)
+        Theme::builtin("beehive", ColorMode::TrueColor)
     }
 
     fn text_of(line: &Line) -> String {

@@ -1,9 +1,9 @@
 [project]
-name = "prime-agent-skill-attach-video"
+name = "beehive-skill-attach-video"
 version = "0.1.0"
 description = "Load on-disk videos into the model's context as viewable attachments."
 requires-python = ">=3.10"
-dependencies = ["prime-agent-runtime"]
+dependencies = ["beehive-runtime"]
 
 [project.scripts]
 attach_video = "rlm.skill:cli"

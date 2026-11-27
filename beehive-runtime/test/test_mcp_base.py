@@ -305,7 +305,7 @@ class McpBaseHelpersTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cred = {"type": "oauth", "access": "tok", "refresh": "r", "expires": 1, "endpoint": "https://e.test/mcp"}
             (Path(tmp) / "auth.json").write_text(json.dumps({"mcp:demo": cred, "other": "junk"}))
-            with mock.patch.dict("os.environ", {"PRIME_AGENT_CODING_AGENT_DIR": tmp}):
+            with mock.patch.dict("os.environ", {"BEEHIVE_CODING_AGENT_DIR": tmp}):
                 self.assertEqual(mcp_base._read_auth("mcp:demo"), cred)
                 self.assertIsNone(mcp_base._read_auth("mcp:missing"))
 

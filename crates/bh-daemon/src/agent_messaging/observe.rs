@@ -235,7 +235,7 @@ impl AgentObserveController for LinkAgentObserveController {
             .await
             .map_err(|error| {
                 anyhow::anyhow!(
-                    "agent_observe.context_health is unavailable; update or restart Prime Agent: {error}"
+                    "agent_observe.context_health is unavailable; update or restart Beehive: {error}"
                 )
             })?;
         let rows = data
@@ -243,7 +243,7 @@ impl AgentObserveController for LinkAgentObserveController {
             .and_then(Value::as_array)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "agent_observe.context_health is unavailable; update or restart Prime Agent: supervisor returned no agents array"
+                    "agent_observe.context_health is unavailable; update or restart Beehive: supervisor returned no agents array"
                 )
             })?;
         rows.iter()
@@ -251,7 +251,7 @@ impl AgentObserveController for LinkAgentObserveController {
             .map(|(index, row)| {
                 let malformed = |field: &str| {
                     anyhow::anyhow!(
-                        "agent_observe.context_health is unavailable; update or restart Prime Agent: malformed agents[{index}].{field}"
+                        "agent_observe.context_health is unavailable; update or restart Beehive: malformed agents[{index}].{field}"
                     )
                 };
                 let nullable_string = |field: &str| match row.get(field) {

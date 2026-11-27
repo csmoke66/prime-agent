@@ -228,7 +228,6 @@ pub const PROVIDER_CATEGORIES: &[&str] = &[
     "anthropic",
     "openai",
     "google",
-    "prime",
     "openrouter",
     "bedrock",
     "vertex",
@@ -250,7 +249,6 @@ pub const AUTH_CATEGORIES: &[&str] = &[
     "mcp_static_token",
     "runtime_api_key",
     "environment",
-    "prime_cli",
     "models_json",
     "fallback",
     "stale",
@@ -303,8 +301,6 @@ pub const ONBOARDING_ENTRY_REASONS: &[&str] = &[
 
 pub const ACQUISITION_METHODS: &[&str] = &[
     "existing_configuration",
-    "prime_browser",
-    "prime_key_entry",
     "oauth",
     "api_key_entry",
     "external_credentials",

@@ -2560,13 +2560,13 @@ class FactoryHelpTest(unittest.TestCase):
             "The machine library: machines are `MACHINE.md` files (frontmatter plus "
             "one fenced `machine-spec` block), one directory per machine, resolved "
             "from two levels — the bundled seeds shipped inside the runtime "
-            "(visible in every install; `PRIME_AGENT_MACHINES_DIR` redirects the "
+            "(visible in every install; `BEEHIVE_MACHINES_DIR` redirects the "
             "level at a team directory) first, the personal `machines/` library "
             "under the agent dir second",
             flat,
         )
         self.assertIn(
-            "`prime-agent factory list | import | export` manages them: list shows "
+            "`beehive factory list | import | export` manages them: list shows "
             "only what parses and validates (broken files print as warnings), "
             "import runs the same write-time validation as a stored spec so an "
             "invalid machine never persists, and export copies a library machine "
@@ -2634,14 +2634,14 @@ class FactorySettingReadTest(unittest.TestCase):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.settings_path = Path(temp.name) / "settings.json"
-        previous = os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
-        os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = str(Path(temp.name))
+        previous = os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+        os.environ["BEEHIVE_CODING_AGENT_DIR"] = str(Path(temp.name))
 
         def restore() -> None:
             if previous is None:
-                os.environ.pop("PRIME_AGENT_CODING_AGENT_DIR", None)
+                os.environ.pop("BEEHIVE_CODING_AGENT_DIR", None)
             else:
-                os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = previous
+                os.environ["BEEHIVE_CODING_AGENT_DIR"] = previous
 
         self.addCleanup(restore)
 
@@ -2654,7 +2654,7 @@ class FactorySettingReadTest(unittest.TestCase):
         # factory key is shaped exactly like the other feature toggles.
         # /factory on writes enabled true over the same document...
         document = {
-            "defaultProvider": "prime-inference",
+            "defaultProvider": "test-provider",
             "defaultModel": "internal/glm-5.3-fast",
             "rlmMaxDepth": 2,
             "theme": "dark",
@@ -3080,14 +3080,14 @@ class _ExecutorTestCase(unittest.TestCase):
         self.settings_path.write_text(json.dumps(document), encoding="utf-8")
 
     def _isolate_agent_dir(self, agent_dir: str) -> None:
-        previous = os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
-        os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = agent_dir
+        previous = os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+        os.environ["BEEHIVE_CODING_AGENT_DIR"] = agent_dir
 
         def restore() -> None:
             if previous is None:
-                os.environ.pop("PRIME_AGENT_CODING_AGENT_DIR", None)
+                os.environ.pop("BEEHIVE_CODING_AGENT_DIR", None)
             else:
-                os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = previous
+                os.environ["BEEHIVE_CODING_AGENT_DIR"] = previous
 
         self.addCleanup(restore)
 
@@ -3357,7 +3357,7 @@ class FactoryExecutorTest(_ExecutorTestCase):
             "The Worker",
             "Template by title.",
             id="worker-md",
-            metadata={"model": "pi/test-model", "thinking": "low"},
+            metadata={"model": "test-provider/test-model", "thinking": "low"},
         )
         self.store_factory(
             {
@@ -3375,7 +3375,7 @@ class FactoryExecutorTest(_ExecutorTestCase):
             spawn = self.host.spawn_calls(node_id)
             self.assertEqual(len(spawn), 1, node_id)
             self.assertEqual(spawn[0]["prompt"], "Template by title.")
-            self.assertEqual(spawn[0]["kwargs"]["model"], "pi/test-model")
+            self.assertEqual(spawn[0]["kwargs"]["model"], "test-provider/test-model")
             self.assertEqual(spawn[0]["kwargs"]["thinking"], "low")
             # The run tag the host records on the child's ledger spawn edge.
             self.assertEqual(
@@ -8142,7 +8142,7 @@ class MachineFileParseTest(unittest.TestCase):
                 'name: "sweep"\n'
                 "description: 'It: reviews things.'\n"
                 "version: 1\n"
-                "author: Prime Agent\n"
+                "author: Beehive\n"
                 "---"
             )
         )
@@ -8775,8 +8775,8 @@ class MachineLibraryResolutionTest(unittest.TestCase):
 
     def test_env_overrides_drive_the_production_dirs(self) -> None:
         env = patch.dict(os.environ, {
-            "PRIME_AGENT_MACHINES_DIR": str(self.repo),
-            "PRIME_AGENT_CODING_AGENT_DIR": str(Path(self.repo).parent / "agent-home"),
+            "BEEHIVE_MACHINES_DIR": str(self.repo),
+            "BEEHIVE_CODING_AGENT_DIR": str(Path(self.repo).parent / "agent-home"),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -8795,7 +8795,7 @@ class MachineLibraryResolutionTest(unittest.TestCase):
         repo_dir = repo_machines_dir()
         self.assertEqual(repo_dir, packaged)
         self.assertTrue(packaged.is_dir())
-        with patch.dict(os.environ, {"PRIME_AGENT_MACHINES_DIR": str(self.repo)}):
+        with patch.dict(os.environ, {"BEEHIVE_MACHINES_DIR": str(self.repo)}):
             self.assertEqual(repo_machines_dir(), self.repo)
 
     def test_the_shipped_seed_machines_validate_clean(self) -> None:
@@ -8822,8 +8822,8 @@ class MachineCliDispatchTest(unittest.TestCase):
 
     The payload carries only what the user typed (an op, a path, a name, an
     out target); the dispatch process resolves every library directory
-    itself through the production env seams (`PRIME_AGENT_MACHINES_DIR`,
-    `PRIME_AGENT_CODING_AGENT_DIR`), so these tests exercise the same
+    itself through the production env seams (`BEEHIVE_MACHINES_DIR`,
+    `BEEHIVE_CODING_AGENT_DIR`), so these tests exercise the same
     resolution a real CLI invocation runs.
     """
 
@@ -8842,8 +8842,8 @@ class MachineCliDispatchTest(unittest.TestCase):
         self.source_path = self.sources / "machine.MACHINE.md"
         self.source_path.write_text(self.source_text, encoding="utf-8")
         env = patch.dict(os.environ, {
-            "PRIME_AGENT_MACHINES_DIR": str(self.repo),
-            "PRIME_AGENT_CODING_AGENT_DIR": str(self.agent_home),
+            "BEEHIVE_MACHINES_DIR": str(self.repo),
+            "BEEHIVE_CODING_AGENT_DIR": str(self.agent_home),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -8974,18 +8974,18 @@ class ExportMachineTest(unittest.TestCase):
 
     def write_settings(self, document: Any) -> None:
         """Write the agent-dir settings document (the real file shape)."""
-        settings_path = Path(os.environ["PRIME_AGENT_CODING_AGENT_DIR"]) / "settings.json"
+        settings_path = Path(os.environ["BEEHIVE_CODING_AGENT_DIR"]) / "settings.json"
         settings_path.write_text(json.dumps(document), encoding="utf-8")
 
     def _isolate_agent_dir(self, agent_dir: str) -> None:
-        previous = os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
-        os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = agent_dir
+        previous = os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+        os.environ["BEEHIVE_CODING_AGENT_DIR"] = agent_dir
 
         def restore() -> None:
             if previous is None:
-                os.environ.pop("PRIME_AGENT_CODING_AGENT_DIR", None)
+                os.environ.pop("BEEHIVE_CODING_AGENT_DIR", None)
             else:
-                os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = previous
+                os.environ["BEEHIVE_CODING_AGENT_DIR"] = previous
 
         self.addCleanup(restore)
 
@@ -9168,8 +9168,8 @@ class FactoryRunFromLibraryTest(unittest.TestCase):
             json.dumps({"factory": {"enabled": True}}), encoding="utf-8"
         )
         env = patch.dict(os.environ, {
-            "PRIME_AGENT_MACHINES_DIR": str(self.library),
-            "PRIME_AGENT_CODING_AGENT_DIR": str(agent_home),
+            "BEEHIVE_MACHINES_DIR": str(self.library),
+            "BEEHIVE_CODING_AGENT_DIR": str(agent_home),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -9295,7 +9295,7 @@ class FactoryRunFromLibraryTest(unittest.TestCase):
         # user machine the listing advertises; the invalid repo file never
         # shadows it and never masquerades as usable.
         self.store_machine_file("sweep", {"states": []})
-        agent_home = Path(os.environ["PRIME_AGENT_CODING_AGENT_DIR"])
+        agent_home = Path(os.environ["BEEHIVE_CODING_AGENT_DIR"])
         user_file = agent_home / "machines" / "sweep" / "MACHINE.md"
         user_file.parent.mkdir(parents=True)
         user_file.write_text(
@@ -9359,7 +9359,7 @@ class FactoryRunFromLibraryTest(unittest.TestCase):
         # one disabled message -- never an unknown-spec error, never a run
         # -- and nothing spawns.
         self.store_machine_file("sweep", {"nodes": [{"id": "a", "subagent": "worker"}]})
-        agent_home = Path(os.environ["PRIME_AGENT_CODING_AGENT_DIR"])
+        agent_home = Path(os.environ["BEEHIVE_CODING_AGENT_DIR"])
         (agent_home / "settings.json").write_text(
             json.dumps({"factory": {"enabled": False}}), encoding="utf-8"
         )
@@ -9514,7 +9514,7 @@ asyncio.run(main())
 class InstalledRuntimeLibraryTest(unittest.TestCase):
     """A kernel venv built from a staged runtime runs the bundled machines.
 
-    The kernel installs prime-agent-runtime non-editably into its venv (the
+    The kernel installs beehive-runtime non-editably into its venv (the
     bootstrap's ``uv pip install <staged runtime>`` builds the hatchling
     wheel, whose target package is ``src/rlm``), so the machine library
     must resolve from the installed package — ``site-packages/rlm/
@@ -9538,7 +9538,7 @@ class InstalledRuntimeLibraryTest(unittest.TestCase):
     def stage_runtime(self) -> Path:
         """Copy the runtime tree the release-staging way, minus its excludes."""
         runtime_dir = Path(__file__).resolve().parents[1]
-        staged = self.root / "payload" / "prime-agent-runtime"
+        staged = self.root / "payload" / "beehive-runtime"
         for source in runtime_dir.rglob("*"):
             relative = source.relative_to(runtime_dir)
             if any(part in self.STAGING_EXCLUDED for part in relative.parts):
@@ -9583,7 +9583,7 @@ class InstalledRuntimeLibraryTest(unittest.TestCase):
             text=True,
             timeout=120,
             check=False,
-            env={**os.environ, "PRIME_AGENT_CODING_AGENT_DIR": str(agent_home)},
+            env={**os.environ, "BEEHIVE_CODING_AGENT_DIR": str(agent_home)},
         )
         self.assertEqual(
             run_result.returncode, 0,
@@ -9598,5 +9598,5 @@ class InstalledRuntimeLibraryTest(unittest.TestCase):
         self.assertIn("site-packages", str(machine_path), machine_path)
         self.assertIn(os.path.join("rlm", "machines"), str(machine_path), machine_path)
         # The installed package is the wheel copy, not this checkout's source.
-        self.assertNotIn("prime-agent-runtime", str(machine_path), machine_path)
+        self.assertNotIn("beehive-runtime", str(machine_path), machine_path)
         self.assertEqual(payload["nodes"], ["files", "report", "review"])

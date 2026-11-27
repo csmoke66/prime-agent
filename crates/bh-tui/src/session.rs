@@ -1,5 +1,5 @@
 //! Headless session-message stream: the same UI renders history JSONL
-//! (captured sessions under `~/.prime/agent/sessions`) and live events.
+//! (captured sessions under `~/.beehive/sessions`) and live events.
 //! `SessionStream` is the seam the interactive mode and the replay binary
 //! share; `JsonlSessionStream` implements it over bh-types session entries.
 
@@ -404,7 +404,7 @@ mod tests {
     fn replay_keeps_thinking_blocks_and_tool_flags() {
         // A replayed assistant message keeps its thinking blocks' type (dim/gated) alongside the
         // text, and flags its tool calls for the trailing spacer.
-        let line = r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"probe the replay trace","thinkingSignature":"sig-1"},{"type":"text","text":"body after thinking"},{"type":"toolCall","id":"toolu_1","name":"bash","arguments":{"command":"ls"}}],"api":"openai-completions","provider":"prime-inference","model":"m","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1},"id":"e1"}"#;
+        let line = r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"probe the replay trace","thinkingSignature":"sig-1"},{"type":"text","text":"body after thinking"},{"type":"toolCall","id":"toolu_1","name":"bash","arguments":{"command":"ls"}}],"api":"openai-completions","provider":"test-provider","model":"m","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1},"id":"e1"}"#;
         let entries = parse_jsonl(line).unwrap();
         let items = entry_to_items(&entries[0]);
         let [TranscriptItem::Assistant {
@@ -430,7 +430,7 @@ mod tests {
         // The persisted thinking block's provider signature survives the replay round-trip
         // verbatim, so a resumed session can replay its reasoning context to the provider
         // unchanged.
-        let line = r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"keep my signature","thinkingSignature":"sig-abc","redacted":false},{"type":"text","text":"done"}],"api":"openai-completions","provider":"prime-inference","model":"m","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1},"id":"e1"}"#;
+        let line = r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"keep my signature","thinkingSignature":"sig-abc","redacted":false},{"type":"text","text":"done"}],"api":"openai-completions","provider":"test-provider","model":"m","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1},"id":"e1"}"#;
         let entries = parse_jsonl(line).unwrap();
         let wire = serde_json::to_string(&entries[0]).unwrap();
         let reloaded: FileEntry = serde_json::from_str(&wire).unwrap();
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn loads_real_session() {
-        let dir = std::path::Path::new("/home/ubuntu/.prime/agent/sessions");
+        let dir = std::path::Path::new("/home/ubuntu/.beehive/sessions");
         if !dir.is_dir() {
             return; // sandbox without agent state
         }

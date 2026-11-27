@@ -23,7 +23,7 @@ joins, foreach, residents, budgets and policies, and the `rlm.factory`
 run/status/stop/resume/graph/watch calls with worked examples — call
 `rlm.factory.help()` in the kernel.** The guide lands with the factory-core
 PR; on builds without it, the module docstring in
-`prime-agent-runtime/src/rlm/factory.py` is the source of truth.
+`beehive-runtime/src/rlm/factory.py` is the source of truth.
 
 ## The opt-in gate
 
@@ -41,9 +41,9 @@ it to see the factory dock group and page.
 
 - The machine library: machines are `MACHINE.md` files, one directory
   per machine — the bundled seeds ship inside the runtime package (wheel
-  package data, `rlm/machines/<name>/MACHINE.md`; `PRIME_AGENT_MACHINES_DIR`
+  package data, `rlm/machines/<name>/MACHINE.md`; `BEEHIVE_MACHINES_DIR`
   redirects that level at a team directory), and the personal library
-  lives under the agent dir. `prime-agent factory list | import | export`
+  lives under the agent dir. `beehive factory list | import | export`
   manages them. The seeds are `builder`, `pr-manager`, and `review-sweep`.
 - The TUI factory page: the activity dock's `⚙ N factory` group (Enter or
   click) opens one live diagram per run, newest run first. The up/down

@@ -28,7 +28,7 @@ Daemon wire mechanics shared by the serving side (bh-daemon) and clients (bh-tui
   CLI suggestion help) plus its pure parse/suggestion helpers — the TS
   product keeps the same single table in core and imports it from its TUI.
 - `incident`: the daemon incident classifier shared by the incident CLI
-  (bh-cli's `prime-agent incident`, TS `src/cli/incident.ts`) and the
+  (bh-cli's `beehive incident`, TS `src/cli/incident.ts`) and the
   agents-view incident notice (bh-tui's `incident_notices`, TS
   `src/modes/agents-view/incident-notices.ts`) — bh-tui depends on
   bh-types alone, and the TS product keeps the same single classifier in
@@ -39,7 +39,7 @@ Daemon wire mechanics shared by the serving side (bh-daemon) and clients (bh-tui
   log-file discovery, `--since`/`--until` window parsing, and report
   rendering belong to bh-cli; the notice polling, rotation-safe
   incremental reads, and dismissal horizons belong to bh-tui.
-- `themes`: the bundled theme definition files (`prime`/`dark`/`light`) as
+- `themes`: the bundled theme definition files (`beehive`/`dark`/`light`) as
   pure data, shared by the TUI's theme loader (bh-tui renders terminal
   colors from them) and the session HTML exporter (bh-core resolves them
   into CSS variables). Everything built on top of the files — terminal

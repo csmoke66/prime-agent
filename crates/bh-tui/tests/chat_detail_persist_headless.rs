@@ -77,7 +77,7 @@ fn attach_data(id: &str, session: &MockSession) -> Value {
         "command": "attach",
         "success": true,
         "data": {
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "activeSessionId": session.active,
             "snapshot": {
                 "activeSessionId": session.active,

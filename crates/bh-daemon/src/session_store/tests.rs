@@ -218,7 +218,7 @@ fn the_depth_two_chain_reports_the_folded_aggregate() {
                 Some("c0"),
                 json!({
                     "role": "assistant",
-                    "provider": "prime-inference", "model": "internal/glm-5.3-fast",
+                    "provider": "test-provider", "model": "internal/glm-5.3-fast",
                     "content": [{ "type": "text", "text": "hi" }],
                     "stopReason": "stop",
                     "usage": assistant_usage,

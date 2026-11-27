@@ -85,7 +85,7 @@ fn create_failure_reports_a_replaced_executable_and_the_os_error() {
     let response = client.read_response("c1");
     assert_eq!(response["success"], false, "{response}");
     let error = response["error"].as_str().expect("wire error message");
-    assert!(error.contains("Restart the Prime Agent daemon"), "{error}");
+    assert!(error.contains("Restart the Beehive daemon"), "{error}");
     assert!(error.contains("(os error 2)"), "{error}");
 }
 
@@ -402,9 +402,9 @@ fn missing_saved_cwd_requires_an_explicit_fallback() {
 
 /// Uses a real Python kernel; only provider responses are scripted.
 #[test]
-#[ignore = "requires PRIME_AGENT_KERNEL_PYTHON with the kernel runtime installed"]
+#[ignore = "requires BEEHIVE_KERNEL_PYTHON with the kernel runtime installed"]
 fn cold_reopen_python_kernel_uses_saved_cwd_and_explicit_override() {
-    assert!(std::env::var_os("PRIME_AGENT_KERNEL_PYTHON").is_some());
+    assert!(std::env::var_os("BEEHIVE_KERNEL_PYTHON").is_some());
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let project = dir.path().join("saved-project");
     let override_dir = dir.path().join("override");

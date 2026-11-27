@@ -30,16 +30,16 @@ def setUpModule() -> None:
     _factory_gate_dir = tempfile.TemporaryDirectory(prefix="harness_test_agent_dir_")
     settings = Path(_factory_gate_dir.name) / "settings.json"
     settings.write_text('{"factory": {"enabled": true}}', encoding="utf-8")
-    _previous_agent_dir = os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
-    os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = _factory_gate_dir.name
+    _previous_agent_dir = os.environ.get("BEEHIVE_CODING_AGENT_DIR")
+    os.environ["BEEHIVE_CODING_AGENT_DIR"] = _factory_gate_dir.name
 
 
 def tearDownModule() -> None:
     global _factory_gate_dir
     if _previous_agent_dir is None:
-        os.environ.pop("PRIME_AGENT_CODING_AGENT_DIR", None)
+        os.environ.pop("BEEHIVE_CODING_AGENT_DIR", None)
     else:
-        os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = _previous_agent_dir
+        os.environ["BEEHIVE_CODING_AGENT_DIR"] = _previous_agent_dir
     if _factory_gate_dir is not None:
         _factory_gate_dir.cleanup()
         _factory_gate_dir = None
@@ -957,20 +957,20 @@ class HarnessStateTest(unittest.TestCase):
             )
 
     def test_in_memory_state_global_flag_uses_default_global_store(self) -> None:
-        previous_agent_dir = os.environ.get("PRIME_AGENT_CODING_AGENT_DIR")
+        previous_agent_dir = os.environ.get("BEEHIVE_CODING_AGENT_DIR")
         previous_global = os.environ.get("RLM_GLOBAL_HARNESS_STATE_DIR")
         with tempfile.TemporaryDirectory() as temp_dir:
             agent_dir = Path(temp_dir) / "agent"
-            os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = str(agent_dir)
+            os.environ["BEEHIVE_CODING_AGENT_DIR"] = str(agent_dir)
             os.environ.pop("RLM_GLOBAL_HARNESS_STATE_DIR", None)
             try:
                 state = HarnessState(in_memory=True)
                 global_entry = state.create_memory("Default global", "persisted", id="default_global", global_=True)
             finally:
                 if previous_agent_dir is None:
-                    os.environ.pop("PRIME_AGENT_CODING_AGENT_DIR", None)
+                    os.environ.pop("BEEHIVE_CODING_AGENT_DIR", None)
                 else:
-                    os.environ["PRIME_AGENT_CODING_AGENT_DIR"] = previous_agent_dir
+                    os.environ["BEEHIVE_CODING_AGENT_DIR"] = previous_agent_dir
                 if previous_global is None:
                     os.environ.pop("RLM_GLOBAL_HARNESS_STATE_DIR", None)
                 else:
@@ -1641,7 +1641,7 @@ class HarnessSearchTest(unittest.TestCase):
 
 class HarnessRefinementsSettingTests(unittest.TestCase):
     def test_disabled_harness_keeps_kernel_api_introspection_available(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"PRIME_AGENT_CODING_AGENT_DIR": tmp}):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BEEHIVE_CODING_AGENT_DIR": tmp}):
             (Path(tmp) / "settings.json").write_text('{"harnessRefinements":false}')
             # The real kernel bootstrap probes these methods before any cell runs.
             for method in ("create_memory", "update_memory", "delete_memory", "create_skill", "record_refinement"):
@@ -1655,13 +1655,13 @@ class HarnessRefinementsSettingTests(unittest.TestCase):
     def test_project_settings_cannot_override_the_global_master_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
             agent_dir = Path(tmp) / "agent"
-            project_dir = Path(tmp) / "project" / ".prime" / "agent"
+            project_dir = Path(tmp) / "project" / ".beehive"
             agent_dir.mkdir()
             project_dir.mkdir(parents=True)
             (agent_dir / "settings.json").write_text('{"harnessRefinements":false}')
             project_settings = project_dir / "settings.json"
             project_settings.write_text('{"harnessRefinements":true}')
-            with patch.dict(os.environ, {"PRIME_AGENT_CODING_AGENT_DIR": str(agent_dir), "PRIME_AGENT_SETTINGS_CWD": str(Path(tmp) / "project")}):
+            with patch.dict(os.environ, {"BEEHIVE_CODING_AGENT_DIR": str(agent_dir), "BEEHIVE_SETTINGS_CWD": str(Path(tmp) / "project")}):
                 with self.assertRaisesRegex(RuntimeError, "disabled in /settings"):
                     HarnessState(Path(tmp) / "harness_state.json", scope="global")
                 (agent_dir / "settings.json").write_text('{"harnessRefinements":true}')
@@ -1677,7 +1677,7 @@ class HarnessRefinementsSettingTests(unittest.TestCase):
                 self.assertEqual(state.get("memory", "note").content, "Global preference wins")
 
     def test_disable_blocks_cached_reads_and_writes_without_deleting_state(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"PRIME_AGENT_CODING_AGENT_DIR": tmp}):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BEEHIVE_CODING_AGENT_DIR": tmp}):
             settings = Path(tmp) / "settings.json"
             settings.write_text('{"harnessRefinements":true}')
             state = get_harness_state(tmp, global_=True)
@@ -1697,7 +1697,7 @@ class HarnessRefinementsSettingTests(unittest.TestCase):
 
         factory = importlib.import_module("rlm.factory")
 
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"PRIME_AGENT_CODING_AGENT_DIR": tmp}):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BEEHIVE_CODING_AGENT_DIR": tmp}):
             settings = Path(tmp) / "settings.json"
             settings.write_text('{"factory":{"enabled":true},"harnessRefinements":true}')
             state = HarnessState(Path(tmp) / "harness_state.json")

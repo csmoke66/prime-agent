@@ -1018,13 +1018,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let project = root.path().join("project");
         let agent_dir = root.path().join("global");
-        let project_settings = project.join(".prime/agent/settings.json");
+        let project_settings = project.join(".beehive/settings.json");
         let auth = agent_dir.join("auth.json");
         std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
         std::fs::create_dir_all(&agent_dir).unwrap();
-        let secret = r#"{"prime-inference":{"type":"api_key","key":"sensitive-key"}}"#;
+        let secret = r#"{"test-provider":{"type":"api_key","key":"sensitive-key"}}"#;
         std::fs::write(&auth, secret).unwrap();
-        std::os::unix::fs::symlink("../../../global/auth.json", &project_settings).unwrap();
+        std::os::unix::fs::symlink("../../global/auth.json", &project_settings).unwrap();
 
         let mut manager = SettingsManager::create(&project, &agent_dir);
         manager.set_project_packages(vec![serde_json::json!({"source": "example"})]);
@@ -1054,13 +1054,13 @@ mod tests {
     fn in_memory_loads_merges_and_saves() {
         let mut manager = SettingsManager::in_memory(&Settings::default());
         manager
-            .set_default_model_and_provider("prime-inference", "z-ai/glm-5.3")
+            .set_default_model_and_provider("test-provider", "z-ai/glm-5.3")
             .unwrap();
-        assert_eq!(manager.get_default_provider(), Some("prime-inference"));
+        assert_eq!(manager.get_default_provider(), Some("test-provider"));
         assert_eq!(manager.get_default_model(), Some("z-ai/glm-5.3"));
         assert_eq!(
             manager.get_recent_models(),
-            vec!["prime-inference/z-ai/glm-5.3".to_string()]
+            vec!["test-provider/z-ai/glm-5.3".to_string()]
         );
         manager.reload().unwrap();
         assert_eq!(manager.get_default_model(), Some("z-ai/glm-5.3"));
@@ -1098,10 +1098,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().join("cwd");
         let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(cwd.join(".prime/agent")).unwrap();
+        std::fs::create_dir_all(cwd.join(".beehive")).unwrap();
         std::fs::create_dir_all(&agent_dir).unwrap();
         std::fs::write(
-            cwd.join(".prime/agent/settings.json"),
+            cwd.join(".beehive/settings.json"),
             r#"{"agentInbox": {"enabled": false, "reminderIntervalMs": 1}}"#,
         )
         .unwrap();
@@ -1117,7 +1117,7 @@ mod tests {
     /// `factory.enabled` reads the GLOBAL scope only (the agent-dir
     /// document the kernel's factory gate and `set_factory_enabled` use):
     /// a project-scope override can never flip the gate out from under the
-    /// kernel — a project `.prime/agent/settings.json` with `enabled: true`
+    /// kernel — a project `.beehive/settings.json` with `enabled: true`
     /// leaves the factory disabled while the global setting says nothing
     /// (Macroscope review finding: the merged read could diverge the
     /// daemon's lane advertisement and the client's `/factory status`
@@ -1127,10 +1127,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().join("cwd");
         let agent_dir = dir.path().join("agent");
-        std::fs::create_dir_all(cwd.join(".prime/agent")).unwrap();
+        std::fs::create_dir_all(cwd.join(".beehive")).unwrap();
         std::fs::create_dir_all(&agent_dir).unwrap();
         std::fs::write(
-            cwd.join(".prime/agent/settings.json"),
+            cwd.join(".beehive/settings.json"),
             r#"{ "factory": { "enabled": true } }"#,
         )
         .unwrap();
@@ -1248,12 +1248,12 @@ mod tests {
             Arc::new(super::super::storage::InMemorySettingsStorage::default());
         storage
             .with_lock(SettingsScope::Global, &mut |_| {
-                Some(r#"{ "defaultProvider": 42, "theme": "prime" }"#.into())
+                Some(r#"{ "defaultProvider": 42, "theme": "beehive" }"#.into())
             })
             .unwrap();
         let manager = SettingsManager::from_storage(storage);
         assert_eq!(manager.get_default_provider(), None);
-        assert_eq!(manager.get_theme(), Some("prime"));
+        assert_eq!(manager.get_theme(), Some("beehive"));
     }
 
     #[test]

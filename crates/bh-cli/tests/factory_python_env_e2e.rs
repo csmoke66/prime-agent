@@ -36,10 +36,10 @@ esac
     let marker = root.path().join("factory-dispatched");
     let path = std::env::join_paths([Path::new("."), &project, &trusted]).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_prime-agent"))
+    let output = Command::new(env!("CARGO_BIN_EXE_beehive"))
         .args(["factory", "list", "--json"])
         .current_dir(&project)
-        .env("PRIME_AGENT_KERNEL_PYTHON", &python)
+        .env("BEEHIVE_KERNEL_PYTHON", &python)
         .env("PYTHONPATH", path)
         .env("PYTHONHOME", &project)
         .env("PYTHONUSERBASE", &project)
@@ -57,33 +57,33 @@ esac
 
 #[test]
 fn missing_home_reports_agent_directory_requirement_without_a_panic() {
-    let output = Command::new(env!("CARGO_BIN_EXE_prime-agent"))
+    let output = Command::new(env!("CARGO_BIN_EXE_beehive"))
         .arg("config")
         .env_remove("HOME")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("HOME or PRIME_AGENT_CODING_AGENT_DIR is required"),
+        stderr.contains("HOME or BEEHIVE_CODING_AGENT_DIR is required"),
         "unexpected stderr: {stderr}"
     );
     assert!(!stderr.contains("panicked"), "unexpected panic: {stderr}");
 
-    let help = Command::new(env!("CARGO_BIN_EXE_prime-agent"))
+    let help = Command::new(env!("CARGO_BIN_EXE_beehive"))
         .arg("--help")
         .env_remove("HOME")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         .output()
         .unwrap();
     assert!(help.status.success(), "help should not require a home");
 
     for args in [["help", "package"], ["package", "--help"]] {
-        let help = Command::new(env!("CARGO_BIN_EXE_prime-agent"))
+        let help = Command::new(env!("CARGO_BIN_EXE_beehive"))
             .args(args)
             .env_remove("HOME")
-            .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+            .env_remove("BEEHIVE_CODING_AGENT_DIR")
             .output()
             .unwrap();
         assert!(
@@ -93,13 +93,13 @@ fn missing_home_reports_agent_directory_requirement_without_a_panic() {
         );
     }
 
-    let package = Command::new(env!("CARGO_BIN_EXE_prime-agent"))
+    let package = Command::new(env!("CARGO_BIN_EXE_beehive"))
         .args(["package", "list"])
         .env_remove("HOME")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         .output()
         .unwrap();
     assert_eq!(package.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&package.stderr)
-        .contains("HOME or PRIME_AGENT_CODING_AGENT_DIR is required"));
+        .contains("HOME or BEEHIVE_CODING_AGENT_DIR is required"));
 }

@@ -19,7 +19,7 @@ use crate::refinement::{
 };
 use crate::session::manager::SessionManager;
 
-pub const REFINEMENT_AUDIT_CUSTOM_TYPE: &str = "prime-agent.refinement";
+pub const REFINEMENT_AUDIT_CUSTOM_TYPE: &str = "beehive.refinement";
 pub const REFINEMENT_OUTCOME_CUSTOM_TYPE: &str = "refinement_outcome";
 /// Model-facing notice custom type (display=false).
 pub const REFINEMENT_NOTICE_CUSTOM_TYPE: &str = "refinement_notice";
@@ -762,7 +762,7 @@ pub(crate) enum AutoRefineRound {
 }
 
 /// The refiner model call on the session model, with the merged request
-/// headers (the Prime team header) the session's own requests send.
+/// headers (the team header) the session's own requests send.
 pub(super) async fn session_refiner_call(
     auxiliary: Option<super::auxiliary_model::AuxiliaryModelContext>,
     model: &bh_types::ai::Model,
@@ -1727,7 +1727,7 @@ Reviewer instructions: record it"
             rows.push(serde_json::json!({"type":"message","id":id.clone(),"parentId":parent,"message":{"role":"user","content":format!("hello {i}"),"timestamp":0}}));
             parent = Some(id);
         }
-        rows.push(serde_json::json!({"type":"custom","id":"audit","parentId":parent,"customType":"prime-agent.refinement","data":{"id":"refine_0","summary":"seed","rationale":"seeded rationale","expectedOutcome":"seeded outcome","appliedEdits":[],"harnessStatePath":""}}));
+        rows.push(serde_json::json!({"type":"custom","id":"audit","parentId":parent,"customType":"beehive.refinement","data":{"id":"refine_0","summary":"seed","rationale":"seeded rationale","expectedOutcome":"seeded outcome","appliedEdits":[],"harnessStatePath":""}}));
         rows.into_iter().map(|row| row.to_string() + "\n").collect()
     }
 
@@ -1858,7 +1858,7 @@ Reviewer instructions: record it"
             .open(&path)
             .unwrap();
         file.write_all(
-            br#"{"type":"custom","id":"oob-audit","parentId":"audit","customType":"prime-agent.refinement","data":{"id":"refine_oob","summary":"oob","rationale":"r","expectedOutcome":"o","appliedEdits":[],"harnessStatePath":""}}"#
+            br#"{"type":"custom","id":"oob-audit","parentId":"audit","customType":"beehive.refinement","data":{"id":"refine_oob","summary":"oob","rationale":"r","expectedOutcome":"o","appliedEdits":[],"harnessStatePath":""}}"#
         )
         .unwrap();
         file.write_all(b"\n").unwrap();

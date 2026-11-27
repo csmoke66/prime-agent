@@ -1,4 +1,4 @@
-//! `prime-agent prompt`: dump the fully-assembled effective system prompt with
+//! `beehive prompt`: dump the fully-assembled effective system prompt with
 //! its per-layer breakdown, without starting a session or a provider.
 
 use bh_core::resources::{load_resources, LoadedResources, ResourceLoaderOptions};
@@ -48,7 +48,7 @@ pub fn run_prompt_command(args: &[String]) -> i32 {
         Err(help_request) if help_request.is_empty() => return 0,
         Err(error) => {
             eprintln!("Error: {error}");
-            eprintln!("Run `prime-agent help prompt` for usage.");
+            eprintln!("Run `beehive help prompt` for usage.");
             return 1;
         }
     };
@@ -130,7 +130,7 @@ fn assemble_breakdown(
 }
 
 fn print_text(breakdown: &bh_core::prompts::SystemPromptBreakdown) {
-    println!("# prime-agent system prompt breakdown");
+    println!("# beehive system prompt breakdown");
     println!();
     println!("cached prefix (static layers, byte-stable across sessions):");
     for segment in &breakdown.segments {
@@ -226,7 +226,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (breakdown, errors) = assemble_breakdown(dir.path(), Some("mock/mock-1")).unwrap();
         assert!(errors.is_empty());
-        assert!(breakdown.assembled.starts_with("# prime-agent harness"));
+        assert!(breakdown.assembled.starts_with("# beehive harness"));
         assert!(breakdown
             .assembled
             .contains("Recursive agent depth: 0 (root)"));

@@ -597,7 +597,7 @@ mod tests {
     use crate::theme::{ColorMode, Theme};
 
     fn theme() -> Theme {
-        Theme::builtin("prime", ColorMode::TrueColor)
+        Theme::builtin("beehive", ColorMode::TrueColor)
     }
 
     fn scopes(code: &str) -> Vec<(String, Scope)> {

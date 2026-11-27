@@ -34,19 +34,19 @@ pub use crate::settings::CONFIG_DIR_NAME;
 /// Network probe timeout for npm/git operations (10s).
 pub(crate) use npm::NETWORK_TIMEOUT_MS;
 
-/// True when `PI_OFFLINE` disables all package network operations.
+/// True when `BEEHIVE_OFFLINE` disables all package network operations.
 pub(crate) fn is_offline_mode_enabled() -> bool {
-    std::env::var("PI_OFFLINE").is_ok_and(|value| {
+    std::env::var("BEEHIVE_OFFLINE").is_ok_and(|value| {
         value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
     })
 }
 
-/// The package directory: `PI_PACKAGE_DIR` wins (matching the TS
+/// The package directory: `BEEHIVE_PACKAGE_DIR` wins (matching the TS
 /// `getPackageDir` override), then the directory of the executable (the
 /// packaged bun-binary layout), through [`exe_dir_of`] so a launcher
 /// symlink resolves.
 pub(crate) fn package_dir() -> PathBuf {
-    if let Ok(env_dir) = std::env::var("PI_PACKAGE_DIR") {
+    if let Ok(env_dir) = std::env::var("BEEHIVE_PACKAGE_DIR") {
         if !env_dir.is_empty() {
             return expand_tilde(&env_dir);
         }
@@ -139,7 +139,7 @@ pub(crate) fn temporary_dir(prefix: &str, suffix: Option<&str>) -> PathBuf {
         output
     });
     std::env::temp_dir()
-        .join("pi-extensions")
+        .join("beehive-extensions")
         .join(prefix)
         .join(&hash)
         .join(suffix.unwrap_or_default())
@@ -147,7 +147,7 @@ pub(crate) fn temporary_dir(prefix: &str, suffix: Option<&str>) -> PathBuf {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    /// Process-wide env reads and writes (HOME, `PI_OFFLINE`) serialize
+    /// Process-wide env reads and writes (HOME, `BEEHIVE_OFFLINE`) serialize
     /// through one lock across the packages test modules: parallel test
     /// threads in the same binary otherwise race the process env.
     pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());

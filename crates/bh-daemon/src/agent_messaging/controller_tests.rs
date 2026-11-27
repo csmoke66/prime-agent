@@ -33,7 +33,7 @@ async fn spawn_fake_supervisor(
                 let mut reader = BufReader::new(reader);
                 writer
                     .write_all(
-                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                        b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
                     )
                     .await
                     .unwrap();
@@ -397,7 +397,7 @@ async fn context_reminder_uses_exact_resident_supervisor_route() {
         let mut reader = BufReader::new(reader);
         writer
             .write_all(
-                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"prime-agent.daemon\",\"version\":7}}\n",
+                b"{\"type\":\"daemon_hello\",\"protocol\":{\"name\":\"beehive.daemon\",\"version\":7}}\n",
             )
             .await
             .unwrap();
@@ -1229,7 +1229,7 @@ async fn context_health_uses_authenticated_peer_view_and_rejects_malformed_respo
         .await
         .unwrap_err();
     assert!(
-        error.to_string().contains("update or restart Prime Agent"),
+        error.to_string().contains("update or restart Beehive"),
         "{error:#}"
     );
 }

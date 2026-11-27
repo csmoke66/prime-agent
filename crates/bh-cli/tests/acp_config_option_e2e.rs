@@ -121,7 +121,7 @@ fn shutdown_sandboxed_daemon(socket: &std::path::Path) {
         return;
     };
     let frame = format!(
-            "{{\"type\":\"command\",\"id\":\"shutdown-test\",\"protocol\":{{\"name\":\"prime-agent.daemon\",\"version\":{}}},\"command\":{{\"type\":\"shutdown\"}}}}\n",
+            "{{\"type\":\"command\",\"id\":\"shutdown-test\",\"protocol\":{{\"name\":\"beehive.daemon\",\"version\":{}}},\"command\":{{\"type\":\"shutdown\"}}}}\n",
             bh_types::daemon::DAEMON_PROTOCOL_VERSION
         );
     let _ = stream.write_all(frame.as_bytes());
@@ -203,7 +203,7 @@ fn acp_daemon_attached_config_option_pickers() {
         .to_string(),
     )
     .unwrap();
-    let bin = env!("CARGO_BIN_EXE_prime-agent");
+    let bin = env!("CARGO_BIN_EXE_beehive");
     let mut child = Command::new(bin)
         .args([
             "--mode",
@@ -213,8 +213,8 @@ fn acp_daemon_attached_config_option_pickers() {
             socket.to_str().unwrap(),
         ])
         .env("HOME", home.path())
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
-        .env("PRIME_AGENT_FAUX_SCRIPT", &script_path)
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_FAUX_SCRIPT", &script_path)
         .env(
             bh_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             "15000",

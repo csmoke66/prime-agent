@@ -4,10 +4,10 @@
 //! discovery and behavior belong to the consuming crates.
 
 /// The bundled theme names, in builtin resolution order.
-pub const BUILTIN_THEME_NAMES: [&str; 3] = ["prime", "dark", "light"];
+pub const BUILTIN_THEME_NAMES: [&str; 3] = ["beehive", "dark", "light"];
 
-/// The `prime` theme file (Prime Agent's default, dark-first).
-pub const PRIME_THEME_JSON: &str = include_str!("../themes/prime.json");
+/// The `beehive` theme file (Beehive's default, dark-first).
+pub const BEEHIVE_THEME_JSON: &str = include_str!("../themes/beehive.json");
 pub const DARK_THEME_JSON: &str = include_str!("../themes/dark.json");
 pub const LIGHT_THEME_JSON: &str = include_str!("../themes/light.json");
 
@@ -15,7 +15,8 @@ pub const LIGHT_THEME_JSON: &str = include_str!("../themes/light.json");
 #[must_use]
 pub fn builtin_theme_json(name: &str) -> Option<&'static str> {
     match name {
-        "prime" => Some(PRIME_THEME_JSON),
+        // "prime" is the pre-rename theme name that existing settings files still carry.
+        "beehive" | "prime" => Some(BEEHIVE_THEME_JSON),
         "dark" => Some(DARK_THEME_JSON),
         "light" => Some(LIGHT_THEME_JSON),
         _ => None,

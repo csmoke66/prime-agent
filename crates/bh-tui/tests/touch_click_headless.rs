@@ -222,7 +222,7 @@ fn attach_data(id: &str) -> Value {
 /// One catalog model (the picker rows' identity).
 fn model(id: &str, name: &str) -> Model {
     serde_json::from_value(serde_json::json!({
-        "id": id, "name": name, "api": "openai-completions", "provider": "prime-inference",
+        "id": id, "name": name, "api": "openai-completions", "provider": "test-provider",
         "baseUrl": "https://example.invalid/v1", "reasoning": false,
         "input": ["text"],
         "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },

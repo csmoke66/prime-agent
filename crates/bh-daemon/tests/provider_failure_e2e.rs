@@ -54,11 +54,11 @@ struct FailingMock {
 enum MockRejection {
     /// A plain 500 with an OpenAI-style server-error body.
     ServerError,
-    /// The prime-inference storm shape: 429 with `Retry-After` and the
+    /// The test-provider storm shape: 429 with `Retry-After` and the
     /// "Too many concurrent requests" body.
     RateLimit { retry_after_secs: u64 },
     /// THE 402 REGRESSION (the diagnosis's variant B): a wallet-drain 402 carrying
-    /// the prime-inference `invalid_request_error` type text (the shape that settled silently).
+    /// the test-provider `invalid_request_error` type text (the shape that settled silently).
     PaymentRequired,
 }
 
@@ -213,8 +213,7 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Supervisor {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))
-        .env_remove("PRIME_API_KEY")
-        .env_remove("PRIME_AGENT_CODING_AGENT_DIR")
+        .env_remove("BEEHIVE_CODING_AGENT_DIR")
         // A supervisor killed at teardown must not leak session workers: the supervisor-lost
         // exit runs here.
         .env(
@@ -328,7 +327,7 @@ impl Client {
         let envelope = json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         });
         let mut line = serde_json::to_string(&envelope).expect("serialize");
@@ -413,7 +412,7 @@ fn setup_with_rejection(
         agent_dir.join("models.json"),
         json!({
             "providers": {
-                "prime-inference": {
+                "test-provider": {
                     "api": "openai-completions",
                     "baseUrl": mock.url(),
                     "apiKey": "sk-battery",
@@ -448,7 +447,7 @@ fn setup_with_rejection(
             "config": {
                 "cwd": dir.path().to_string_lossy(),
                 "sessionDir": session_dir.to_string_lossy(),
-                "provider": "prime-inference",
+                "provider": "test-provider",
                 "model": "mock-1",
             },
         }),

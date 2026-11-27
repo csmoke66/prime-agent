@@ -23,7 +23,7 @@ use bh_core::session_engine::turn_boundary::PendingRefine;
 use bh_core::session_engine::PromptOptions;
 use serde_json::{json, Value};
 
-/// The kernel Python with prime-agent-runtime installed (the interpreter the
+/// The kernel Python with beehive-runtime installed (the interpreter the
 /// TS product's kernel venv bootstraps). Skipped (with a note) on machines
 /// without a live install; `PA_CORE_KERNEL_PYTHON` points at an explicit one.
 fn kernel_python() -> Option<PathBuf> {
@@ -37,8 +37,8 @@ fn kernel_python() -> Option<PathBuf> {
         return Some(explicit);
     }
     let candidate = PathBuf::from(std::env::var("HOME").map_or_else(
-        |_| "/home/ubuntu/.prime/agent/kernel-venv/bin/python".to_string(),
-        |home| format!("{home}/.prime/agent/kernel-venv/bin/python"),
+        |_| "/home/ubuntu/.beehive/kernel-venv/bin/python".to_string(),
+        |home| format!("{home}/.beehive/kernel-venv/bin/python"),
     ));
     if candidate.exists() {
         return Some(candidate);
@@ -131,11 +131,10 @@ async fn turn_boundary_host_requests_round_trip_through_a_real_kernel() {
     // ambient agent state leaks in.
     let _env = EnvOverride::apply(&[
         (
-            "PRIME_AGENT_KERNEL_PYTHON",
+            "BEEHIVE_KERNEL_PYTHON",
             Some(kernel_python.display().to_string()),
         ),
-        ("PRIME_AGENT_CODING_AGENT_DIR", None),
-        ("PRIME_API_KEY", None),
+        ("BEEHIVE_CODING_AGENT_DIR", None),
     ]);
 
     // A persisted session: the refine handlers register only for depth-0

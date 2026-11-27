@@ -2,7 +2,7 @@
 //! configured npm command (`settings.npmCommand`, default `npm`), install
 //! root/path layout per scope, and the project-root bootstrap files:
 //! user-scope installs go through `npm install -g` and `npm root -g`,
-//! project-scope into `<cwd>/.prime/agent/npm/node_modules` via `--prefix`.
+//! project-scope into `<cwd>/.beehive/npm/node_modules` via `--prefix`.
 
 use std::path::{Path, PathBuf};
 
@@ -139,7 +139,7 @@ pub fn ensure_npm_project(install_root: &Path) -> Result<()> {
     ensure_gitignore(install_root)?;
     let package_json = install_root.join("package.json");
     if !package_json.exists() {
-        let manifest = serde_json::json!({ "name": "pi-extensions", "private": true });
+        let manifest = serde_json::json!({ "name": "beehive-extensions", "private": true });
         std::fs::write(&package_json, serde_json::to_string_pretty(&manifest)?)?;
     }
     Ok(())
@@ -199,7 +199,7 @@ mod tests {
         );
         assert_eq!(
             npm_install_path(&source, SourceScope::Project, cwd, global_root),
-            PathBuf::from("/work/.prime/agent/npm/node_modules/pkg")
+            PathBuf::from("/work/.beehive/npm/node_modules/pkg")
         );
         assert_eq!(
             npm_install_root(SourceScope::User, cwd, global_root),

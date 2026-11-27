@@ -32,13 +32,13 @@ impl Drop for Supervisor {
     }
 }
 
-/// The kernel Python with prime-agent-runtime installed (`PA_E2E_KERNEL_PYTHON`, else the
+/// The kernel Python with beehive-runtime installed (`PA_E2E_KERNEL_PYTHON`, else the
 /// product's kernel-venv layout). A missing kernel fails loudly: the shell needs a real kernel.
 fn kernel_python() -> PathBuf {
     let python = std::env::var_os("PA_E2E_KERNEL_PYTHON").map_or_else(
         || {
             PathBuf::from(std::env::var("HOME").expect("HOME"))
-                .join(".prime/agent/kernel-venv/bin/python")
+                .join(".beehive/kernel-venv/bin/python")
         },
         PathBuf::from,
     );
@@ -56,12 +56,12 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     let socket = dir.join("daemon.sock");
     let agent_dir = dir.join("agent");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_prime-agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_beehive"));
     command
         .args(["--mode", "daemon", "--daemon-socket"])
         .arg(&socket)
-        .env("PRIME_AGENT_CODING_AGENT_DIR", &agent_dir)
-        .env("PRIME_AGENT_KERNEL_PYTHON", kernel_python())
+        .env("BEEHIVE_CODING_AGENT_DIR", &agent_dir)
+        .env("BEEHIVE_KERNEL_PYTHON", kernel_python())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -77,7 +77,7 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
     ] {
         command.env_remove(var);
     }
-    let child = command.spawn().expect("spawn prime-agent --mode daemon");
+    let child = command.spawn().expect("spawn beehive --mode daemon");
     let deadline = Instant::now() + Duration::from_secs(15);
     while UnixStream::connect(&socket).is_err() {
         assert!(Instant::now() < deadline, "supervisor socket never came up");
@@ -95,7 +95,7 @@ fn ask(socket: &Path, command: &Value) -> Option<Value> {
     let mut line = serde_json::to_string(&json!({
         "type": "command",
         "id": "stop-e2e",
-        "protocol": { "name": "prime-agent.daemon", "version": 7 },
+        "protocol": { "name": "beehive.daemon", "version": 7 },
         "command": command,
     }))
     .ok()?;
@@ -190,7 +190,7 @@ fn chat_options(socket: PathBuf, cwd: PathBuf, active: String) -> InteractiveOpt
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,

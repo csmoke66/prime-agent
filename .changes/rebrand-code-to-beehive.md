@@ -1,0 +1,1 @@
+- Renamed the product to Beehive: the `beehive` binary, `BEEHIVE_*` environment variables, and the `~/.beehive` data directory replace the previous names. Existing `prime` theme settings and package manifests with a `pi` key still load.

@@ -138,7 +138,7 @@ pub(crate) fn options(selection: ModelSelection) -> InteractiveOptions {
         initial_message: None,
         show_images: true,
         fullscreen_mouse: true,
-        theme: "prime".to_string(),
+        theme: "beehive".to_string(),
         code_block_indent: "  ".to_string(),
         tree_filter_mode: String::new(),
         branch_summary_skip_prompt: false,
@@ -213,7 +213,7 @@ fn resume_hint_names_a_flushed_session() {
     });
     assert_eq!(
         crate::session_ui::resume_hint_from_stats(&stats),
-        Some("Resume this session with: prime-agent --resume s1".to_string())
+        Some("Resume this session with: beehive --resume s1".to_string())
     );
     // An unflushed empty session and a missing session file are both unresumable
     // (TS omits the hint for either).
@@ -344,7 +344,7 @@ fn the_headless_settle_names_every_stuck_member() {
 #[test]
 fn the_startup_placeholder_carries_the_dock_a_fresh_session_mounts() {
     let mut view = AgentView::new(crate::theme::Theme::builtin(
-        "prime",
+        "beehive",
         crate::theme::ColorMode::TrueColor,
     ));
     apply_startup_chrome(&mut view, &options(ModelSelection::default()));

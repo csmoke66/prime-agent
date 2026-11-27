@@ -23,7 +23,7 @@ pub(super) struct GroupChange {
 fn group_path() -> io::Result<PathBuf> {
     bh_types::platform::dirs::agent_dir()
         .map(|dir| dir.join("agents-view-groups"))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No Prime Agent settings directory"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No Beehive settings directory"))
 }
 
 fn valid_id(id: &str) -> bool {

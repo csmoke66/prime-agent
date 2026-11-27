@@ -586,14 +586,14 @@ fn disk_memo_late_write_after_invalidate_is_benign() {
 /// Env-mutating tests serialize on this lock: the process env is global.
 /// Unix only: its takers are the unix env-override tests.
 #[cfg(unix)]
-static PRIME_AGENT_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static BEEHIVE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// A caller-owned `PRIME_AGENT_KERNEL_PYTHON` override resolves through
+/// A caller-owned `BEEHIVE_KERNEL_PYTHON` override resolves through
 /// the DIRECT probe and never reads or writes any memo file.
 #[cfg(unix)]
 #[tokio::test]
 async fn custom_override_never_touches_the_disk_memo() {
-    let _guard = PRIME_AGENT_ENV_LOCK.lock().await;
+    let _guard = BEEHIVE_ENV_LOCK.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -604,21 +604,21 @@ async fn custom_override_never_touches_the_disk_memo() {
         std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let previous_home = std::env::var("HOME").ok();
-    let previous_override = std::env::var("PRIME_AGENT_KERNEL_PYTHON").ok();
-    let previous_venv = std::env::var("PRIME_AGENT_KERNEL_VENV").ok();
+    let previous_override = std::env::var("BEEHIVE_KERNEL_PYTHON").ok();
+    let previous_venv = std::env::var("BEEHIVE_KERNEL_VENV").ok();
     std::env::set_var("HOME", &home);
-    std::env::set_var("PRIME_AGENT_KERNEL_PYTHON", &python);
-    std::env::remove_var("PRIME_AGENT_KERNEL_VENV");
+    std::env::set_var("BEEHIVE_KERNEL_PYTHON", &python);
+    std::env::remove_var("BEEHIVE_KERNEL_VENV");
     let resolved =
         super::super::ensure_kernel_python(super::super::EnsureKernelPythonOptions::default())
             .await;
     match previous_venv {
-        Some(value) => std::env::set_var("PRIME_AGENT_KERNEL_VENV", value),
-        None => std::env::remove_var("PRIME_AGENT_KERNEL_VENV"),
+        Some(value) => std::env::set_var("BEEHIVE_KERNEL_VENV", value),
+        None => std::env::remove_var("BEEHIVE_KERNEL_VENV"),
     }
     match previous_override {
-        Some(value) => std::env::set_var("PRIME_AGENT_KERNEL_PYTHON", value),
-        None => std::env::remove_var("PRIME_AGENT_KERNEL_PYTHON"),
+        Some(value) => std::env::set_var("BEEHIVE_KERNEL_PYTHON", value),
+        None => std::env::remove_var("BEEHIVE_KERNEL_PYTHON"),
     }
     match previous_home {
         Some(value) => std::env::set_var("HOME", value),
@@ -1025,7 +1025,7 @@ async fn skill_sync_batches_missing_installs_into_one_uv_call() {
         },
         &venv,
         dir.path().join("python").as_path(),
-        dir.path().join("prime-agent-runtime").as_path(),
+        dir.path().join("beehive-runtime").as_path(),
         "sha256:rt",
         &skills,
         &EnsureKernelPythonOptions::default(),
@@ -1044,7 +1044,7 @@ async fn skill_sync_batches_missing_installs_into_one_uv_call() {
         "the installed skill is not reinstalled: {calls:?}"
     );
     assert_eq!(calls[0].matches("--editable").count(), 1);
-    assert!(calls[0].contains(dir.path().join("prime-agent-runtime").to_str().unwrap()));
+    assert!(calls[0].contains(dir.path().join("beehive-runtime").to_str().unwrap()));
     let version = read_bootstrap_version(&venv).expect("version written");
     assert_eq!(
         version.python_skills.as_ref().map(Vec::len),
@@ -1084,7 +1084,7 @@ async fn skill_sync_falls_back_to_per_skill_installs_on_batch_failure() {
         },
         &venv,
         dir.path().join("python").as_path(),
-        dir.path().join("prime-agent-runtime").as_path(),
+        dir.path().join("beehive-runtime").as_path(),
         "sha256:rt",
         &skills,
         &options,
@@ -1102,7 +1102,7 @@ async fn skill_sync_falls_back_to_per_skill_installs_on_batch_failure() {
         "the batch covers both skills: {calls:?}"
     );
     for call in &calls {
-        assert!(call.contains(dir.path().join("prime-agent-runtime").to_str().unwrap()));
+        assert!(call.contains(dir.path().join("beehive-runtime").to_str().unwrap()));
     }
     let warnings = warnings.lock().unwrap();
     assert!(
@@ -1168,7 +1168,7 @@ async fn switching_a_skill_between_sources_replaces_the_other_install() {
             },
             &venv,
             &python,
-            dir.path().join("prime-agent-runtime").as_path(),
+            dir.path().join("beehive-runtime").as_path(),
             "sha256:rt",
             std::slice::from_ref(selected),
             &EnsureKernelPythonOptions::default(),
@@ -1192,7 +1192,7 @@ async fn switching_a_skill_between_sources_replaces_the_other_install() {
         "each sync records only the selected source"
     );
     let python = python.display();
-    let runtime = dir.path().join("prime-agent-runtime");
+    let runtime = dir.path().join("beehive-runtime");
     let runtime = runtime.display();
     let install = |path: &Path| {
         format!(
@@ -1253,7 +1253,7 @@ async fn installing_a_skill_drops_records_displaced_by_distribution_identity() {
         &uv_command,
         &venv,
         dir.path().join("python").as_path(),
-        dir.path().join("prime-agent-runtime").as_path(),
+        dir.path().join("beehive-runtime").as_path(),
         "sha256:rt",
         std::slice::from_ref(&packaged_skill),
         &EnsureKernelPythonOptions::default(),
@@ -1280,7 +1280,7 @@ async fn installing_a_skill_drops_records_displaced_by_distribution_identity() {
         &uv_command,
         &venv,
         dir.path().join("python").as_path(),
-        dir.path().join("prime-agent-runtime").as_path(),
+        dir.path().join("beehive-runtime").as_path(),
         "sha256:rt",
         std::slice::from_ref(&user_skill),
         &EnsureKernelPythonOptions::default(),
@@ -1327,7 +1327,7 @@ fn set_mode(path: &Path, mode: u32) {
 }
 
 /// A base-ready venv whose directory cannot host the bootstrap lock (EACCES/EROFS on
-/// the candidate) must degrade like a `PRIME_AGENT_KERNEL_PYTHON` override: the
+/// the candidate) must degrade like a `BEEHIVE_KERNEL_PYTHON` override: the
 /// uncovered skill is disabled with a warning and the venv python is returned, with
 /// nothing installed into the read-only venv. Red on the raw EACCES before the fix.
 #[cfg(unix)]
@@ -1444,8 +1444,7 @@ async fn unwritable_stale_venv_names_the_venv_and_both_env_overrides() {
         "names the venv: {message}"
     );
     assert!(
-        message.contains("PRIME_AGENT_KERNEL_VENV")
-            && message.contains("PRIME_AGENT_KERNEL_PYTHON"),
+        message.contains("BEEHIVE_KERNEL_VENV") && message.contains("BEEHIVE_KERNEL_PYTHON"),
         "names both env overrides: {message}"
     );
     assert!(
@@ -1460,11 +1459,11 @@ async fn unwritable_stale_venv_names_the_venv_and_both_env_overrides() {
 fn sha256_witnesses_are_lowercase_hex() {
     let temp = tempfile::tempdir().unwrap();
     let file = temp.path().join("pyproject.toml");
-    std::fs::write(&file, "[project]\nname = 'prime-agent-runtime'\n").unwrap();
+    std::fs::write(&file, "[project]\nname = 'beehive-runtime'\n").unwrap();
     std::fs::create_dir_all(temp.path().join("src").join("rlm")).unwrap();
     assert_eq!(
         hash_runtime_source(temp.path()).unwrap(),
-        "sha256:eceff75b2c14143a336e6e86e5bf5b0a3a2ae360055a28312533eedf44cad128"
+        "sha256:b80c9d9f00b94c04e81b94c183e99ab3b3b26fb2b3cbc71f84d71c99623c46bc"
     );
     std::fs::write(&file, "abc").unwrap();
     assert_eq!(

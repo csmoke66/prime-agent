@@ -28,9 +28,8 @@ pub(crate) async fn edit(command: &str, text: &str) -> Result<Option<String>> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_millis())
         .unwrap_or_default();
-    // The name shows in the user's editor buffer; the TS `pi-editor-*`
-    // form is scrubbed per the branding rule (a deliberate deviation).
-    let path = std::env::temp_dir().join(format!("prime-agent-editor-{millis}.md"));
+    // The name shows in the user's editor buffer.
+    let path = std::env::temp_dir().join(format!("beehive-editor-{millis}.md"));
     // O_EXCL (`create_new`): the draft never follows or truncates a
     // pre-planted path or symlink, and 0600 keeps the prompt draft
     // owner-only in the shared temp dir. A pre-existing path fails the create

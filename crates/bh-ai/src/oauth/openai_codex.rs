@@ -22,7 +22,7 @@ const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 /// The registered redirect: the callback server's own address.
 const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const SCOPE: &str = "openid profile email offline_access";
-pub const DEFAULT_ORIGINATOR: &str = "pi";
+pub const DEFAULT_ORIGINATOR: &str = "beehive";
 pub const DEFAULT_TOKEN_TIMEOUT_MS: u64 = 30_000;
 /// The refresh runs under the auth storage's file lock, which a peer declares stale after 10
 /// seconds; the request must fit inside that window.
@@ -610,7 +610,7 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Stage the registered redirect port busy on the flow's own host (`PI_OAUTH_CALLBACK_HOST`):
+    /// Stage the registered redirect port busy on the flow's own host (`BEEHIVE_OAUTH_CALLBACK_HOST`):
     /// an active listener blocks the same-address bind (both sockets set `SO_REUSEADDR`, neither
     /// sets `SO_REUSEPORT`), so the flow's callback server is dead. `None`: the port cannot be
     /// staged this run.
@@ -993,7 +993,7 @@ mod tests {
 
     #[test]
     fn the_authorization_url_carries_the_ts_parameters() {
-        let url = authorization_url("the-challenge", "the-state", "pi");
+        let url = authorization_url("the-challenge", "the-state", "beehive");
         let parsed = url::Url::parse(&url).unwrap();
         assert_eq!(parsed.host_str(), Some("auth.openai.com"));
         assert_eq!(parsed.path(), "/oauth/authorize");
@@ -1013,7 +1013,7 @@ mod tests {
         assert_eq!(param("state"), "the-state");
         assert_eq!(param("id_token_add_organizations"), "true");
         assert_eq!(param("codex_cli_simplified_flow"), "true");
-        assert_eq!(param("originator"), "pi");
+        assert_eq!(param("originator"), "beehive");
     }
 
     #[tokio::test]

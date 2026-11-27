@@ -77,7 +77,7 @@ impl PackageManager {
             accumulator,
             ResourceType::Skills,
             [
-                collect_skill_entries(&project_dirs[0], SkillDiscoveryMode::Pi),
+                collect_skill_entries(&project_dirs[0], SkillDiscoveryMode::Beehive),
                 project_agents_skill_dirs
                     .iter()
                     .flat_map(|dir| collect_skill_entries(dir, SkillDiscoveryMode::Agents))
@@ -109,7 +109,7 @@ impl PackageManager {
             accumulator,
             ResourceType::Skills,
             [
-                collect_skill_entries(&user_dirs[0], SkillDiscoveryMode::Pi),
+                collect_skill_entries(&user_dirs[0], SkillDiscoveryMode::Beehive),
                 collect_skill_entries(&user_agents_skills_dir, SkillDiscoveryMode::Agents),
             ]
             .concat(),
@@ -126,7 +126,8 @@ impl PackageManager {
                     origin: ResourceOrigin::TopLevel,
                     base_dir: Some(bundled_dir.clone()),
                 };
-                let builtin_entries = collect_skill_entries(bundled_dir, SkillDiscoveryMode::Pi);
+                let builtin_entries =
+                    collect_skill_entries(bundled_dir, SkillDiscoveryMode::Beehive);
                 // Bundled skills must ship with the package; warn instead of
                 // silently exposing none.
                 if builtin_entries.is_empty() {

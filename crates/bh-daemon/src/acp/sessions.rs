@@ -1,5 +1,5 @@
 //! ACP `session/list` and `session/load` over the daemon's saved-session
-//! catalog. The ACP session id is the prime-agent session id, so the ids
+//! catalog. The ACP session id is the beehive session id, so the ids
 //! `session/new`, `session/list` and `session/load` report round-trip.
 
 use std::path::{Path, PathBuf};

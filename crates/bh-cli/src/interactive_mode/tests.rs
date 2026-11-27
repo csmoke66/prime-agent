@@ -607,7 +607,7 @@ fn fork_startup_selection_reports_the_ts_contracts() {
         "unexpected error: {rendered}"
     );
     assert!(
-        rendered.contains("Open prime-agent and press left-arrow to browse sessions."),
+        rendered.contains("Open beehive and press left-arrow to browse sessions."),
         "unexpected error: {rendered}"
     );
 }
@@ -940,9 +940,9 @@ async fn startup_flush_never_blocks_the_first_frame() {
 fn interactive_resume_restores_saved_cwd_and_project_settings_unless_overridden() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("saved-project");
-    std::fs::create_dir_all(project.join(".prime/agent")).unwrap();
+    std::fs::create_dir_all(project.join(".beehive")).unwrap();
     std::fs::write(
-        project.join(".prime/agent/settings.json"),
+        project.join(".beehive/settings.json"),
         r#"{"markdown":{"codeBlockIndent":"    "}}"#,
     )
     .unwrap();

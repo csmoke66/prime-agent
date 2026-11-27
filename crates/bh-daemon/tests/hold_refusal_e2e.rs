@@ -103,7 +103,7 @@ impl Client {
         let mut line = serde_json::to_string(&json!({
             "type": "command",
             "id": id,
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "command": command,
         }))
         .expect("serialize command");
@@ -255,7 +255,7 @@ fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
         "the rejection names the holder's active session: {error}"
     );
     assert!(
-        error.contains("prime-agent --daemon-socket <socket> --resume 'foreign01ab3c'"),
+        error.contains("beehive --daemon-socket <socket> --resume 'foreign01ab3c'"),
         "the continue path is the exact attach command: {error}"
     );
     assert!(
@@ -269,7 +269,7 @@ fn a_foreign_lease_holder_rejects_the_create_with_the_hold_refusal() {
     // This test process runs a build of this product, so the holder classification
     // reads as another Rust build, never the TypeScript product.
     assert!(
-        error.starts_with("This session is currently open in another Rust build of Prime Agent"),
+        error.starts_with("This session is currently open in another Rust build of Beehive"),
         "the holder is classified, not guessed: {error}"
     );
     assert!(

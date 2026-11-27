@@ -123,7 +123,7 @@ impl MockSupervisor {
         };
         let hello = json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": capabilities,
         });
         write_line(&mut writer, &hello);
@@ -497,7 +497,7 @@ async fn a_held_shells_read_survives_the_agents_view_handoff() {
         let (read, mut write) = stream.into_split();
         let hello = json!({
             "type": "daemon_hello",
-            "protocol": { "name": "prime-agent.daemon", "version": 7 },
+            "protocol": { "name": "beehive.daemon", "version": 7 },
             "serverCapabilities": ["kernel_bash_activity"],
         });
         write

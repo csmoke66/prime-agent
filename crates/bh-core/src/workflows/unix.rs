@@ -141,7 +141,7 @@ impl Directory {
         let Some(etc) = root.open_dir(OsStr::new("etc"), false)? else {
             return Ok(None);
         };
-        let Some(agent) = etc.open_dir(OsStr::new("prime-agent"), false)? else {
+        let Some(agent) = etc.open_dir(OsStr::new("beehive"), false)? else {
             return Ok(None);
         };
         agent.open_dir(OsStr::new("workflows"), false)

@@ -226,10 +226,10 @@ fn reject_removed_command(args: &[String]) -> PublicCommandResult {
     let command = args.first().map(String::as_str).unwrap_or_default();
     let subcommand = args.get(1).map(String::as_str);
     let replacement = match (command, subcommand) {
-        ("daemon", _) => Some("Run \"prime-agent help\" to see the agent commands.".to_string()),
-        ("install", _) => Some("Use \"prime-agent package install\".".to_string()),
-        ("remove" | "uninstall", _) => Some("Use \"prime-agent package remove\".".to_string()),
-        ("manage", _) => Some("Use \"prime-agent agents\".".to_string()),
+        ("daemon", _) => Some("Run \"beehive help\" to see the agent commands.".to_string()),
+        ("install", _) => Some("Use \"beehive package install\".".to_string()),
+        ("remove" | "uninstall", _) => Some("Use \"beehive package remove\".".to_string()),
+        ("manage", _) => Some("Use \"beehive agents\".".to_string()),
         _ => None,
     };
     let joined: Vec<&str> = args.iter().take(2).map(String::as_str).collect();
@@ -290,7 +290,7 @@ fn validate_schedule_args(args: &[String]) -> bool {
             }
             if arg.starts_with('-') {
                 fail(
-                    "Usage: prime-agent schedule list [--all] [agent] [--json]",
+                    "Usage: beehive schedule list [--all] [agent] [--json]",
                     None,
                 );
                 return false;
@@ -298,7 +298,7 @@ fn validate_schedule_args(args: &[String]) -> bool {
             agent_count += 1;
             if agent_count > 1 {
                 fail(
-                    "Usage: prime-agent schedule list [--all] [agent] [--json]",
+                    "Usage: beehive schedule list [--all] [agent] [--json]",
                     None,
                 );
                 return false;
@@ -311,7 +311,7 @@ fn validate_schedule_args(args: &[String]) -> bool {
         if operands.len() == 1 && !operands[0].starts_with('-') {
             return true;
         }
-        fail("Usage: prime-agent schedule cancel <job-id>", None);
+        fail("Usage: beehive schedule cancel <job-id>", None);
         return false;
     }
     true
@@ -366,7 +366,7 @@ fn run_doctor(args: &[String]) -> PublicCommandResult {
     handled()
 }
 
-/// `prime-agent telemetry [status|on|off]`: the same report and settings
+/// `beehive telemetry [status|on|off]`: the same report and settings
 /// switch as the `/telemetry` slash command, for the current directory's
 /// settings scope.
 fn run_telemetry(args: &[String]) -> PublicCommandResult {
@@ -399,7 +399,7 @@ fn run_telemetry(args: &[String]) -> PublicCommandResult {
     }
 }
 
-/// `prime-agent incident` (TS `runIncidentCommand`): parse the options,
+/// `beehive incident` (TS `runIncidentCommand`): parse the options,
 /// resolve the window once, and print the timeline.
 fn run_incident_command(args: &[String]) -> PublicCommandResult {
     let options = match crate::incident::parse_incident_options(args) {
@@ -459,13 +459,13 @@ fn run_package(args: &[String]) -> PublicCommandResult {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return fail(
             "Missing package command.",
-            Some("Run \"prime-agent help package\" for usage.".to_string()),
+            Some("Run \"beehive help package\" for usage.".to_string()),
         );
     };
     if subcommand == "uninstall" {
         return fail(
             "Unknown package command: uninstall",
-            Some("Use \"prime-agent package remove\".".to_string()),
+            Some("Use \"beehive package remove\".".to_string()),
         );
     }
     let children: Vec<&str> = get_child_command_specs(&["package"])
@@ -477,7 +477,7 @@ fn run_package(args: &[String]) -> PublicCommandResult {
         return fail(
             format!("Unknown package command: {subcommand}"),
             Some(suggestion.map_or_else(
-                || "Run \"prime-agent help package\" for usage.".to_string(),
+                || "Run \"beehive help package\" for usage.".to_string(),
                 |s| format!("Did you mean \"{APP_NAME} package {s}\"?"),
             )),
         );

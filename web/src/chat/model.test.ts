@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
+import { spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
 
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 
@@ -60,7 +60,10 @@ describe("parsers", () => {
   it("parses bash prefixes and @path tokens", () => {
     expect(parseBang("!!ls -l")).toEqual({ command: "ls -l", excludeFromContext: true });
     expect(parseBang("! pwd")).toEqual({ command: "pwd", excludeFromContext: false });
-    expect(pathTokenAt("see @src/ma", 11)).toEqual({ start: 4, query: "src/ma" });
+    expect(pathTokenAt("see @src/ma", 11)).toEqual({ start: 4, query: "src/ma", quote: "" });
+    expect(pathTokenAt('see @"my di', 11)).toEqual({ start: 4, query: "my di", quote: '"' });
+    expect(spellPathToken("my dir/", "")).toBe('@"my dir/');
+    expect(spellPathToken("a b.txt", "'")).toBe("@'a b.txt' ");
     expect(pathTokenAt("mail a@b", 8)).toBeNull();
   });
   it("ranks slash commands by prefix", () => {

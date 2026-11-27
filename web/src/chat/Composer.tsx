@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../wire";
-import { BUILTIN_COMMANDS, filterCommands, parseBang, pathTokenAt, queueOf, type SlashCommand } from "./model";
+import { rest } from "../panels/api";
+import { BUILTIN_COMMANDS, filterCommands, parseBang, pathTokenAt, queueOf, skillSourceTag, spellPathToken, type SlashCommand } from "./model";
 import { abort, abortBash, mutateQueued, runBash, sendPrompt, toast, useChat, type ImageAttachment, type SendMode } from "./store";
 import { runSlash } from "./slash";
 import { loadKeybindings, matches } from "../app/keybindings";
@@ -93,7 +93,7 @@ export function Composer() {
 
   // Autocomplete: slash commands at the start of the draft, `@path` tokens anywhere.
   const skillCommands = useMemo<SlashCommand[]>(
-    () => commands.filter((c) => c.source === "skill").map((c) => ({ name: String(c.name), description: String(c.description ?? "Skill"), argumentHint: "<request>", kind: "session" as const })),
+    () => commands.filter((c) => c.source === "skill").map((c) => ({ name: String(c.name), description: String(c.description ?? "Skill"), argumentHint: "your request", kind: "session" as const, sourceTag: skillSourceTag(c.sourceInfo) })),
     [commands],
   );
   useEffect(() => {
@@ -101,7 +101,7 @@ export function Composer() {
     const slash = /^\/([^\s]*)$/.exec(text.slice(0, caret));
     if (slash && caret === text.length) {
       const list = filterCommands([...BUILTIN_COMMANDS, ...skillCommands], slash[1]).slice(0, 8);
-      setSuggestions(list.map((c) => ({ label: `/${c.name}`, detail: `${c.argumentHint ? c.argumentHint + " — " : ""}${c.description}`, insert: `/${c.name}${c.argumentHint ? " " : ""}`, from: 0, to: text.length })));
+      setSuggestions(list.map((c) => ({ label: `/${c.name}`, detail: `${c.argumentHint ? c.argumentHint + " — " : ""}${c.description}${c.sourceTag ? ` #${c.sourceTag}` : ""}`, insert: `/${c.name}${c.argumentHint ? " " : ""}`, from: 0, to: text.length })));
       setSelected(0);
       return;
     }
@@ -111,10 +111,10 @@ export function Composer() {
     const timer = window.setTimeout(async () => {
       try {
         const cwd = useChat.getState().data.state.cwd ?? "";
-        const result = await api<any>(`/files?cwd=${encodeURIComponent(cwd)}&prefix=${encodeURIComponent(token.query)}`);
-        const files: string[] = (Array.isArray(result) ? result : (result.files ?? result.entries ?? [])).map((f: any) => (typeof f === "string" ? f : f.path ?? f.name));
+        const mode = token.query.includes("/") || token.query.startsWith(".") || token.query.startsWith("~") ? "prefix" : "search";
+        const result = await rest.files(cwd, token.query, mode);
         if (cancelled) return;
-        setSuggestions(files.slice(0, 8).map((f) => ({ label: f, insert: `@${f}${f.endsWith("/") ? "" : " "}`, from: token.start, to: caret })));
+        setSuggestions(result.entries.slice(0, 8).map(({ value }) => ({ label: value, insert: spellPathToken(value, token.quote), from: token.start, to: caret })));
         setSelected(0);
       } catch {
         if (!cancelled) setSuggestions([]);

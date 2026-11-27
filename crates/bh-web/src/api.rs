@@ -101,12 +101,75 @@ pub(crate) struct FilesQuery {
     cwd: Option<String>,
     #[serde(default)]
     prefix: String,
+    /// Search the whole tree under `cwd` for this text instead of listing one directory.
+    #[serde(default)]
+    search: Option<String>,
 }
 
 const MAX_FILE_COMPLETIONS: usize = 200;
+const MAX_SEARCH_VISITED: usize = 20_000;
+const MAX_SEARCH_DEPTH: usize = 8;
+const SEARCH_SKIPPED_DIRS: [&str; 4] = [".git", ".hg", "node_modules", "target"];
 
-/// Path completion for `@path` tokens: entries of the prefix's directory whose names start with the
-/// prefix's last segment, directories first.
+/// Rank of `path` for the `@` search: 0 name prefix, 1 name contains, 2 path contains, 3 subsequence.
+fn search_rank(path: &str, query: &str) -> Option<u8> {
+    let path = path.to_lowercase();
+    let name = path.trim_end_matches('/').rsplit('/').next().unwrap_or(&path);
+    if name.starts_with(query) {
+        return Some(0);
+    }
+    if name.contains(query) {
+        return Some(1);
+    }
+    if path.contains(query) {
+        return Some(2);
+    }
+    let mut rest = path.chars();
+    query
+        .chars()
+        .all(|wanted| rest.any(|c| c == wanted))
+        .then_some(3)
+}
+
+/// Breadth-first walk under `root` (bounded in depth and entries, hidden entries only when the
+/// query starts with a dot) returning `(is_dir, path relative to root)` matches, best first.
+fn search_tree(root: &Path, query: &str) -> Vec<(bool, String)> {
+    let query = query.to_lowercase();
+    let show_hidden = query.starts_with('.');
+    let mut pending = std::collections::VecDeque::from([(root.to_path_buf(), String::new(), 0usize)]);
+    let mut ranked: Vec<(u8, bool, String)> = Vec::new();
+    let mut visited = 0;
+    while let Some((dir, relative, depth)) = pending.pop_front() {
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read.filter_map(Result::ok) {
+            visited += 1;
+            if visited > MAX_SEARCH_VISITED {
+                pending.clear();
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry.path().is_dir();
+            if (!show_hidden && name.starts_with('.')) || (is_dir && SEARCH_SKIPPED_DIRS.contains(&name.as_str())) {
+                continue;
+            }
+            let path = format!("{relative}{name}{}", if is_dir { "/" } else { "" });
+            if let Some(rank) = search_rank(&path, &query) {
+                ranked.push((rank, is_dir, path.clone()));
+            }
+            if is_dir && depth < MAX_SEARCH_DEPTH {
+                pending.push_back((entry.path(), path, depth + 1));
+            }
+        }
+    }
+    ranked.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.2.len().cmp(&b.2.len())).then_with(|| a.2.cmp(&b.2)));
+    ranked.into_iter().map(|(_, is_dir, path)| (is_dir, path)).collect()
+}
+
+/// Path completion for `@path` tokens. With `search`, the best matches anywhere under `cwd`;
+/// otherwise the entries of the prefix's directory whose names start with the prefix's last
+/// segment, directories first. Each entry's `value` is the path as the prompt should spell it.
 pub(crate) async fn list_files(
     State(state): State<Arc<AppState>>,
     Query(query): Query<FilesQuery>,
@@ -114,6 +177,14 @@ pub(crate) async fn list_files(
     let base = query
         .cwd
         .map_or_else(|| state.options.cwd.clone(), PathBuf::from);
+    if let Some(search) = query.search.filter(|text| !text.is_empty()) {
+        let items: Vec<Value> = search_tree(&base, &search)
+            .into_iter()
+            .take(MAX_FILE_COMPLETIONS)
+            .map(|(is_dir, value)| json!({ "value": value, "path": base.join(&value), "isDir": is_dir }))
+            .collect();
+        return Ok(Json(json!({ "dir": base, "entries": items })));
+    }
     let (dir_part, name_prefix) = query.prefix.rsplit_once('/').unwrap_or(("", &query.prefix));
     let dir = if let Some(rest) = query.prefix.strip_prefix("~/") {
         let home =
@@ -138,7 +209,10 @@ pub(crate) async fn list_files(
     entries.truncate(MAX_FILE_COMPLETIONS);
     let items: Vec<Value> = entries
         .into_iter()
-        .map(|(is_dir, name)| json!({ "name": name, "path": dir.join(&name), "isDir": is_dir }))
+        .map(|(is_dir, name)| {
+            let shown = format!("{}{name}{}", &query.prefix[..query.prefix.len() - name_prefix.len()], if is_dir { "/" } else { "" });
+            json!({ "name": name, "value": shown, "path": dir.join(&name), "isDir": is_dir })
+        })
         .collect();
     Ok(Json(json!({ "dir": dir, "entries": items })))
 }
@@ -226,4 +300,22 @@ pub(crate) async fn read_log(
         .map_err(|error| (StatusCode::NOT_FOUND, error.to_string()))?;
     let lines: Vec<&str> = text.lines().collect();
     Ok(lines[lines.len().saturating_sub(query.tail)..].join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::search_tree;
+
+    #[test]
+    fn search_ranks_name_prefix_first_and_skips_build_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        for dir in ["src/deep", "target", "node_modules"] {
+            std::fs::create_dir_all(root.path().join(dir)).unwrap();
+        }
+        for file in ["src/deep/main.rs", "src/domain.rs", "target/main.o", "node_modules/main.js", "main.toml"] {
+            std::fs::write(root.path().join(file), "").unwrap();
+        }
+        let found: Vec<String> = search_tree(root.path(), "main").into_iter().map(|(_, path)| path).collect();
+        assert_eq!(found, ["main.toml", "src/deep/main.rs", "src/domain.rs"]);
+    }
 }

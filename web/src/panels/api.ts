@@ -44,7 +44,8 @@ export const rest = {
   info: () => send<{ version: string; cwd: string; agentDir: string; socketPath: string; exportDir: string }>("/info"),
   settings: () => send<Settings>("/settings"),
   saveSettings: (settings: Settings) => send<Settings>("/settings", json("PUT", settings)),
-  files: (cwd: string, prefix: string) => send<{ entries: { path: string; isDir: boolean }[] } | string[]>(`/files?cwd=${encodeURIComponent(cwd)}&prefix=${encodeURIComponent(prefix)}`),
+  files: (cwd: string, text: string, mode: "prefix" | "search" = "prefix") =>
+    send<{ entries: { value: string; path: string; isDir: boolean }[] }>(`/files?cwd=${encodeURIComponent(cwd)}&${mode === "search" ? "search" : "prefix"}=${encodeURIComponent(text)}`),
   changelog: () => send<{ markdown: string }>("/changelog"),
   logs: () => send<{ dir: string; files: LogFile[] }>("/logs"),
   logTail: async (name: string, tail = 200) => {

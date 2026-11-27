@@ -45,8 +45,7 @@ export function NewSessionDialog({ args, onClose }: { args: string; onClose: () 
     const timer = window.setTimeout(() => {
       rest.files(base, cwd.slice(slash + 1)).then(
         (result) => {
-          const entries = Array.isArray(result) ? result.map((path) => ({ path, isDir: path.endsWith("/") })) : result.entries;
-          setSuggestions([...entries.filter((e) => e.isDir).map((e) => (e.path.startsWith("/") ? e.path : `${base}${e.path}`).replace(/\/$/, "")).slice(0, 8), ...recentCwds()]);
+          setSuggestions([...result.entries.filter((e) => e.isDir).map((e) => e.path.replace(/\/$/, "")).slice(0, 8), ...recentCwds()]);
         },
         () => undefined,
       );

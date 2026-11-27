@@ -1,0 +1,1 @@
+- The web UI now covers provider login/logout, MCP login, the harness browser, `/share`, `/edit_context`, model scope toggle and the subagent spawn program view.

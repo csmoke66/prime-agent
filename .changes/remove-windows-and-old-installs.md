@@ -1,0 +1,1 @@
+- Removed Windows support (the Windows build, installer, and release lane) and the leftover prime-agent install code; Linux and macOS are unchanged.

@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use crate::paths::hash_key;
 
 /// Default directory holding daemon socket files (Unix).
-#[cfg(unix)]
 pub fn socket_dir() -> PathBuf {
     let uid = bh_core::platform::process::current_user_id();
     let tmp = std::env::var_os("TMPDIR").map_or_else(|| PathBuf::from("/tmp"), PathBuf::from);
@@ -16,7 +15,6 @@ pub fn socket_dir() -> PathBuf {
 
 /// Reserve the longest generated endpoint before selecting a directory. Linux
 /// can re-anchor deep paths through /proc; other Unix platforms need a short path.
-#[cfg(unix)]
 fn socket_dir_for(tmp: &Path, uid: u32) -> PathBuf {
     let name = format!("beehive-{uid}");
     let dir = tmp.join(&name);
@@ -31,31 +29,17 @@ fn socket_dir_for(tmp: &Path, uid: u32) -> PathBuf {
     dir
 }
 
-/// The socket-dir half of a discovery state root on Windows: TS computes
-/// `<tmpdir>/beehive-user` so `DaemonStateRoot` keeps one shape.
-#[cfg(not(unix))]
-#[must_use]
-pub fn socket_dir() -> PathBuf {
-    std::env::temp_dir().join("beehive-user")
-}
 
 /// Default supervisor endpoint: `daemon.sock` in the socket dir (Unix) or
 /// the fixed daemon pipe name (Windows).
-#[cfg(unix)]
 #[must_use]
 pub fn default_daemon_socket_path() -> PathBuf {
     socket_dir().join("daemon.sock")
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn default_daemon_socket_path() -> PathBuf {
-    PathBuf::from(r"\\.\pipe\beehive-daemon")
-}
 
 /// Worker endpoint next to the supervisor's: hashed supervisor key plus the
 /// worker id prefix (TS `workerSocketPath`).
-#[cfg(unix)]
 #[must_use]
 pub fn worker_socket_path(supervisor_socket_path: &Path, worker_id: &str) -> PathBuf {
     let key = hash_key(&supervisor_socket_path.to_string_lossy(), 12);
@@ -65,15 +49,6 @@ pub fn worker_socket_path(supervisor_socket_path: &Path, worker_id: &str) -> Pat
     ))
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn worker_socket_path(supervisor_socket_path: &Path, worker_id: &str) -> PathBuf {
-    let key = hash_key(&supervisor_socket_path.to_string_lossy(), 12);
-    PathBuf::from(format!(
-        r"\\.\pipe\beehive-worker-{key}-{}",
-        &worker_id[..12.min(worker_id.len())]
-    ))
-}
 
 // Socket-filesystem identity is the shared platform contract
 // `bh_types::platform::socket_identity`: the same helper serves stale-file
@@ -85,7 +60,6 @@ pub use bh_types::platform::socket_identity;
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn default_socket_uses_the_same_real_uid_as_the_socket_dir() {
         let output = std::process::Command::new("id")
@@ -101,7 +75,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(unix, not(target_os = "linux")))]
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn generated_endpoints_fit_even_when_tmpdir_is_deep() {
         use std::os::unix::net::SocketAddr;
@@ -119,7 +93,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn short_tmpdir_keeps_the_original_socket_directory() {
         assert_eq!(
@@ -136,29 +109,6 @@ mod tests {
         assert_ne!(a, b);
         // Only the first 12 id characters key the name.
         assert_eq!(a, worker_socket_path(supervisor, "0123456789abffff"));
-        #[cfg(unix)]
         assert!(a.starts_with(socket_dir()));
-    }
-
-    /// The Windows endpoint names (TS win32 arms): the fixed daemon pipe
-    /// name and the hashed worker pipe name in the `\\.\\pipe\\` namespace.
-    #[test]
-    #[cfg(windows)]
-    fn windows_endpoints_are_the_ts_pipe_names() {
-        assert_eq!(
-            default_daemon_socket_path(),
-            PathBuf::from(r"\\.\pipe\beehive-daemon")
-        );
-        let supervisor = Path::new(r"\\.\pipe\beehive-daemon");
-        let a = worker_socket_path(supervisor, "0123456789abcdef");
-        let rendered = a.to_string_lossy();
-        assert!(
-            rendered.starts_with(r"\\.\pipe\beehive-worker-"),
-            "the worker pipe namespace: {rendered}"
-        );
-        assert!(
-            rendered.ends_with("-0123456789ab"),
-            "the 12-char id suffix: {rendered}"
-        );
     }
 }

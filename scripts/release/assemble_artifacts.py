@@ -24,8 +24,7 @@ one resolved commit per run; offline builds use
 
 `--binary` defaults to `<repo>/target/<target>/release/<binary-name>` (cross
 builds) and falls back to `<repo>/target/release/<binary-name>` (host builds),
-where the binary name is `beehive.exe` for the Windows MSVC target and
-`beehive` everywhere else (`binary_name_for_target`).
+where the binary name is `beehive`.
 `--runtime-dir` defaults to `<repo>/beehive-runtime` (the vendored sidecar
 from the kernel-packaging lane).
 Every archive includes a `package.json` version manifest beside the binary
@@ -65,10 +64,9 @@ from bundle_catalog import BUNDLED_CATALOG_FILES, validate_bundled_catalog_dir
 
 # Tarball-root payload order mirrors the TS `binaryAssets` list so the
 # installer lane can extract both distributions identically. The binary
-# entry name is platform-dependent (`binary_name_for_target`: the MSVC
-# build ships `beehive.exe`), so the list names the binary slot via
-# the placeholder resolved in `main`/`stage_tree`.
+# entry is named via the placeholder resolved in `main`/`stage_tree`.
 BINARY_PLACEHOLDER = "beehive"
+BINARY_NAME = "beehive"
 # The licenses of every crate linked into the binary (`write_third_party_notices`).
 THIRD_PARTY_NOTICES = "THIRD-PARTY-NOTICES.txt"
 # Terminal control characters (C0 except tab and newline, DEL, C1): crate
@@ -87,16 +85,6 @@ STAGED_ENTRIES = [
     "models.bundled.json",
     "mcp-services.bundled.json",
 ]
-
-
-def binary_name_for_target(target: str) -> str:
-    """The staged binary name for `target`: `beehive.exe` on the MSVC
-    Windows target (the name Cargo's linker emits and the installer's
-    `.exe`-aware layout expects), `beehive` everywhere else.
-    """
-    if "-windows-" in target:
-        return "beehive.exe"
-    return "beehive"
 
 # Shipped-content policy: what the installed tree carries beyond the binary.
 #
@@ -131,7 +119,6 @@ TARGET_ALIASES = {
     "aarch64-unknown-linux-gnu": "linux-arm64",
     "aarch64-apple-darwin": "darwin-arm64",
     "x86_64-apple-darwin": "darwin-x64",
-    "x86_64-pc-windows-msvc": "win32-x64",
 }
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
@@ -221,7 +208,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_binary(args: argparse.Namespace) -> Path:
-    name = binary_name_for_target(args.target)
+    name = BINARY_NAME
     candidates = []
     if args.binary is not None:
         candidates.append(args.binary)
@@ -335,7 +322,7 @@ def stage_tree(staging: Path, args: argparse.Namespace, stamped_version: str | N
     RUNTIME_EXCLUDED_*); every other entry is a
     verbatim copy.
     """
-    binary_name = binary_name_for_target(args.target)
+    binary_name = BINARY_NAME
     binary = resolve_binary(args)
     runtime_dir = args.runtime_dir or (args.repo_root / "beehive-runtime")
     sources = {
@@ -369,9 +356,7 @@ def stage_tree(staging: Path, args: argparse.Namespace, stamped_version: str | N
         else:
             shutil.copy2(source, target_path)
     write_third_party_notices(args.repo_root, args.target, staging / THIRD_PARTY_NOTICES)
-    # `chmod` is a no-op beyond the read-only bit on Windows hosts (the
-    # exec bit the tar member filter re-pins below); on POSIX it makes the
-    # staged binary executable for the `--version` probes.
+    # Makes the staged binary executable for the `--version` probes.
     os.chmod(staging / binary_name, 0o755)
     # The bundled catalog assets gate (spec §3.9): the release packer FAILS
     # without validated assets — generate them first (network for CI, a local
@@ -430,7 +415,7 @@ def _deterministic_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     member.mtime = 0
     if member.isdir():
         member.mode = 0o755
-    elif member.name == "beehive" or member.name == "beehive.exe":
+    elif member.name == "beehive":
         member.mode = 0o755
     else:
         member.mode = 0o644

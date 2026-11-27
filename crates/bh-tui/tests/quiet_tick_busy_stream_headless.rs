@@ -1,8 +1,6 @@
 //! Headless e2e for the quiet tick under a busy stream: one loop-local deadline that stream
 //! wakes cannot restart materializes a parked autocomplete request mid-reply, while a
 //! keystroke still restarts the window, so a typed command plus Enter submits as typed.
-#![cfg(unix)]
-
 mod support;
 
 use std::io::{BufRead, BufReader};

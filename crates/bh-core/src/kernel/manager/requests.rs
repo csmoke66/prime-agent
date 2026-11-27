@@ -460,7 +460,6 @@ impl ReplKernelManager {
 mod tests {
     use super::{append_truncated, HeadTailBuffer};
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn bounded_execute_settles_when_kernel_stops_reading_stdin() {
         use super::*;
@@ -511,7 +510,6 @@ mod tests {
         manager.kill();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn cancelled_request_write_retires_the_kernel() {
         use super::*;
@@ -585,7 +583,6 @@ for line in sys.stdin:
     /// A cell's streamed output past the cap keeps the head and the tail: a
     /// long run's printed verdict (tracebacks, summaries, exit status arrive
     /// last) must survive the buffer, not just the first `max_chars` chars.
-    #[cfg(unix)]
     #[tokio::test]
     async fn long_cell_output_keeps_head_and_tail() {
         use super::*;

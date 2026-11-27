@@ -753,7 +753,6 @@ mod tests {
     fn executable_shell(dir: &Path, name: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, b"").unwrap();
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1152,7 +1151,6 @@ mod tests {
 
     /// A ready kernel that stops reading stdin must not wedge its bootstrap
     /// request or the failed boot's shutdown behind a full pipe.
-    #[cfg(unix)]
     #[tokio::test]
     async fn nonreading_kernel_fails_bootstrap_without_parking_shutdown() {
         use std::os::unix::fs::PermissionsExt;
@@ -1195,7 +1193,6 @@ mod tests {
     /// the kernel) fails `ensure` with the bound's message instead of parking
     /// forever, tears its kernel down, and does not auto-retry the fatal
     /// failure.
-    #[cfg(unix)]
     #[tokio::test]
     async fn silent_bootstrap_fails_bounded_and_leaves_no_kernel() {
         use std::os::unix::fs::PermissionsExt;

@@ -1,8 +1,6 @@
 //! Headless e2e for the agents view's machine-wide persistent shells against a mock daemon: the
 //! kill commands a stop sends from the orphans' Bash list and from Ctrl+X on a `Persistent shells`
 //! row, and a late kill failure staying on its own shell.
-#![cfg(unix)]
-
 mod support;
 
 use std::io::BufReader;

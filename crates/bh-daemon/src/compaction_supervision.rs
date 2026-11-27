@@ -982,7 +982,6 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_competing_supervisor_does_not_heal_before_socket_admission() {
         use std::io::Write;

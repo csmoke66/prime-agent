@@ -5,8 +5,6 @@
 // zombie_processes: the timeout panic path cannot wait on the child; the test
 // process exits immediately afterwards, reaping it.
 #![allow(clippy::zombie_processes)]
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

@@ -583,7 +583,6 @@ files = ["shared.md", "user-only.md"]
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn symlink_targets_must_stay_inside_agent_directory() {
         use std::os::unix::fs::symlink;
@@ -625,7 +624,6 @@ files = ["shared.md", "user-only.md"]
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn fifos_are_rejected_without_opening_them() {
         // Keep a writer available so a regression fails assertions instead of hanging the suite.

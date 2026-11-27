@@ -14,8 +14,6 @@
 //! open refused by a live foreign lease holder (the operator's case)
 //! surfaces as the multi-line notice panel with both ways out (the
 //! continue path and the take-over kill) visible and wrapped.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

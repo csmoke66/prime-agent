@@ -13,8 +13,6 @@
 //! session driven headlessly — `/export` (HTML and JSONL) writes the file and
 //! reports the TS success row, and `/share` uploads through a stub `gh` on
 //! PATH and surfaces the share viewer URL.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -213,7 +211,6 @@ esac
     make_executable(&dir.join("gh"));
 }
 
-#[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path).expect("stat").permissions();

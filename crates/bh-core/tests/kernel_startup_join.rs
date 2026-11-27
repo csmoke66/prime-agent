@@ -1,7 +1,5 @@
 //! TS provisioner parity: all first-touch callers join one in-flight boot.
 // Unix-only: the fixture interpreters are sh scripts.
-#![cfg(unix)]
-
 mod script;
 
 use bh_core::kernel::cancellation::AbortSignal;

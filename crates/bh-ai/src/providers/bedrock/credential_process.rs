@@ -117,16 +117,6 @@ fn parse_output(stdout: &[u8]) -> Option<(AwsCredentials, Expiry)> {
 async fn run(command: &str) -> Option<Vec<u8>> {
     // Like Node's `exec` (the TS SDK's runner): `cmd /d /s /c "<command>"` passed verbatim, since
     // cmd.exe does not understand the MSVC quoting `arg` applies, which breaks quoted paths.
-    #[cfg(windows)]
-    let mut process = {
-        use std::os::windows::process::CommandExt as _;
-        let mut process = tokio::process::Command::new("cmd");
-        process
-            .as_std_mut()
-            .raw_arg(format!("/d /s /c \"{command}\""));
-        process
-    };
-    #[cfg(not(windows))]
     let mut process = {
         let mut process = tokio::process::Command::new("sh");
         process.args(["-c", command]);
@@ -223,7 +213,6 @@ mod tests {
         assert_eq!(parse_rfc3339("tomorrow"), None);
     }
 
-    #[cfg(unix)]
     fn stub_script(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt as _;
         let path = dir.join("credential-process.sh");
@@ -235,7 +224,6 @@ mod tests {
 
     /// A profile whose only credential source is a `credential_process` stub script resolves to
     /// the script's credentials, and a second request is served from the cache.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_credential_process_profile_runs_its_stub_script_once() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -270,7 +258,6 @@ mod tests {
     }
 
     /// Credentials inside the refresh margin are fetched again rather than reused.
-    #[cfg(unix)]
     #[tokio::test]
     async fn expiring_process_credentials_are_refreshed() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -299,7 +286,6 @@ mod tests {
 
     /// Editing a profile's `credential_process` runs the new command instead of serving the old
     /// command's cached credentials.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_changed_command_does_not_reuse_the_old_commands_credentials() {
         let credential_json = |key: &str| {
@@ -335,7 +321,6 @@ mod tests {
 
     /// A caller that stops waiting on a stalled process (cancellation or timeout drops the future)
     /// kills it rather than leaving it running.
-    #[cfg(unix)]
     #[tokio::test]
     async fn dropping_a_stalled_resolution_kills_the_process() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -381,33 +366,7 @@ mod tests {
         }
     }
 
-    /// The AWS docs' Windows form: a quoted script path plus a quoted argument with spaces reaches
-    /// the script intact.
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn a_quoted_windows_command_path_and_argument_run() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let script_dir = dir.path().join("dir with spaces");
-        std::fs::create_dir(&script_dir).expect("script dir");
-        let script = script_dir.join("credentials.cmd");
-        std::fs::write(
-            &script,
-            "@if not \"%~2\"==\"parameter with spaces\" exit /b 1\r\n@echo {\"Version\":1,\"AccessKeyId\":\"AKIDWIN\",\"SecretAccessKey\":\"s\"}\r\n",
-        )
-        .expect("write script");
-        let config = format!(
-            "[profile cp-stub-windows]\ncredential_process = \"{}\" parameterWithoutSpaces \"parameter with spaces\"\n",
-            script.display()
-        );
 
-        let credentials = credentials_from_process("cp-stub-windows", &config)
-            .await
-            .expect("quoted command runs");
-
-        assert_eq!(credentials.access_key_id, "AKIDWIN");
-    }
-
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_failing_or_malformed_process_yields_no_credentials() {
         let dir = tempfile::tempdir().expect("tempdir");

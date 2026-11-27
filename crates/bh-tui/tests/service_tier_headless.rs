@@ -1,5 +1,4 @@
 //! Headless coverage for the session tier and Fast mode rows in `/settings`.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

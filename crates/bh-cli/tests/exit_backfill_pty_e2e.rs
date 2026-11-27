@@ -15,8 +15,6 @@
 //! older-history page — the run's own 30s request timeout must not hold
 //! the exit open behind a held `get_messages`.
 
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

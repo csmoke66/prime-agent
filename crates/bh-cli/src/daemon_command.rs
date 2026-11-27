@@ -657,7 +657,6 @@ mod tests {
 
     // The socket-path/separator shapes are unix paths (the windows transport
     // is named pipes; the tilde/socket spellings do not exist there).
-    #[cfg(unix)]
     #[test]
     fn parse_consumes_socket_json_and_separator() {
         let parsed =

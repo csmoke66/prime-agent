@@ -2,8 +2,6 @@
 //! configured provider when the primary exhausts its quick retries (the
 //! `reason: "backup"` retry event), succeeds, and restores the primary;
 //! with every provider failing, the chain walks all candidates.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};

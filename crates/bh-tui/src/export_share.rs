@@ -138,33 +138,12 @@ pub fn spawn_gist_create(file: &Path) -> std::io::Result<tokio::process::Child> 
         .spawn()
 }
 
-/// The async `gh` command with Windows hidden-window creation flags
-/// applied (a no-op on Unix).
-#[cfg(windows)]
-fn gh_command() -> tokio::process::Command {
-    // CREATE_NO_WINDOW: the loader surfaces the wait, not a console window.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = tokio::process::Command::new("gh");
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
-}
 
-#[cfg(unix)]
 fn gh_command() -> tokio::process::Command {
     tokio::process::Command::new("gh")
 }
 
-/// The blocking `gh` probe command, hidden on Windows the same way.
-#[cfg(windows)]
-fn gh_probe_command() -> std::process::Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = std::process::Command::new("gh");
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
-}
 
-#[cfg(unix)]
 fn gh_probe_command() -> std::process::Command {
     std::process::Command::new("gh")
 }
@@ -230,7 +209,6 @@ mod tests {
     /// The full gh spawn path against a stub `gh` (the e2e harness uses the
     /// same stub): the upload file must exist and the printed URL becomes the
     /// gist + viewer pair. Unix-only (the stub is a shell script).
-    #[cfg(unix)]
     #[tokio::test]
     async fn gist_spawn_against_stub_gh() {
         use std::os::unix::fs::PermissionsExt;

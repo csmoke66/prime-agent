@@ -217,7 +217,7 @@ async fn stop_target_within(
             )
             .await
         }
-        Err(error) if cfg!(unix) && error.kind() == std::io::ErrorKind::Unsupported => {
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
             escalate(
                 target,
                 |signal| {
@@ -368,7 +368,6 @@ fn socket_spelling_of(pid: u32, value: &str) -> String {
 
 /// The product's own binary names: `beehive` (release/install) and
 /// `bh-daemon` (the workspace binary). Unix only, as [`is_worker_argv`].
-#[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn is_product_binary(exe: &str) -> bool {
     matches!(
@@ -379,7 +378,6 @@ pub(crate) fn is_product_binary(exe: &str) -> bool {
 
 /// Whether a command line is the product's worker role: a product binary
 /// with `worker` as its first argument. Unix only.
-#[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn is_worker_argv(argv: &[String]) -> bool {
     argv.first().is_some_and(|exe| is_product_binary(exe))
@@ -425,7 +423,7 @@ fn proc_environ_names_active_session(pid: u32, active_session: &str) -> bool {
 /// so it stays compiled for the signature's parity and is inert
 /// everywhere else (`allow(dead_code)` is the honest parity mark — the
 /// linux side owns the real read).
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 #[allow(dead_code)]
 fn proc_environ_names_active_session(_pid: u32, _active_session: &str) -> bool {
     false
@@ -491,7 +489,6 @@ fn resolve_relative_socket_tokens(pid: u32, argv: &mut [String]) {
 /// Whether a command line is a supervisor of `socket`: a product binary running either
 /// the product form (`--mode daemon --daemon-socket <socket>`) or `supervisor --socket <socket>`.
 /// The executable gate is load-bearing. Unix only.
-#[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn supervisor_argv_names_socket(argv: &[String], socket: &str) -> bool {
     let Some(exe) = argv.first() else {
@@ -530,17 +527,11 @@ pub(crate) fn supervisor_argv_names_socket(argv: &[String], socket: &str) -> boo
 /// included. No unix socket files exist on the other targets, so the
 /// probe answers false there and the unlink never fires (the not(unix)
 /// reaping stubs already collect zero targets).
-#[cfg(unix)]
 fn is_unix_socket_file(path: &Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
 }
 
-/// Windows endpoints are named pipes, not files: the endpoint-unlink gate never fires.
-#[cfg(not(unix))]
-fn is_unix_socket_file(_path: &Path) -> bool {
-    false
-}
 
 /// The pids the reap must never touch: the live-worker descriptors this
 /// SOCKET identity owns. The descriptor directories are keyed by the RAW
@@ -618,7 +609,6 @@ fn protected_worker_pids(agent_dir: &Path, socket_path: &Path) -> HashSet<u32> {
 /// Pure `std` (canonicalize + components): it compiles on every unix -
 /// darwin included, which `supervisor_argv_names_socket` (the argv-only
 /// view the supervisor census normalizes with) requires.
-#[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn normalize_socket_spelling(path: &Path) -> String {
     if let Ok(canonical) = path.canonicalize() {
@@ -689,7 +679,7 @@ fn read_proc_argv(pid: u32) -> Option<Vec<String>> {
     )
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

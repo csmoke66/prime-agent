@@ -3,8 +3,6 @@
 //! `compact.status`'s context window keep answering with the
 //! session-creation model otherwise (the operator's `attach_image` vision
 //! refusal on a switched-to vision model).
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

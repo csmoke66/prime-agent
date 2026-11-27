@@ -14,7 +14,6 @@
 // passivation flow is one intentionally linear harness script (the
 // fn-length gate is style, not correctness).
 #![allow(clippy::too_many_lines)]
-#![cfg(unix)]
 // Two of the three tests are Linux-only; their imports and helpers idle elsewhere.
 #![cfg_attr(not(target_os = "linux"), allow(unused_imports, dead_code))]
 

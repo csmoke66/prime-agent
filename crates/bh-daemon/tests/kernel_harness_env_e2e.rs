@@ -2,8 +2,6 @@
 //! session + local-harness dirs in its env (TS `_rlmKernelEnv`), so kernel-side
 //! `rlm.harness` writes land in the session-local store. Skips (with a note)
 //! without a live kernel install.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

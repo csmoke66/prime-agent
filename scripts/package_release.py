@@ -12,7 +12,7 @@ packages/coding-agent/scripts/copy-binary-assets.mjs) to this repo's layout:
 The staged layout is the exe-adjacent packaging the binary resolves at
 runtime (BEEHIVE_PACKAGE_DIR override, else the directory of the executable):
 
-  beehive            the binary (mode 755; beehive.exe on win32-x64)
+  beehive            the binary (mode 755)
   package.json           version manifest ({"version": <version>, piConfig})
   README.md
   LICENSE
@@ -110,8 +110,7 @@ def parse_args(argv):
     parser.add_argument("--binary", type=Path, help="stage this binary instead of building")
     parser.add_argument("--decoder", type=Path, help="separate Linux decoder for --binary")
     parser.add_argument("--skip-build", action="store_true",
-                        help="reuse target/release/beehive (beehive.exe on"
-                             " win32-x64) without building")
+                        help="reuse target/release/beehive without building")
     parser.add_argument("--out-dir", type=Path, help="output directory (default: target/release-package)")
     parser.add_argument("--platform", help="platform tag (default: derived from this machine)")
     parser.add_argument("--root", type=Path, default=ROOT,
@@ -140,24 +139,9 @@ def release_platform():
     machine = platform.machine().lower()
     arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}.get(machine, machine)
     system = platform.system().lower()
-    if system not in ("linux", "darwin", "windows"):
+    if system not in ("linux", "darwin"):
         raise SystemExit(f"error: unsupported release platform: {system}")
-    # Windows carries the TS `NATIVE_PLATFORMS` alias (`win32-x64`, the
-    # channel manifest's platform row), not the bare `windows-x64` spelling,
-    # so the local dry-run names its artifact exactly like the release
-    # pipeline's channel tarball.
-    if system == "windows":
-        return f"win32-{arch}"
     return f"{system}-{arch}"
-
-
-def binary_name_for_platform(tag):
-    """The staged binary name for one platform tag: `beehive.exe` on
-    win32-x64 (the name Cargo's MSVC linker emits and the installer's
-    `.exe`-aware layout expects), `beehive` everywhere else — the same
-    naming rule the release pipeline applies
-    (`scripts/release/assemble_artifacts.py` `binary_name_for_target`)."""
-    return "beehive.exe" if tag == "win32-x64" else "beehive"
 
 
 def include_path(relative, extra_excluded_names=frozenset(), extra_excluded_suffixes=()):
@@ -342,7 +326,7 @@ def main(argv=None):
     root = args.root.resolve()
     version = args.version or workspace_version(root)
     tag = args.platform or release_platform()
-    binary_name = binary_name_for_platform(tag)
+    binary_name = "beehive"
     out_dir = (args.out_dir or root / "target" / "release-package").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     stage_dir = out_dir / f"beehive-{version}-{tag}"

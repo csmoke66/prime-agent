@@ -228,7 +228,6 @@ fn operator_precedence_and_reservation_never_depend_on_definition_data() {
     assert!(!registry.join(filename).exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn rejects_symlink_directories_and_files() {
     use std::os::unix::fs::symlink;

@@ -12,8 +12,6 @@
 //! E2E verifier for the agents-view reply composer: the space-armed composer sends a
 //! live session's reply through the UNATTACHED roster client (the view never attaches),
 //! and a saved row resumes into a fresh session whose file carries the reply.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

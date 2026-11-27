@@ -41,7 +41,7 @@ pub(crate) fn write_factory_specs(harness_dir: &std::path::Path, ids: &[&str]) {
 /// Hold a real file read behind a FIFO until another future on the same
 /// current-thread runtime releases it. A bounded rescue makes the synchronous
 /// regression fail without hanging the process; restore the file before asserting.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(crate) async fn assert_async_file_read<T>(
     path: &std::path::Path,
     read: impl std::future::Future<Output = T>,
@@ -87,7 +87,7 @@ pub(crate) async fn assert_async_file_read<T>(
 /// Serve a real file through a FIFO and count how often it is read: every read receives the
 /// original bytes. A read after the first is served only once `finish` stays silent for a
 /// bounded window, so an extra read is counted instead of hanging the process.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(crate) struct FileReadCounter {
     path: std::path::PathBuf,
     raw: Vec<u8>,
@@ -95,7 +95,7 @@ pub(crate) struct FileReadCounter {
     server: std::thread::JoinHandle<usize>,
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(crate) fn count_file_reads(path: &std::path::Path) -> FileReadCounter {
     let raw = std::fs::read(path).expect("original file");
     std::fs::remove_file(path).expect("replace file with FIFO");
@@ -137,7 +137,7 @@ pub(crate) fn count_file_reads(path: &std::path::Path) -> FileReadCounter {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 impl FileReadCounter {
     /// Stop serving, restore the file, and return how many reads it served.
     pub(crate) fn finish(self) -> usize {

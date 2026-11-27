@@ -100,7 +100,6 @@ impl AnthropicCallbackServer {
             tokio::net::TcpSocket::new_v6()
         }
         .map_err(|error| format!("port {port}: {error}"))?;
-        #[cfg(unix)]
         socket
             .set_reuseaddr(true)
             .map_err(|error| format!("port {port}: {error}"))?;
@@ -465,13 +464,7 @@ mod tests {
         assert!(error.contains("port 53692"), "{error}");
         // The in-use failure is OS-phrased (EADDRINUSE on Unix,
         // WSAEADDRINUSE on Windows).
-        #[cfg(unix)]
         assert!(error.contains("Address already in use"), "{error}");
-        #[cfg(windows)]
-        assert!(
-            error.contains("Only one usage of each socket address"),
-            "{error}"
-        );
         drop(blocker);
     }
 

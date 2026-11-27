@@ -37,12 +37,10 @@ from assemble_artifacts import (
     TARGET_ALIASES,
     RUNTIME_EXCLUDED_NAMES,
     RUNTIME_EXCLUDED_SUFFIXES,
-    binary_name_for_target,
+    BINARY_NAME,
 )
 
 # Must mirror STAGED_ENTRIES in assemble_artifacts.py and §5 of the design doc.
-# The binary entry is the target's name (`beehive.exe` on the MSVC
-# Windows target), resolved in `main` via `binary_name_for_target`.
 EXPECTED_TOP_LEVEL = {
     "beehive",
     "beehive-runtime",
@@ -103,7 +101,7 @@ def main() -> int:
         fail("--sha (the continuous stamp) and --expect-package-json "
              "(the restamped release shape) are mutually exclusive")
 
-    binary_name = binary_name_for_target(args.target)
+    binary_name = BINARY_NAME
     expected_top_level = (EXPECTED_TOP_LEVEL - {"beehive"}) | {binary_name}
     expected_top_level |= (
         CONTINUOUS_EXTRA_TOP_LEVEL if (args.sha or args.expect_package_json)

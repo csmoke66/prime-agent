@@ -696,7 +696,7 @@ async fn parse_page(mut data: Value) -> Result<LoadedPage> {
     })
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::daemon_client::DaemonClient;

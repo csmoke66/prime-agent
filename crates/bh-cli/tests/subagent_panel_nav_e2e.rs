@@ -14,8 +14,6 @@
 //! main chat (Kevin's live-dogfood ruling, TS parity): Down focuses the
 //! panel, Enter opens the scoped agents view, Enter drills into the
 //! child, and the agents-back key returns.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

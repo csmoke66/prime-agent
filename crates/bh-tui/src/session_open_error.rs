@@ -126,24 +126,6 @@ pub(crate) fn already_active_line(holder: &str, session_path: &Path) -> String {
 /// embedded-quote escape. Windows: the CRT parser's backslash/quote rules plus cmd.exe's own
 /// metacharacters (both documented in the arm below).
 pub(crate) fn quoted_resume_arg(id: &str) -> String {
-    #[cfg(windows)]
-    {
-        // Two parsers see a pasted command on Windows: the CRT argument parser (every backslash
-        // doubles and every embedded quote escapes) and cmd.exe itself (every `"` toggles its quote
-        // state, so each of cmd's separators is ^-escaped). The caret escapes FIRST: a later caret
-        // pass would double the carets just inserted and un-escape the separators again.
-        let cmd_escaped = id.replace('^', "^^");
-        let cmd_escaped = ['&', '|', '<', '>']
-            .iter()
-            .fold(cmd_escaped, |escaped, metachar| {
-                escaped.replace(*metachar, &format!("^{metachar}"))
-            });
-        format!(
-            "--resume \"{}\"",
-            cmd_escaped.replace('\\', "\\\\").replace('"', "\\\"")
-        )
-    }
-    #[cfg(not(windows))]
     {
         format!("--resume '{}'", id.replace('\'', "'\\''"))
     }
@@ -445,26 +427,6 @@ mod decorate_tests {
             "--resume 'it'\\''s'",
             "the POSIX escape form"
         );
-        #[cfg(windows)]
-        {
-            // The cmd separator stays ^-escaped with a SINGLE caret (the caret
-            // pass runs first; the `^^&` un-escape regression).
-            let quoted = quoted_resume_arg("a & b");
-            assert!(
-                quoted.contains("^&"),
-                "the separator rides a single caret: {quoted}"
-            );
-            assert!(
-                !quoted.contains("^^&"),
-                "no doubled caret un-escapes the separator: {quoted}"
-            );
-            // An id's OWN caret doubles (cmd's literal-caret escape).
-            let caret = quoted_resume_arg("a^b");
-            assert!(
-                caret.contains("a^^b"),
-                "the id's own caret doubles: {caret}"
-            );
-        }
         // The unseen-holder arm never interpolates the id into a command.
         let unseen = decorate_interactive_refusal(original, None, "245ddb974b6d; rm -rf /");
         assert!(

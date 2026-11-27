@@ -13,8 +13,6 @@
 //! (`beehive --mode daemon`), drive the TUI headlessly against a scripted
 //! daemon session, and assert on rendered frames plus daemon-side state. The
 //! `script` seam is the faux provider contract; the product never sets it.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 #[cfg(target_os = "linux")]
 use std::os::unix::process::CommandExt;

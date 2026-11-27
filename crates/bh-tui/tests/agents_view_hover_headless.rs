@@ -3,7 +3,6 @@
 //! saved rows resume, the merged summary row expands its dropdown,
 //! expanded child rows open the subagent); hover motions ride along. The same mock also pins the
 //! shells poll's one-cycle-in-flight contract.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

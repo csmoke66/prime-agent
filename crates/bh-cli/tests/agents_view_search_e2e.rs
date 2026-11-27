@@ -14,8 +14,6 @@
 //! 2026-09-23 directive): queries match the session NAME, the durable
 //! session ID, and the CWD — never first messages, transcript text, or
 //! file paths — and hits render as one flat, relevance-ranked list.
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

@@ -12,8 +12,6 @@
 //! `proper-lockfile` artifacts — an empty DIRECTORY at `{file}.lock` (a holder removes it on
 //! release, a crashed holder leaves it stale, a contender judges staleness) — and heal a pre-compat
 //! regular FILE at the lock path (`ENOTDIR`).
-#![cfg(unix)]
-
 use std::path::Path;
 use std::time::Duration;
 

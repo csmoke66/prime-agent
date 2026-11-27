@@ -2,8 +2,6 @@
 //! for a session the user did not ask for. A schedule fires only while its
 //! session is live; due heartbeats on not-running sessions stay DORMANT,
 //! surfaced by the heartbeat catalog instead of auto-firing.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixStream;

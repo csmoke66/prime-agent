@@ -1035,12 +1035,8 @@ async fn run_interactive_surface(
                                 // no-op handler (never SIG_IGN) keeps the child's own Ctrl+C
                                 // (handled signals reset across exec).
                                 let mut signals = crate::suspend::ProcessSignals;
-                                let shielded = if crate::suspend::supported() {
-                                    use crate::suspend::SuspendSignals;
-                                    signals.ignore_sigint()
-                                } else {
-                                    Ok(())
-                                };
+                                use crate::suspend::SuspendSignals;
+                                let shielded = signals.ignore_sigint();
                                 let stopped = shielded.and_then(|()| {
                                     TerminalHandoff {
                                         renderer: &mut renderer,
@@ -1059,10 +1055,7 @@ async fn run_interactive_surface(
                                     Err(error) => Err(error),
                                 };
                                 // SIGINT is back to default before the surface takes over.
-                                if crate::suspend::supported() {
-                                    use crate::suspend::SuspendSignals;
-                                    let _ = signals.restore_sigint();
-                                }
+                                let _ = signals.restore_sigint();
                                 // The surface returns even when the editor run failed.
                                 let resumed = TerminalHandoff {
                                     renderer: &mut renderer,

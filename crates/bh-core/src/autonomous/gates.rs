@@ -764,7 +764,6 @@ mod tests {
     /// transports (an uploadpack and a remote helper). A plain `git diff HEAD`
     /// starts them all on a stale copy of the repository; a capture must
     /// start none of them.
-    #[cfg(unix)]
     #[tokio::test]
     async fn snapshot_capture_never_starts_repo_configured_commands() {
         use std::os::unix::fs::PermissionsExt;

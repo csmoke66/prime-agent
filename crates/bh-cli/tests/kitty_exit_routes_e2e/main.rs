@@ -13,8 +13,6 @@
 //! to the shell (the operator's kitty-mode leak: the terminal was still in kitty
 //! keyboard mode at the shell prompt). A route passes only when the kitty-mode
 //! stack is empty and a synthetic up arrow echoes back clean.
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

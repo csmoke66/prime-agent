@@ -1,8 +1,6 @@
 //! Supervisor wire-shape tests for the protocol-breadth waves b6-b9 (roadmap
 //! item 7): every new command rides the real supervisor + worker over the
 //! socket and answers the exact TS wire shape (success and error paths).
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;

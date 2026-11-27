@@ -14,8 +14,6 @@
 //! caret on every frame but shows only when `showHardwareCursor` is on — the
 //! stream carries exactly one `?25h`, the suspend release tail.
 
-#![cfg(unix)]
-
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;

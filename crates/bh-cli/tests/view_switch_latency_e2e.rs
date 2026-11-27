@@ -15,8 +15,6 @@
 //! seconds): the handoff is a fresh surface attaching to the live session
 //! — a daemon `attach` plus the client-side rebuild. This test times that
 //! second surface under a seeded store and asserts a sub-second round trip.
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

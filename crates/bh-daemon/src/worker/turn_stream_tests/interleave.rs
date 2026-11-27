@@ -86,8 +86,6 @@
 // the passivation ask over a real unix domain socket
 // (tokio::net::UnixListener), which has no counterpart on the windows
 // target.
-#![cfg(unix)]
-
 use super::park::passivation_settings;
 use super::*;
 

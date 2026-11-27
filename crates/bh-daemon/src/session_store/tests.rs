@@ -31,7 +31,6 @@ fn bounded_header_matches_the_line_read() {
     assert!(is_valid_session_file(&path));
 }
 
-#[cfg(unix)]
 #[test]
 fn rewrite_keeps_the_transcript_owner_only() {
     let dir = temp_dir();

@@ -1,6 +1,5 @@
 //! Usage telemetry settings: read status without writing, persist preferences,
 //! and distinguish the saved preference from an environment opt-out.
-#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

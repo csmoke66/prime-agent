@@ -1224,7 +1224,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     #[allow(clippy::used_underscore_binding)] // Intentionally duplicate the private lifetime guard to model an inherited descriptor.
     fn dropping_a_journal_releases_ownership_while_a_duplicate_handle_survives() {

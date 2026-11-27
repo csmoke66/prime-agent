@@ -101,22 +101,15 @@ impl LineWriter {
 pub(crate) const COMPACT_FRAME_FLUSH_BUDGET: std::time::Duration =
     std::time::Duration::from_millis(50);
 
-#[cfg(unix)]
 const SIGTERM_EXIT: i32 = 143;
-#[cfg(unix)]
 const SIGHUP_EXIT: i32 = 129;
 
 /// The mode's exit path. The signal paths' bounded drains already waited on the writer task, so the
 /// exit never re-acquires the stdout lock (a stalled reader holds it inside the blocked write).
-#[cfg(unix)]
 fn exit_with(code: i32) -> ! {
     std::process::exit(code);
 }
 
-/// Windows delivers no SIGTERM/SIGHUP to a console-less process, so the
-/// stdin-close settle stays the only exit path.
-#[cfg(not(unix))]
-fn spawn_signal_handlers(_session: &Arc<RpcSession>, _writer: LineWriter) {}
 
 /// The async entry: serve the RPC stdio mode until stdin closes or a
 /// signal exits. Returns the process exit code.
@@ -165,7 +158,6 @@ pub async fn run_rpc_mode(options: RpcOptions) -> anyhow::Result<i32> {
 
 /// SIGTERM exits 143, SIGHUP 129 (unix; the TS mode handles exactly this
 /// pair): abort the running turn, settle it, dispose the kernel, drain the queued frames, exit.
-#[cfg(unix)]
 fn spawn_signal_handlers(session: &Arc<RpcSession>, writer: LineWriter) {
     use tokio::signal::unix::{signal, SignalKind};
     let terminate_session = Arc::clone(session);

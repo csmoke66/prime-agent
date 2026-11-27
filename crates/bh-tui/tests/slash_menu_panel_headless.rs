@@ -2,7 +2,6 @@
 //! 2026-09-26): the dropdown opens with the full-width muted rule every
 //! inline menu panel opens with (TS `MenuPanel.render`), drawn directly
 //! above the menu rows.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

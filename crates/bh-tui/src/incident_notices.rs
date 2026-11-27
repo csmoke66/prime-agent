@@ -390,16 +390,11 @@ fn read_incident_log_lines(
 /// changes the inode). Rust's std has no dev/ino on other platforms, and
 /// keying on size + mtime instead would flip the identity on every append
 /// — re-tailing consumed bytes into phantom update restarts.
-#[cfg(unix)]
 fn file_identity(stats: &std::fs::Metadata) -> Option<String> {
     use std::os::unix::fs::MetadataExt;
     Some(format!("{}:{}", stats.dev(), stats.ino()))
 }
 
-#[cfg(not(unix))]
-fn file_identity(_stats: &std::fs::Metadata) -> Option<String> {
-    None
-}
 
 /// Keep windowed entries in stable time order across polls: new entries
 /// append, older-than-window drops, only the newest

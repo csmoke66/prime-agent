@@ -3,7 +3,6 @@
 //! panel's dock item still selected — the dock holds focus, not the
 //! prompt bar; the next Enter re-opens the SAME panel. A panel the agents view requested on open
 //! closes back to the agents view instead.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

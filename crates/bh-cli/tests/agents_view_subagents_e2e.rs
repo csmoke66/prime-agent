@@ -14,8 +14,6 @@
 //! the headless plan expands the parent, drills into the child's transcript
 //! (pinning the `depth N` tray label), and returns — where the now-live
 //! resumed child stays a child row (TS parity: the persisted depth).
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

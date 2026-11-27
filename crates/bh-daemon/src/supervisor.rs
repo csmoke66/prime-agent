@@ -23,7 +23,7 @@ use launch_budget::WORKER_AUTH_FLOOR_MS;
 use signals_shutdown::daemon_closing_shutdown_event;
 mod supervision;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod dead_child_delete_tests;
 #[cfg(test)]
 mod handshake_tests;

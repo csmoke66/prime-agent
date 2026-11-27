@@ -13,7 +13,5 @@ fn main() {
         bh_daemon::worker::strip_inherited_worker_env();
     }
     let code = bh_cli::main_with_runtime(&args, &bh_cli::PrintRuntime);
-    // Restore the Windows VT bit before process exit.
-    bh_types::platform::console_restore();
     std::process::exit(code);
 }

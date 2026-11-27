@@ -2,7 +2,6 @@
 //! `agents-view-incident-notice.test.ts` view-level suite): the
 //! collapsed warning line renders from the agent.jsonl tail, Esc
 //! dismisses it, and a dismissal is sticky across polls/re-entries.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

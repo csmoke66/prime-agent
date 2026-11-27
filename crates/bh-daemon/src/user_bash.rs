@@ -594,7 +594,6 @@ async fn run_bash(run: RunBash<'_>) -> BashEnd {
     // Its own process group on POSIX, so a kill reaches every process the
     // command started (TS `detached: true`); Windows tree kills go through
     // `taskkill /T`.
-    #[cfg(unix)]
     bh_core::platform::process::set_new_process_group(command.as_std_mut());
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -1048,7 +1047,6 @@ mod tests {
 
     /// Multi-byte characters that straddle a pipe read decode intact: a per-read decode replaced
     /// both halves with U+FFFD in the stream and the row the model reads.
-    #[cfg(unix)]
     #[tokio::test]
     async fn characters_split_across_reads_decode_intact() {
         let cwd = tempfile::tempdir().expect("tempdir");
@@ -1071,7 +1069,6 @@ mod tests {
 
     /// A command whose shell dies by a signal reports 128 + the signal number, like a shell's
     /// `$?` (TS `normalizedExitCode`): with no exit code the model would read it as a success.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_signal_death_reports_128_plus_the_signal() {
         let cwd = tempfile::tempdir().expect("tempdir");
@@ -1253,7 +1250,6 @@ mod tests {
     }
 
     /// The next `session_event` of `event_type` (bounded: a missing event fails the test).
-    #[cfg(unix)]
     async fn next_session_event(
         events: &mut tokio::sync::broadcast::Receiver<Arc<crate::worker::OutboundFrame>>,
         event_type: &str,
@@ -1277,14 +1273,12 @@ mod tests {
 
     /// The child a running user bash command forked (the shell runs `sh`, which execs `sleep`).
     /// The child holds a FIFO's write end, so the FIFO reader's EOF is the child's death.
-    #[cfg(unix)]
     struct ForkedChild {
         /// Killed on drop until [`Self::assert_killed`] saw the death: a failing run leaks nothing.
         pid: Option<i32>,
         gone: Option<tokio::task::JoinHandle<()>>,
     }
 
-    #[cfg(unix)]
     impl ForkedChild {
         async fn start(
             worker: &Worker,
@@ -1334,7 +1328,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     impl Drop for ForkedChild {
         fn drop(&mut self) {
             if let Some(pid) = self.pid {
@@ -1348,7 +1341,6 @@ mod tests {
 
     /// `abort_bash` kills every process the command started, not just the shell: a surviving
     /// child would keep running and hold the output pipes open.
-    #[cfg(unix)]
     #[tokio::test]
     async fn abort_bash_kills_the_commands_child_processes() {
         let cwd = tempfile::tempdir().expect("tempdir");
@@ -1373,7 +1365,6 @@ mod tests {
 
     /// The graceful stop's abort reaches the command's children too: the worker's exit never
     /// leaves the user's processes running.
-    #[cfg(unix)]
     #[tokio::test]
     async fn shutdown_kills_the_running_commands_child_processes() {
         let cwd = tempfile::tempdir().expect("tempdir");
@@ -1391,7 +1382,6 @@ mod tests {
 
     /// A command that backgrounds a process settles when its shell exits: the background process
     /// holding the inherited output pipes does not hold the run open (TS `waitForChildProcess`).
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_process_does_not_hold_the_run_open() {
         let cwd = tempfile::tempdir().expect("tempdir");

@@ -1,4 +1,3 @@
-#![cfg(unix)]
 //! The session-end sidecar pins: a worker that ends a session leaves a
 //! current info sidecar — the next process that reads the file folds zero bytes.
 use super::*;
@@ -63,7 +62,6 @@ async fn kill(worker: &Worker) {
 /// A worker whose turn settled: the fresh arm never folds, so the sidecar
 /// is current only if the END wrote it — not a warm tail of the kill's own
 /// archived row.
-#[cfg(unix)]
 #[tokio::test]
 async fn an_ended_worker_session_leaves_a_current_info_sidecar() {
     let dir = std::env::temp_dir().join(format!("pa-sidecar-exit-{}", uuid::Uuid::new_v4()));
@@ -87,7 +85,6 @@ async fn an_ended_worker_session_leaves_a_current_info_sidecar() {
 
 /// The bump-day shape: a reopened session over a dead-version sidecar ends
 /// with a sidecar at the served version, current to the file's final bytes.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_reopened_session_ends_with_a_current_info_sidecar() {
     let dir = std::env::temp_dir().join(format!("pa-sidecar-reopen-{}", uuid::Uuid::new_v4()));

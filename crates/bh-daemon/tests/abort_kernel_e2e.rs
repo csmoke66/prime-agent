@@ -2,8 +2,6 @@
 //! P0 wedge): a worker session whose turn executes a long kernel cell must abort
 //! at once — the turn unwinds, the session returns to ready — instead of running
 //! the cell out or wedging with the loader spinning.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

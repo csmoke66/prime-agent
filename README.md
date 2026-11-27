@@ -110,13 +110,7 @@ Install the latest stable version with the one-command installer:
 curl -fsSL https://raw.githubusercontent.com/csmoke66/beehive/main/install-rust.sh | sh
 ```
 
-On Windows x64, install from PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/csmoke66/beehive/main/install.ps1 | iex
-```
-
-Both installers download the build published on [GitHub Releases](https://github.com/csmoke66/beehive/releases/latest) and verify its SHA-256 checksum. Release builds are produced by pushing a `vX.Y.Z` tag.
+The installer downloads the build published on [GitHub Releases](https://github.com/csmoke66/beehive/releases/latest) and verify its SHA-256 checksum. Release builds are produced by pushing a `vX.Y.Z` tag.
 
 ## License
 

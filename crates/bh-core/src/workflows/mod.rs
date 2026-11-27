@@ -16,11 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::resolver::is_valid_thinking_level;
 use crate::workflow_io::{FieldType, Fields};
 
-#[cfg(unix)]
 #[path = "unix.rs"]
-mod fs;
-#[cfg(windows)]
-#[path = "windows.rs"]
 mod fs;
 
 use fs::Directory;
@@ -399,8 +395,6 @@ fn list_from(
                 return;
             };
             // Windows can resolve ASCII case variations of a file name.
-            #[cfg(windows)]
-            let filename = filename.to_ascii_lowercase();
             if let Some(name) = filename
                 .strip_suffix(".json")
                 .filter(|name| valid_name(name))

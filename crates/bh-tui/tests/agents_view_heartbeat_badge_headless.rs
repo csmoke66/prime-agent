@@ -4,8 +4,6 @@
 //! the armed render barrier, the generation gate applied) repaints the
 //! row with its `◷ N` badge — the badge can only come from the
 //! event-driven refetch, so the plan proves the whole wiring.
-#![cfg(unix)]
-
 mod support;
 
 use std::io::{BufReader, Write};

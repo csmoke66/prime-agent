@@ -458,19 +458,16 @@ async fn attach_response_wire_bytes_keep_the_ts_key_order() {
 /// `clear_queue` bounces each dropped agent-message row to its sender over
 /// the supervisor `send_message` route; the cleared user prompt sends
 /// nothing (unix: the link endpoint is an `AF_UNIX` socket).
-#[cfg(unix)]
 #[tokio::test]
 async fn clear_queue_bounces_dropped_agent_messages_to_their_senders() {
     assert_clear_queue_bounces(/*restore_queue*/ false).await;
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn clear_queue_bounces_recovered_agent_messages_to_their_senders() {
     assert_clear_queue_bounces(/*restore_queue*/ true).await;
 }
 
-#[cfg(unix)]
 async fn assert_clear_queue_bounces(restore_queue: bool) {
     let dir =
         std::path::Path::new("/tmp").join(format!("pa-worker-am-bounce-{}", uuid::Uuid::new_v4()));

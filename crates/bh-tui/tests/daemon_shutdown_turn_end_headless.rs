@@ -2,7 +2,6 @@
 //! (#2827 follow-up): a turn settling in the same batch as the closing
 //! must not stall the loop — the client refuses the send on a dead
 //! supervisor reader (TS `requestWire`), so recovery arms at once.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

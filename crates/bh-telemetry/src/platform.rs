@@ -217,16 +217,11 @@ fn detect_cpu_baseline() -> &'static str {
 /// The kernel release (TS `os.release()`: `uname -r` on Linux and macOS);
 /// `unknown` on Windows, where this build has no probe.
 fn detect_os_release() -> String {
-    #[cfg(unix)]
     {
         rustix::system::uname()
             .release()
             .to_string_lossy()
             .into_owned()
-    }
-    #[cfg(not(unix))]
-    {
-        UNKNOWN.into()
     }
 }
 

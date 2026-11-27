@@ -607,7 +607,6 @@ fn at_completion_keeps_the_typed_quoting() {
     let result =
         provider.apply_completion(&["@'it's.md'".to_string()], 0, 4, &item("@\"it's.md\""));
     assert_eq!(result.lines[0], "@\"it's.md\" 's.md'");
-    #[cfg(not(windows))]
     assert_eq!(at_item_values(&provider, r"@my\ ta"), [r"@my\ target/"]);
 }
 

@@ -2,7 +2,6 @@
 //! `success: false` for chosen commands, and the TUI must render the TS
 //! `showError` row and keep running — a daemon refusal never exits the
 //! client; only transport failures stay fatal (TS `handleFollowUp`).
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

@@ -1,8 +1,6 @@
 //! The paged saved catalog: the first fetch asks for one page, the list says how many older
 //! sessions are not loaded yet, scrolling to the end loads the next page, and a search walks the
 //! rest of the store so the oldest session is still found.
-#![cfg(unix)]
-
 mod support;
 
 use std::io::BufReader;

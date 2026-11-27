@@ -6,7 +6,6 @@
 use std::process::Command;
 
 /// The real Unix user id, matching Node `process.getuid()` for daemon namespaces.
-#[cfg(unix)]
 #[must_use]
 pub fn current_user_id() -> u32 {
     nix::unistd::Uid::current().as_raw()
@@ -23,7 +22,6 @@ pub enum Signal {
 
 /// Put the spawned child into its own process group so later group-scoped
 /// kills reach all of its descendants (TS: `detached: true` on POSIX).
-#[cfg(unix)]
 pub fn set_new_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
@@ -34,7 +32,6 @@ pub fn set_new_process_group(command: &mut Command) {
 /// from the parent's terminal never reach it. A new process group alone
 /// is not enough: the group can still open the terminal, and a background
 /// read then stops it with SIGTTIN.
-#[cfg(unix)]
 pub fn set_new_session(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     // SAFETY: the hook runs in the forked child before exec and only calls
@@ -48,42 +45,11 @@ pub fn set_new_session(command: &mut Command) {
     }
 }
 
-/// Windows: the libuv mapping of Node `detached: true` on win32 -
-/// `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`, plus `CREATE_NO_WINDOW`
-/// (console children of a windowless parent would flash a fresh console).
-/// Tree kills need none of it (`taskkill /T` walks the parent-child tree).
-#[cfg(windows)]
-pub fn set_new_process_group(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    /// `winbase.h`: new process group (no ctrl+c broadcast from the parent).
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    /// `winbase.h`: detached console, survives the parent's console close.
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    /// `winbase.h` `CREATE_NO_WINDOW` (TS `windowsHide`).
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
-}
 
-#[cfg(not(any(unix, windows)))]
-pub fn set_new_process_group(_command: &mut Command) {
-    // No detached-group mechanism on this platform; group-scoped kills are
-    // unavailable and callers fall back to single-pid kills.
-}
 
-/// Hide the console window of a non-interactive spawn (TS `windowsHide`).
-/// Only one of [`set_new_process_group`] and [`set_no_window`] may be
-/// applied: creation flags replace each other.
-#[cfg(windows)]
-pub fn set_no_window(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    /// `winbase.h` `CREATE_NO_WINDOW` (TS `windowsHide`).
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-}
 
 /// Unix: every product console surface owns its own window behavior
 /// (`windowsHide` has no meaning without windows).
-#[cfg(not(windows))]
 pub fn set_no_window(_command: &mut Command) {}
 
 /// Raise the soft open-file limit to the hard limit and return the
@@ -94,7 +60,6 @@ pub fn set_no_window(_command: &mut Command) {}
 /// # Errors
 ///
 /// The OS error of a failed `getrlimit`, `sysctlbyname` or `setrlimit`.
-#[cfg(unix)]
 pub fn raise_open_file_limit() -> std::io::Result<Option<u64>> {
     let mut limit = libc::rlimit {
         rlim_cur: 0,
@@ -132,19 +97,9 @@ pub fn raise_open_file_limit() -> std::io::Result<Option<u64>> {
     Ok(Some(limit.rlim_cur))
 }
 
-/// No per-process descriptor limit to raise.
-///
-/// # Errors
-///
-/// Never: the not-unix arm has no descriptor limit to raise.
-#[cfg(not(unix))]
-pub fn raise_open_file_limit() -> std::io::Result<Option<u64>> {
-    Ok(None)
-}
 
 /// Signal a single pid. Returns true only when the signal was delivered,
 /// proving the pid was alive at signal time.
-#[cfg(unix)]
 #[must_use]
 pub fn kill_pid(pid: i32, signal: Signal) -> bool {
     if pid <= 0 {
@@ -162,7 +117,6 @@ pub fn kill_pid(pid: i32, signal: Signal) -> bool {
 ///
 /// # Errors
 /// Returns the native probe error when group existence cannot be established.
-#[cfg(unix)]
 pub fn process_group_exists(pgid: i32) -> std::io::Result<bool> {
     if pgid <= 1 {
         return Ok(false);
@@ -178,19 +132,9 @@ pub fn process_group_exists(pgid: i32) -> std::io::Result<bool> {
     }
 }
 
-/// No process groups: none exists.
-///
-/// # Errors
-///
-/// Never: the not-unix arm has no group to probe.
-#[cfg(not(unix))]
-pub fn process_group_exists(_pgid: i32) -> std::io::Result<bool> {
-    Ok(false)
-}
 
 /// Signal every member of process group `pgid` (`kill(-pgid, sig)`). Returns
 /// true only when the signal was delivered to at least one member.
-#[cfg(unix)]
 #[must_use]
 pub fn signal_process_group(pgid: i32, signal: Signal) -> bool {
     if pgid <= 1 {
@@ -203,38 +147,12 @@ pub fn signal_process_group(pgid: i32, signal: Signal) -> bool {
     unsafe { libc::kill(-pgid, sig) == 0 }
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn signal_process_group(_pgid: i32, _signal: Signal) -> bool {
-    // No process groups: persistent shells are POSIX-only.
-    false
-}
 
-/// Windows: `OpenProcess(PROCESS_TERMINATE)` + `TerminateProcess` on the
-/// single pid (every signal terminates; the `Term`/`Kill` distinction
-/// collapses there). Descendants are NOT killed: teardown paths needing
-/// tree kills use [`kill_process_group_or_pid`].
-#[cfg(windows)]
-#[must_use]
-pub fn kill_pid(pid: i32, signal: Signal) -> bool {
-    if pid <= 0 {
-        return false;
-    }
-    let _ = signal;
-    win32::terminate_process(pid as u32)
-}
 
-#[cfg(not(any(unix, windows)))]
-pub fn kill_pid(_pid: i32, _signal: Signal) -> bool {
-    // No signaling mechanism; the kill stays unproven, the conservative
-    // answer callers act on.
-    false
-}
 
 /// Kill a process and all its children: the process group first (`bash()`
 /// children run detached in a new group), then the bare pid as fallback.
 /// Returns true when either signal was delivered (TS `killProcessTree`).
-#[cfg(unix)]
 #[must_use]
 pub fn kill_process_group_or_pid(pid: i32) -> bool {
     if pid <= 0 {
@@ -248,40 +166,9 @@ pub fn kill_process_group_or_pid(pid: i32) -> bool {
     unsafe { libc::kill(pid, libc::SIGKILL) == 0 }
 }
 
-/// Windows: `taskkill /F /T /PID <pid>` from the absolute System32 path -
-/// a bare `taskkill` name could resolve a planted CWD executable. True
-/// only when taskkill exited 0, the same proof TS's `result.status === 0`
-/// requires.
-#[cfg(windows)]
-#[must_use]
-pub fn kill_process_group_or_pid(pid: i32) -> bool {
-    if pid <= 0 {
-        return false;
-    }
-    let system_root =
-        std::env::var_os("SystemRoot").unwrap_or_else(|| std::ffi::OsString::from("C:\\Windows"));
-    let taskkill = std::path::Path::new(&system_root)
-        .join("System32")
-        .join("taskkill.exe");
-    let mut command = Command::new(&taskkill);
-    command
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    set_no_window(&mut command);
-    command.status().is_ok_and(|status| status.success())
-}
 
-#[cfg(not(any(unix, windows)))]
-pub fn kill_process_group_or_pid(_pid: i32) -> bool {
-    // No tree-kill mechanism; the kill stays unproven, the conservative
-    // answer callers act on.
-    false
-}
 
 /// Cheap `kill(pid, 0)` existence probe; counts zombies as existing.
-#[cfg(unix)]
 #[must_use]
 pub fn pid_exists(pid: u32) -> bool {
     if pid == 0 {
@@ -331,15 +218,6 @@ pub fn open_pidfd(_pid: u32) -> std::io::Result<i32> {
     Err(std::io::ErrorKind::Unsupported.into())
 }
 
-/// No pidfd arm on this platform or kernel: the handle is unobtainable.
-///
-/// # Errors
-///
-/// Always `Unsupported`.
-#[cfg(not(unix))]
-pub fn open_pidfd(_pid: u32) -> std::io::Result<i32> {
-    Err(std::io::ErrorKind::Unsupported.into())
-}
 
 /// Signal through the kernel-held handle (`pidfd_send_signal`): the signal
 /// reaches the pinned process; the handle CLOSES on drop by the caller.
@@ -377,19 +255,11 @@ pub fn pidfd_signal(_fd: i32, _signal: Signal) -> bool {
     false
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn pidfd_signal(_fd: i32, _signal: Signal) -> bool {
-    false
-}
 
 pub fn close_pidfd(fd: i32) {
-    #[cfg(unix)]
     unsafe {
         libc::close(fd);
     }
-    #[cfg(not(unix))]
-    let _ = fd;
 }
 
 /// Resolve once the process behind `pid` has exited, parked on the kernel's
@@ -548,35 +418,16 @@ pub async fn wait_for_exit(_pid: u32) -> std::io::Result<()> {
     Err(std::io::ErrorKind::Unsupported.into())
 }
 
-/// Windows: the shared handle probe (win32 has no unreaped-zombie state,
-/// so existing and running are the same predicate). A query that fails
-/// outright reads as gone.
-#[cfg(windows)]
-#[must_use]
-pub fn pid_exists(pid: u32) -> bool {
-    bh_types::platform::process::is_process_alive(pid).unwrap_or(false)
-}
 
-#[cfg(not(any(unix, windows)))]
-pub fn pid_exists(_pid: u32) -> bool {
-    false
-}
 
 /// The signal number that terminated a child, when it was signaled
 /// (`ExitStatus::signal` on Unix; None elsewhere).
-#[cfg(unix)]
 #[must_use]
 pub fn termination_signal(status: &std::process::ExitStatus) -> Option<i32> {
     use std::os::unix::process::ExitStatusExt;
     status.signal()
 }
 
-#[cfg(not(unix))]
-#[must_use]
-pub fn termination_signal(_status: &std::process::ExitStatus) -> Option<i32> {
-    // Windows terminations surface as exit codes, not signals.
-    None
-}
 
 /// A child's exit code as a shell's `$?` reports it: the status code, or
 /// 128 + the signal number when a signal killed it (TS `normalizedExitCode`).
@@ -588,56 +439,7 @@ pub fn normalized_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
         .or_else(|| termination_signal(status).map(|signal| 128 + signal))
 }
 
-/// The kernel32 termination surface for [`kill_pid`], hand-declared (repo
-/// policy: pinned constants and externs, no windows-sys dependency).
-#[cfg(windows)]
-mod win32 {
-    #![allow(non_snake_case)]
 
-    use std::ffi::c_void;
-
-    /// `winnt.h`: the right to terminate the process.
-    const PROCESS_TERMINATE: u32 = 0x0001;
-
-    type Handle = *mut c_void;
-
-    extern "system" {
-        fn OpenProcess(access: u32, inherit_handle: i32, process_id: usize) -> Handle;
-        fn CloseHandle(handle: Handle) -> i32;
-        fn TerminateProcess(handle: Handle, exit_code: u32) -> i32;
-    }
-
-    /// Terminate exactly the pid; false when it could not be proven
-    /// terminated (gone already, access denied, or invalid).
-    pub(crate) fn terminate_process(pid: u32) -> bool {
-        let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid as usize) };
-        if handle.is_null() {
-            return false;
-        }
-        let terminated = unsafe { TerminateProcess(handle, 1) != 0 };
-        unsafe { CloseHandle(handle) };
-        terminated
-    }
-}
-
-#[cfg(all(test, windows))]
-mod windows_tests {
-    use super::*;
-
-    #[test]
-    fn pid_exists_for_self_but_not_zero() {
-        assert!(pid_exists(std::process::id()));
-        assert!(!pid_exists(0));
-        assert!(!pid_exists(u32::MAX));
-    }
-
-    #[test]
-    fn out_of_range_pids_never_prove_kills() {
-        assert!(!kill_pid(-1, Signal::Kill));
-        assert!(!kill_pid(0, Signal::Term));
-        assert!(!kill_process_group_or_pid(-1));
-    }
-}
 
 /// The kernel-watch arms' shared exit contract: a pid that names no live
 /// process resolves at once, so a worker that died before its watch

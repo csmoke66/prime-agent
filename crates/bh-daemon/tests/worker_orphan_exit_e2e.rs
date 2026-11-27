@@ -2,8 +2,6 @@
 //! a session worker whose supervisor socket never answers must exit on the
 //! supervisor-lost window, and a worker whose supervisor is reachable must
 //! survive the same window.
-#![cfg(unix)]
-
 use std::io::Write as _;
 use std::os::unix::net::UnixListener;
 use std::path::Path;

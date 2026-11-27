@@ -10,8 +10,6 @@
 // The whole target drives /bin/sh interpreter wrappers and unix-only
 // file permissions, so it stays off the windows cross-check (the same
 // gate the sibling kernel targets carry).
-#![cfg(unix)]
-
 //! Verifier integration tests for the revivable kernel stop: a snapshot-flushing stop that keeps
 //! the provisioner usable, so a settled child's kernel releases without ending the session. The
 //! kernel Python is ambient product state; skipped when absent.

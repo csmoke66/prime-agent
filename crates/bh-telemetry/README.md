@@ -19,8 +19,7 @@ pseudonymous installation identity. Events never leave the machine.
 - `install_id`: `<agentDir>/telemetry.json` `{version, installationId}`,
   exclusive 0600 create, validated on load (TS parity).
 - `rename_onto`: the shared rename-onto-destination primitive for durable
-  persist writes (TS `renameOntoSync`: bounded win32 destination-busy
-  retry, `10ms * attempt` backoff, every failure immediate off Windows).
+  persist writes (a plain `std::fs::rename`).
   Lives in this crate because every persist owner (bh-core's settings and
   session writes, bh-daemon's descriptors/journals/session store, this
   crate's install id) already depends on it while it depends on no other

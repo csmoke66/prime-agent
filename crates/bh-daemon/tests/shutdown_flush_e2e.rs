@@ -4,8 +4,6 @@
 //! reader keeps a large frame in flight past the reply on every platform
 //! (the macOS shape: an 8 KB `AF_UNIX` send buffer splits even a small
 //! `session_closed` frame across many writes).
-#![cfg(unix)]
-
 use std::io::{Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::Path;

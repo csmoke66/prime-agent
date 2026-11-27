@@ -2,7 +2,6 @@
 //! 2026-09-26): the flooding client commands (`/context`, `/session`,
 //! `/system-prompt`, `/logs`, `/changelog`, `/hotkeys`, `/list`) open the
 //! docked panel; ESC closes it; `?` types into the editor (guide removed).
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

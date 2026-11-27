@@ -111,7 +111,6 @@ fn read_install_id(path: &Path) -> Result<Option<String>> {
 /// Open the state file read-only, non-blocking on unix (`O_NONBLOCK`):
 /// whatever now sits on the path — a regular state file or a swapped-in
 /// special file — opens and reads without ever parking the caller.
-#[cfg(unix)]
 fn open_state_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
@@ -125,10 +124,6 @@ fn open_state_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-#[cfg(not(unix))]
-fn open_state_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().read(true).open(path)
-}
 
 /// Outcome of trying to publish a candidate state file exclusively.
 enum Publish {
@@ -210,7 +205,6 @@ fn remove_quietly(path: &Path) {
 fn create_exclusive(path: &Path, payload: &[u8]) -> std::io::Result<()> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
@@ -254,7 +248,6 @@ mod tests {
     /// parking the caller — the `/telemetry` confirmation after a saved
     /// opt-out may never hang on the telemetry state.
     #[test]
-    #[cfg(unix)]
     fn a_fifo_on_the_state_path_reads_as_no_id() {
         let dir = tempfile::tempdir().expect("temp dir");
         let agent_dir = dir.path().join("agent");
@@ -292,7 +285,6 @@ mod tests {
         let state: State = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(state.version, 1);
         assert_eq!(state.installation_id, first);
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();

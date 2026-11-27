@@ -2,7 +2,6 @@
 //! the queued batch until a frame rendered after arming carries the
 //! daemon-driven row, so the plan cannot reach `Done` before the data
 //! rendered; the deadline still pops on a needle that never lands.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

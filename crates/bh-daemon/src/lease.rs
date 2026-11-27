@@ -168,42 +168,12 @@ fn lease_reclaimable(owner: Option<&LeaseOwner>) -> bool {
 }
 
 /// Whether a failed candidate-onto-lease-directory rename means the lease
-/// directory already exists (TS `isRenameTargetContention`): POSIX raises
-/// EEXIST/ENOTEMPTY; Windows surfaces the same race as EPERM/EACCES, so
-/// those count only when the target actually exists - a real permission
-/// problem must still propagate.
-fn is_rename_target_contention(
-    directory: &Path,
-    error: &std::io::Error,
-    platform_windows: bool,
-) -> bool {
-    match error.kind() {
-        std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::DirectoryNotEmpty => true,
-        std::io::ErrorKind::PermissionDenied => {
-            platform_windows && directory.try_exists().unwrap_or(false)
-        }
-        _ => false,
-    }
-}
-
-/// Total attempts before a transient stale-reclaim rename failure surfaces
-/// (TS `reclaimStaleLease` caps at 8 with a `10ms * attempt` backoff).
-const WIN32_RECLAIM_ATTEMPTS: u32 = 8;
-
-/// Whether a failed stale-reclaim rename deserves another attempt, and
-/// how long to wait first (`10ms * attempt`); `None` means the failure
-/// surfaces. Only the win32 destination-busy family retries.
-fn reclaim_retry_delay_ms(
-    platform_windows: bool,
-    error: &std::io::Error,
-    attempt: u32,
-) -> Option<u64> {
-    if !platform_windows || attempt >= WIN32_RECLAIM_ATTEMPTS {
-        return None;
-    }
-    let transient = error.kind() == std::io::ErrorKind::PermissionDenied
-        || matches!(error.raw_os_error(), Some(32 | 33));
-    transient.then(|| 10 * u64::from(attempt))
+/// directory already exists (TS `isRenameTargetContention`): EEXIST/ENOTEMPTY.
+fn is_rename_target_contention(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::DirectoryNotEmpty
+    )
 }
 
 fn reclaim_stale(directory: &Path) -> bool {
@@ -212,24 +182,13 @@ fn reclaim_stale(directory: &Path) -> bool {
         std::process::id(),
         uuid::Uuid::new_v4().simple()
     ));
-    let platform_windows = cfg!(windows);
-    let mut attempt = 1;
-    loop {
-        match fs::rename(directory, &stale) {
-            Ok(()) => {
-                let _ = fs::remove_dir_all(&stale);
-                return true;
-            }
-            // The lease path is already free: nothing to reclaim.
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-            Err(error) => match reclaim_retry_delay_ms(platform_windows, &error, attempt) {
-                Some(delay) => {
-                    std::thread::sleep(Duration::from_millis(delay));
-                    attempt += 1;
-                }
-                None => return false,
-            },
+    match fs::rename(directory, &stale) {
+        Ok(()) => {
+            let _ = fs::remove_dir_all(&stale);
+            true
         }
+        // The lease path is already free: nothing to reclaim.
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
     }
 }
 
@@ -552,7 +511,7 @@ pub fn acquire_runtime_session_lease(
                     if error.kind() == std::io::ErrorKind::NotFound {
                         continue;
                     }
-                    if is_rename_target_contention(&directory, &error, cfg!(windows)) {
+                    if is_rename_target_contention(&error) {
                         let existing = read_owner(&directory)?;
                         if !lease_reclaimable(existing.as_ref()) {
                             return Err(SessionAlreadyActiveError::for_owner(
@@ -768,7 +727,6 @@ mod tests {
 
     /// A stale guard of a live owner is never stolen: the open path fails
     /// at its deadline instead of breaking the live owner's append.
-    #[cfg(unix)]
     #[test]
     fn stale_guard_of_a_live_owner_is_never_stolen() {
         let dir = tempfile::tempdir().unwrap();
@@ -810,7 +768,6 @@ mod tests {
         lease.release();
     }
 
-    #[cfg(unix)]
     #[test]
     fn stale_guard_reclaim_failure_stays_bounded() {
         let dir = tempfile::tempdir().unwrap();
@@ -860,81 +817,19 @@ mod tests {
 
     #[test]
     fn rename_target_contention_covers_exist_and_not_empty() {
-        // TS: EEXIST and ENOTEMPTY are contention on every platform.
         for kind in [
             std::io::ErrorKind::AlreadyExists,
             std::io::ErrorKind::DirectoryNotEmpty,
         ] {
-            let error = std::io::Error::from(kind);
-            assert!(is_rename_target_contention(
-                Path::new("/tmp"),
-                &error,
-                false
-            ));
-            assert!(is_rename_target_contention(Path::new("/tmp"), &error, true));
+            assert!(is_rename_target_contention(&std::io::Error::from(kind)));
         }
-    }
-
-    #[test]
-    fn rename_target_contention_denied_only_when_win32_target_exists() {
-        // TS: EPERM/EACCES count as contention on win32 when - and only
-        // when - the lease directory actually exists.
-        let dir = std::env::temp_dir().join(format!("pa-lease-c-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
-        assert!(is_rename_target_contention(&dir, &denied, true));
-        assert!(!is_rename_target_contention(&dir, &denied, false));
-        let missing = dir.join("missing");
-        assert!(!is_rename_target_contention(&missing, &denied, true));
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn rename_target_contention_ignores_unrelated_failures() {
-        // TS: EBUSY and other codes are never contention (a shared-open
-        // destination must surface, not read as a conflict).
-        for error in [
-            std::io::Error::from(std::io::ErrorKind::Other),
-            // ERROR_SHARING_VIOLATION stays raw in std (libuv EBUSY).
-            std::io::Error::from_raw_os_error(32),
-        ] {
-            assert!(!is_rename_target_contention(
-                Path::new("/tmp"),
-                &error,
-                true
-            ));
-        }
-    }
-
-    #[test]
-    fn reclaim_retry_is_win32_only_with_linear_backoff_until_cap() {
-        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
-        let busy = std::io::Error::from_raw_os_error(33);
-        for error in [&denied, &busy] {
-            for attempt in 1..WIN32_RECLAIM_ATTEMPTS {
-                assert_eq!(
-                    reclaim_retry_delay_ms(true, error, attempt),
-                    Some(10 * u64::from(attempt)),
-                    "attempt={attempt}"
-                );
-            }
-            assert_eq!(
-                reclaim_retry_delay_ms(true, error, WIN32_RECLAIM_ATTEMPTS),
-                None
-            );
-            assert_eq!(
-                reclaim_retry_delay_ms(true, error, WIN32_RECLAIM_ATTEMPTS + 3),
-                None
-            );
-            assert_eq!(reclaim_retry_delay_ms(false, error, 1), None);
-        }
-        let unrelated = std::io::Error::from(std::io::ErrorKind::NotFound);
-        assert_eq!(reclaim_retry_delay_ms(true, &unrelated, 1), None);
+        assert!(!is_rename_target_contention(&std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied
+        )));
     }
 
     /// A lease taken before the sessions dir exists, under a symlinked
     /// component, still owns the file once it is created.
-    #[cfg(unix)]
     #[test]
     fn a_lease_taken_before_its_sessions_dir_exists_owns_the_created_file() {
         let dir = tempfile::tempdir().unwrap();

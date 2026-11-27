@@ -1584,7 +1584,6 @@ async fn contended_harness_lock_does_not_reserve_the_next_provider_run() {
 /// level, so both writers still name one lock directory and contend.
 /// This pins that sharing — the one scenario where the two writers could
 /// have silently missed each other.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_symlinked_store_shares_the_kernels_lock_dir() {
     let provider = Arc::new(ScriptedProvider::new(test_model()));
@@ -1668,7 +1667,6 @@ async fn a_symlinked_store_shares_the_kernels_lock_dir() {
 /// kernel's lock entirely — two writers on two files — and the atomic
 /// rename would replace the link itself. The symlinked-directory case is
 /// pinned above; this is the file-symlink case.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_state_file_symlink_shares_the_kernels_lock_and_survives_the_commit() {
     let provider = Arc::new(ScriptedProvider::new(test_model()));

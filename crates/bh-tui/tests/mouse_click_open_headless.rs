@@ -2,7 +2,6 @@
 //! `handleFullscreenInput`): a plain release over a link opens its OSC 8
 //! target (recorded `opened_urls` stand in for the browser spawn); a
 //! release after a drag selects instead; plain text opens nothing.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

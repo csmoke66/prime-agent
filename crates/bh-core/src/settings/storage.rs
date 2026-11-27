@@ -197,7 +197,6 @@ struct FileIdentity {
 // The fallible non-Unix twin pins the Option shape across
 // platforms - unwrapping only this arm would split the contract.
 #[allow(clippy::unnecessary_wraps)]
-#[cfg(unix)]
 fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
     use std::os::unix::fs::MetadataExt;
     Some(FileIdentity {
@@ -209,23 +208,7 @@ fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
     })
 }
 
-#[cfg(windows)]
-fn stat_identity(metadata: &fs::Metadata) -> Option<FileIdentity> {
-    let modified = metadata.modified().ok()?;
-    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
-    Some(FileIdentity {
-        dev: 0,
-        ino: 0,
-        mtime_sec: since.as_secs() as i64,
-        mtime_nsec: i64::from(since.subsec_nanos()),
-        len: metadata.len(),
-    })
-}
 
-#[cfg(not(any(unix, windows)))]
-fn stat_identity(_metadata: &fs::Metadata) -> Option<FileIdentity> {
-    None
-}
 
 /// One validated document read held in the process-wide read-through cache.
 struct CachedRead {
@@ -400,7 +383,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(unix)]
     fn project_settings_link_inside_the_project_writes_its_target_under_its_lock() {
         let root = tempfile::tempdir().unwrap();
         let project = root.path().join("project");
@@ -484,7 +466,6 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("test-provider"));
         // Owner-only mode is a Unix guarantee; Windows inherits ACLs.
-        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
     }
 
@@ -509,7 +490,6 @@ mod tests {
         );
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "durable bytes\n");
-        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
         let names: Vec<String> = fs::read_dir(path.parent().unwrap())
             .unwrap()
@@ -600,7 +580,6 @@ mod tests {
     /// A relative agent dir (a relative `BEEHIVE_CODING_AGENT_DIR`) locks and
     /// loads: the lock probe's `utimensat` resolves relative lock paths against `AT_FDCWD`.
     #[test]
-    #[cfg(unix)]
     fn relative_agent_dir_locks_and_loads() {
         let cwd = tempfile::tempdir().unwrap();
         let previous = std::env::current_dir().unwrap();

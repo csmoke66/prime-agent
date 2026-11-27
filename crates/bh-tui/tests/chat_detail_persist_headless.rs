@@ -2,7 +2,6 @@
 //! Ctrl+O saves the cycled level as the `chatDetail` setting, and a later
 //! chat — the same session re-entered or a fresh one — opens at the saved
 //! level instead of the `overview` startup default.
-#![cfg(unix)]
 #![warn(clippy::allow_attributes_without_reason)]
 
 mod support;

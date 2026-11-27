@@ -2,8 +2,6 @@
 //! serves answers the LIVE binding instead of launching a second worker over the same
 //! file (Kevin's reproducer). Also covers the lease owner id stamp (must name the LIVE
 //! worker) and the dead-worker rebind (#2575, an open of the superseded file).
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

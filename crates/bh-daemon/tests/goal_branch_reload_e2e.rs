@@ -3,8 +3,6 @@
 //! state follows the cut — a pre-goal branch reloads the empty state, moving
 //! back restores the branch's own rows, each announced as a `goal_update`.
 
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

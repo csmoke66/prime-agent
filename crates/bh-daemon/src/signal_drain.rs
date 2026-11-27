@@ -8,14 +8,12 @@
 //! [`install`] registers the handlers right after the socket binds.
 
 use std::sync::Arc;
-#[cfg(unix)]
 use tokio::signal::unix::{signal, Signal, SignalKind};
 
 use crate::supervisor::Supervisor;
 
 /// Install the SIGTERM/SIGINT handlers and return the drain loop that
 /// serves them; the loop exits when neither handler could register.
-#[cfg(unix)]
 pub(crate) fn install(supervisor: Arc<Supervisor>) -> impl std::future::Future<Output = ()> + Send {
     let mut terminate = match signal(SignalKind::terminate()) {
         Ok(terminate) => Some(terminate),
@@ -57,7 +55,6 @@ pub(crate) fn install(supervisor: Arc<Supervisor>) -> impl std::future::Future<O
 
 /// Wait on one optional signal stream: an absent stream (a registration
 /// failure) parks forever instead of spinning the loop.
-#[cfg(unix)]
 async fn recv_opt(stream: Option<&mut Signal>) {
     match stream {
         Some(stream) => {
@@ -67,11 +64,3 @@ async fn recv_opt(stream: Option<&mut Signal>) {
     }
 }
 
-/// A detached Windows supervisor has no unix signal source and no console `ctrl_c`
-/// either: the managed stop stays the only lifecycle path.
-#[cfg(not(unix))]
-pub(crate) fn install(
-    _supervisor: Arc<Supervisor>,
-) -> impl std::future::Future<Output = ()> + Send {
-    std::future::pending::<()>()
-}

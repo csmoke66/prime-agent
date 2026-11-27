@@ -1,1 +1,0 @@
-- The Windows PowerShell installer now verifies and installs builds published by `csmoke66/prime-agent` on GitHub rather than downloading upstream binaries.

@@ -240,7 +240,7 @@ pub(crate) async fn respond(
     response_line(&response)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod test_support {
     use std::path::Path;
     use std::process::{Child, Command};
@@ -283,7 +283,7 @@ mod test_support {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::os::unix::process::{CommandExt, ExitStatusExt};
     use std::process::{Child, Command};

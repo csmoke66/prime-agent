@@ -697,7 +697,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "preserve me");
     }
 
-    #[cfg(unix)]
     #[test]
     fn suite_regeneration_does_not_follow_external_directory_symlinks() {
         let directory = tempfile::tempdir().expect("suite output");
@@ -714,7 +713,6 @@ mod tests {
             "outside survives"
         );
     }
-    #[cfg(unix)]
     #[test]
     fn suite_regeneration_rejects_even_an_empty_external_root_symlink() {
         let directory = tempfile::tempdir().expect("suite output");

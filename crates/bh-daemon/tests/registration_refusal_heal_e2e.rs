@@ -6,7 +6,7 @@
 // on other unixes they cannot observe processes, and the waits would
 // pass vacuously — skip the suite there instead of reporting a false
 // green.
-#![cfg(all(unix, target_os = "linux"))]
+#![cfg(target_os = "linux")]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

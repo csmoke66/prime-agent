@@ -1699,7 +1699,6 @@ fn acp_failed_prompt_error_data_marks_provider_failures_not_retryable() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn acp_daemon_attached_supervisor_loss_fails_the_prompt() {
     // The supervisor dies while a prompt is in flight: the pending
@@ -2969,7 +2968,6 @@ fn acp_user_bash_maps_to_a_synthetic_tool_call() {
     assert!(end["params"]["update"].get("content").is_none(), "{end}");
 }
 
-#[cfg(unix)]
 #[test]
 fn acp_daemon_attached_close_stop_failure_fences_the_session() {
     let mut client = AcpChild::spawn(

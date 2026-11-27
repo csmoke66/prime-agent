@@ -22,8 +22,6 @@
 )]
 // Fn length is a style gate, not correctness.
 #![allow(clippy::too_many_lines)]
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};

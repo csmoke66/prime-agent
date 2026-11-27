@@ -824,7 +824,7 @@ impl SessionUi {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod backfill_tests {
     use super::*;
     use serde_json::json;

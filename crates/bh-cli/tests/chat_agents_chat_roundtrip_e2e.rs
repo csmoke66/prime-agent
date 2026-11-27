@@ -6,8 +6,6 @@
 // linear (fn-length is style, not correctness), and their async test
 // futures are stack-resident by shape.
 #![allow(clippy::large_futures, clippy::too_many_lines)]
-#![cfg(unix)]
-
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

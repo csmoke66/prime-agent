@@ -734,7 +734,6 @@ mod tests {
     /// draws the same canvas as `mark_rows` — every character and tone —
     /// for the same frame and width, so the two cannot drift.
     #[test]
-    #[cfg(unix)]
     fn the_installer_banner_matches_the_splash() {
         let script = include_str!("../../../install-rust.sh");
         let program = script

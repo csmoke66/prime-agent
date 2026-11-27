@@ -12,8 +12,6 @@
 //! (the same JSON-lines protocol v3 runtime the TS product ships) and check
 //! state persistence, kill -9 revival (unserializable objects are dropped
 //! and reported), and the RLM bootstrap surface against the TS contract.
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;

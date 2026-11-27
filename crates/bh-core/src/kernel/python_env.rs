@@ -10,17 +10,6 @@ use std::path::{Path, PathBuf};
 /// Reject executable search paths inside the opened repository, even when the
 /// session cwd is a subdirectory. An ancestor can also expose project files.
 fn path_starts_with(path: &Path, project: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        // Windows paths are case-insensitive, including when the input uses
-        // different casing from the spelling returned by canonicalize.
-        let project = project.to_string_lossy().to_lowercase();
-        let path = path.to_string_lossy().to_lowercase();
-        let project = Path::new(&project);
-        let path = Path::new(&path);
-        path.starts_with(project)
-    }
-    #[cfg(not(windows))]
     {
         path.starts_with(project)
     }
@@ -93,7 +82,6 @@ pub(crate) fn safe_home_uv(path: &Path, project: Option<&Path>) -> bool {
 }
 
 /// The account's home from the user database, independent of `HOME`.
-#[cfg(unix)]
 fn account_home() -> Option<PathBuf> {
     nix::unistd::User::from_uid(nix::unistd::getuid())
         .ok()
@@ -101,14 +89,6 @@ fn account_home() -> Option<PathBuf> {
         .map(|user| user.dir)
 }
 
-/// No dependency exposes the profile known folder, so Windows takes
-/// `USERPROFILE`.
-#[cfg(not(unix))]
-fn account_home() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .filter(|profile| !profile.is_empty())
-        .map(PathBuf::from)
-}
 
 fn safe_home_uv_with_home(
     path: &Path,
@@ -175,11 +155,6 @@ pub(crate) fn sanitize_python_env(env: &mut HashMap<OsString, OsString>) {
         let keys: Vec<_> = env
             .keys()
             .filter(|key| {
-                #[cfg(windows)]
-                {
-                    key.to_string_lossy().eq_ignore_ascii_case(name)
-                }
-                #[cfg(not(windows))]
                 {
                     key.as_os_str() == OsStr::new(name)
                 }
@@ -216,11 +191,6 @@ pub(crate) fn sanitize_uv_path(env: &mut HashMap<OsString, OsString>, project: O
         "CONDA_PREFIX",
     ] {
         env.retain(|key, _| {
-            #[cfg(windows)]
-            {
-                !key.to_string_lossy().eq_ignore_ascii_case(name)
-            }
-            #[cfg(not(windows))]
             {
                 key.as_os_str() != OsStr::new(name)
             }
@@ -229,11 +199,6 @@ pub(crate) fn sanitize_uv_path(env: &mut HashMap<OsString, OsString>, project: O
     let keys: Vec<_> = env
         .keys()
         .filter(|key| {
-            #[cfg(windows)]
-            {
-                key.to_string_lossy().eq_ignore_ascii_case("PATH")
-            }
-            #[cfg(not(windows))]
             {
                 key.as_os_str() == OsStr::new("PATH")
             }
@@ -260,7 +225,6 @@ pub(crate) fn sanitize_uv_path(env: &mut HashMap<OsString, OsString>, project: O
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     fn python_for_test() -> Option<std::path::PathBuf> {
         let path = std::env::var_os("PATH")?;
         for dir in std::env::split_paths(&path) {
@@ -289,12 +253,7 @@ mod tests {
             (OsString::from("PYTHONUSERBASE"), OsString::from("/trusted")),
             (OsString::from("PYTHONUTF8"), OsString::from("1")),
         ]);
-        #[cfg(not(windows))]
         env.insert(OsString::from("pythonpath"), OsString::from("untouched"));
-        #[cfg(windows)]
-        env.insert(OsString::from("pythonpath"), OsString::from("/other"));
-        #[cfg(windows)]
-        env.insert(OsString::from("pythonnousersite"), OsString::from("0"));
 
         sanitize_python_env(&mut env);
         for name in ["PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE"] {
@@ -311,14 +270,12 @@ mod tests {
             env.get(OsStr::new("PYTHONNOUSERSITE")),
             Some(&OsString::from("1"))
         );
-        #[cfg(not(windows))]
         assert_eq!(
             env.get(OsStr::new("pythonpath")),
             Some(&OsString::from("untouched"))
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn sibling_python_path_cannot_run_sitecustomize_before_prompt() {
         let python = python_for_test();
@@ -359,7 +316,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn default_user_site_cannot_run_usercustomize_before_prompt() {
         let Some(python) = python_for_test() else {
@@ -420,7 +376,6 @@ mod tests {
         std::fs::create_dir(repo.join(".git")).unwrap();
         assert!(!safe_path(&sibling, Some(&project)));
         assert!(safe_path(&trusted, Some(&project)));
-        #[cfg(unix)]
         {
             let alias = root.path().join("alias");
             std::os::unix::fs::symlink(&project, &alias).unwrap();
@@ -444,11 +399,6 @@ mod tests {
         ] {
             env.insert(OsString::from(name), sibling.clone().into_os_string());
         }
-        #[cfg(windows)]
-        env.insert(
-            OsString::from("Uv_Python_Search_Path"),
-            sibling.into_os_string(),
-        );
         sanitize_uv_path(&mut env, Some(&project));
         assert_eq!(
             env.get(OsStr::new("PATH")),
@@ -467,8 +417,6 @@ mod tests {
         ] {
             assert!(!env.contains_key(OsStr::new(name)), "{name} survived");
         }
-        #[cfg(windows)]
-        assert!(!env.contains_key(OsStr::new("Uv_Python_Search_Path")));
 
         let mut unresolved = HashMap::from([(
             OsString::from("PATH"),
@@ -530,7 +478,6 @@ mod tests {
         ));
         // Without a resolvable account home there is no exception.
         assert!(!safe_home_uv_with_home(&uv, Some(&home), Some(&home), None));
-        #[cfg(unix)]
         {
             std::fs::remove_file(&uv).unwrap();
             std::fs::remove_dir(&tool_dir).unwrap();

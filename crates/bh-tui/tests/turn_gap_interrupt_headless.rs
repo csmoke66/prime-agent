@@ -1,8 +1,6 @@
 //! Headless e2e for the interrupt between two LLM turns of one agent run: the
 //! wire `turn_end` closes one model turn, not the run (`agent_end` does), so
 //! Escape after a tool turn's `turn_end` must still abort the running agent.
-#![cfg(unix)]
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;

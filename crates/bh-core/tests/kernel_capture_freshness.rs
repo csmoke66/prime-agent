@@ -1,8 +1,6 @@
 //! Verifier integration tests for the capture-freshness memo: while nothing settled since the last
 //! committed capture and nothing replaced the committed manifest, the kernel's full-namespace
 //! re-dump is skipped. The kernel Python is ambient product state; skipped when absent.
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

@@ -55,6 +55,12 @@ export function loadKeybindings(): Promise<void> {
   return loading;
 }
 
+/** Forget the loaded overrides and read `keybindings.json` again (`/reload`). */
+export function resetKeybindings(): Promise<void> {
+  loading = undefined;
+  return loadKeybindings();
+}
+
 export const keysOf = (action: KeyAction): readonly string[] => overrides[action] ?? DEFAULTS[action];
 
 const NAMED: Record<string, string> = { arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", " ": "space", esc: "escape" };

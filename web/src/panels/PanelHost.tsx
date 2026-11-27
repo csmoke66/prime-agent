@@ -11,7 +11,8 @@ import { McpPanel } from "./McpPanel";
 import { HarnessPanel } from "./HarnessPanel";
 import { AuthPanel } from "./AuthPanel";
 import { HotkeysPanel, ChangelogPanel, LogsPanel } from "./InfoPanels";
-import { ExportPanel, ImportPanel, SharePanel } from "./SharePanels";
+import { ExportPanel, ImportPanel, SharePanel, exportToPath, importFromPath } from "./SharePanels";
+import { resetKeybindings } from "../app/keybindings";
 import { ContextEditPanel } from "./ContextEditPanel";
 import { HeartbeatsPanel } from "./HeartbeatsPanel";
 import { WorkflowsPanel } from "./WorkflowsPanel";
@@ -39,8 +40,18 @@ function runPanelSlash(name: string, args: string, activeSessionId?: string): vo
       if (!args.trim()) return navigate({ name: "sessions" });
       void resumeBySelector(args.trim());
       return;
+    case "export":
+      if (!session) return void toast.info("Open a session first");
+      if (!args.trim()) return openPanel("export", { args, activeSessionId: session });
+      void exportToPath(session, args.trim()).catch((e) => toast.error(errorText(e)));
+      return;
+    case "import":
+      if (!args.trim()) return openPanel("import", { args });
+      void importFromPath(args.trim()).catch((e) => toast.error(errorText(e)));
+      return;
     case "reload":
       if (!session) return void toast.info("Open a session first");
+      resetKeybindings();
       wire.call({ type: "reload", activeSessionId: session }).then(() => toast.success("Reloaded keybindings, skills, prompts"), (e) => toast.error(`Reload failed: ${errorText(e)}`));
       return;
     case "name":

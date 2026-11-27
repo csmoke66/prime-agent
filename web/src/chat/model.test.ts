@@ -75,3 +75,15 @@ describe("parsers", () => {
     expect(fromSnapshot({ state: { isStreaming: true }, messages: [assistant("a")], lastEventSequence: 4 }).lastSequence).toBe(4);
   });
 });
+
+import { counterpartName as _counterpartName, sentMessages as _sentMessages } from "./model";
+describe("agent message rows", () => {
+  it("names the counterpart like the TUI", () => {
+    expect(_counterpartName({ sessionName: " ", activeSessionId: "a1" })).toBe("a1");
+    expect(_counterpartName(undefined)).toBe("unknown");
+  });
+  it("turns python receipts into sent and queued rows", () => {
+    const rows = _sentMessages({ sentAgentMessages: [{ id: "m1", message: "Ping", deliveryStatus: "delivered", target: { sessionName: "Worker" } }, { message: "Later", deliveryStatus: "queued", target: { sessionId: "s" } }, { id: "bad" }] });
+    expect(rows).toEqual([{ direction: "sent", who: "Worker", message: "Ping", id: "m1" }, { direction: "queued", who: "s", message: "Later", id: undefined }]);
+  });
+});

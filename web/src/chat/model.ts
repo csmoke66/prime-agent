@@ -492,6 +492,21 @@ export function parseBang(text: string): { command: string; excludeFromContext: 
   return command ? { command, excludeFromContext: excluded } : null;
 }
 
+/** First non-blank of the identity fields, as the TUI names an agent-message counterpart. */
+export function counterpartName(identity: Record<string, any> | undefined, keys: string[] = ["sessionName", "activeSessionId", "clientId", "sessionId"]): string {
+  for (const key of keys) {
+    const value = identity?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "unknown";
+}
+
+/** Sent `agent_message.send` receipts of a python cell (`details.sentAgentMessages`) as mail rows. */
+export function sentMessages(details: Record<string, any> | undefined): { direction: "sent" | "queued"; who: string; message: string; id?: string }[] {
+  const list = Array.isArray(details?.sentAgentMessages) ? details.sentAgentMessages : [];
+  return list.flatMap((m: any) => (typeof m?.message === "string" ? [{ direction: m.deliveryStatus === "delivered" ? ("sent" as const) : ("queued" as const), who: counterpartName(m.target, ["sessionName", "activeSessionId", "sessionId"]), message: m.message, id: m.id }] : []));
+}
+
 /** The `@path` token under the caret, if any. */
 export function pathTokenAt(text: string, caret: number): { start: number; query: string; quote: string } | null {
   const before = text.slice(0, caret);

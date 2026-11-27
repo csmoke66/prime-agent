@@ -15,6 +15,22 @@ async function exportSession(activeSessionId: string, format: "html" | "jsonl"):
   return name;
 }
 
+/** `/export <path>`: write the session on the host; `.jsonl` exports the raw session, anything else HTML. */
+export async function exportToPath(activeSessionId: string, path: string): Promise<void> {
+  const format = path.toLowerCase().endsWith(".jsonl") ? "export_jsonl" : "export_html";
+  const data = await wire.call<{ path?: string }>({ type: format, activeSessionId, outputPath: path }, 120_000);
+  toast.success(`Exported to ${data?.path ?? path}`);
+}
+
+/** Start a session in the server's directory and import a JSONL file from the host into it. */
+export async function importFromPath(inputPath: string): Promise<void> {
+  const info = await rest.info().catch(() => undefined);
+  const id = await createSession({ cwd: info?.cwd ?? "/" });
+  await wire.call({ type: "import_jsonl", activeSessionId: id, inputPath }, 120_000);
+  toast.success("Session imported");
+  navigate({ name: "session", activeSessionId: id });
+}
+
 /** `/export`: download the session as HTML or JSONL. */
 export function ExportPanel({ activeSessionId, onClose }: { activeSessionId: string; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -56,11 +72,7 @@ export function ImportPanel({ onClose }: { onClose: () => void }) {
     setError("");
     try {
       const { path } = await rest.upload(file);
-      const info = await rest.info().catch(() => undefined);
-      const id = await createSession({ cwd: info?.cwd ?? "/" });
-      await wire.call({ type: "import_jsonl", activeSessionId: id, inputPath: path }, 120_000);
-      toast.success("Session imported");
-      navigate({ name: "session", activeSessionId: id });
+      await importFromPath(path);
       onClose();
     } catch (reason) {
       setError(errorText(reason));

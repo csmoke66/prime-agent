@@ -12,6 +12,7 @@ import { HarnessPanel } from "./HarnessPanel";
 import { AuthPanel } from "./AuthPanel";
 import { HotkeysPanel, ChangelogPanel, LogsPanel } from "./InfoPanels";
 import { ExportPanel, ImportPanel, SharePanel } from "./SharePanels";
+import { ContextEditPanel } from "./ContextEditPanel";
 import { HeartbeatsPanel } from "./HeartbeatsPanel";
 import { WorkflowsPanel } from "./WorkflowsPanel";
 import { InlineRename } from "./InlineRename";
@@ -20,7 +21,7 @@ import { createSession, renameLive } from "./sessionActions";
 import { rest } from "./api";
 import { useAsync } from "./useAsync";
 
-const NEEDS_SESSION = new Set<PanelName>(["tree", "fork", "export", "share", "workflows", "rename"]);
+const NEEDS_SESSION = new Set<PanelName>(["tree", "fork", "edit_context", "export", "share", "workflows", "rename"]);
 const currentSession = (): string | undefined => {
   const route = parseRoute(location.hash);
   return route.name === "session" ? route.activeSessionId : undefined;
@@ -131,6 +132,7 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "changelog": return <ChangelogPanel onClose={onClose} />;
     case "logs": return <LogsPanel onClose={onClose} />;
     case "export": return <ExportPanel activeSessionId={activeSessionId!} onClose={onClose} />;
+    case "edit_context": return <ContextEditPanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "import": return <ImportPanel onClose={onClose} />;
     case "share": return <SharePanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "heartbeats": return <HeartbeatsPanel activeSessionId={activeSessionId} onClose={onClose} />;

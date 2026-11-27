@@ -59,16 +59,25 @@ export function ModelPicker({ onClose }: { onClose: () => void }) {
   const [onlyConfigured, setOnlyConfigured] = useState(true);
   useEffect(() => { void loadModels(); }, []);
   const current = state.model ?? {};
+  const scopedKeys = useMemo(() => ((state.scopedModels ?? []) as { model?: { provider?: string; id?: string } }[]).flatMap((e) => (e.model ? [`${e.model.provider}/${e.model.id}`] : [])), [state.scopedModels]);
+  const [scoped, setScoped] = useState(scopedKeys.length > 0);
+  useEffect(() => {
+    if (!scopedKeys.length) return;
+    const onKey = (e: KeyboardEvent) => { if (e.altKey && e.code === "KeyS") { e.preventDefault(); setScoped((v) => !v); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scopedKeys.length]);
   const list = useMemo(() => {
     const q = query.toLowerCase();
     return (models ?? [])
-      .filter((m) => (!onlyConfigured || providers.includes(m.provider)) && `${m.provider}/${m.id} ${m.name ?? ""}`.toLowerCase().includes(q))
+      .filter((m) => (!scoped || scopedKeys.includes(`${m.provider}/${m.id}`)) && (!onlyConfigured || providers.includes(m.provider)) && `${m.provider}/${m.id} ${m.name ?? ""}`.toLowerCase().includes(q))
       .slice(0, 200);
-  }, [models, query, onlyConfigured, providers]);
+  }, [models, query, onlyConfigured, providers, scoped, scopedKeys]);
   return (
     <Modal title="Select model" onClose={onClose}>
       <div className="mb-3 flex items-center gap-2">
         <input autoFocus className="bh-input" placeholder="Search models…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {scopedKeys.length ? <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted" title="Alt+S"><input type="checkbox" checked={scoped} onChange={(e) => setScoped(e.target.checked)} /> scoped</label> : null}
         <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted"><input type="checkbox" checked={onlyConfigured} onChange={(e) => setOnlyConfigured(e.target.checked)} /> signed in</label>
       </div>
       {!models ? <div className="text-muted">Loading…</div> : null}

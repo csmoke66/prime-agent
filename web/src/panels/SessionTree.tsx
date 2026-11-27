@@ -29,6 +29,7 @@ export function TreePanel({ activeSessionId, onClose }: { activeSessionId: strin
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [target, setTarget] = useState<string | null>(null);
   const [labelFor, setLabelFor] = useState<string | null>(null);
+  const [labelTimes, setLabelTimes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,6 +69,7 @@ export function TreePanel({ activeSessionId, onClose }: { activeSessionId: strin
       <div className="flex flex-col gap-3">
         <Tabs tabs={FILTER_MODES.map((m) => ({ id: m, label: m }))} active={mode} onChange={setMode} />
         <SearchInput value={search} onChange={setSearch} placeholder="Filter entries…" autoFocus />
+        <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={labelTimes} onChange={(e) => setLabelTimes(e.target.checked)} /> Show label timestamps</label>
         <ErrorLine>{tree.error || error}</ErrorLine>
         {tree.loading && <Spinner label="Loading tree" />}
         {!tree.loading && rows.length === 0 && <Empty title="No entries to show" hint="Try another filter." />}
@@ -94,7 +96,7 @@ export function TreePanel({ activeSessionId, onClose }: { activeSessionId: strin
                   >
                     {describeEntry(entry)}
                   </button>
-                  {node.node.label && <Badge tone="primary">{node.node.label}</Badge>}
+                  {node.node.label && <Badge tone="primary">{node.node.label}{labelTimes && node.node.labelTimestamp ? ` · ${relativeTime(node.node.labelTimestamp)}` : ""}</Badge>}
                   {isLeaf && <Badge tone="success">current</Badge>}
                   <span className="hidden text-xs text-dim sm:inline">{relativeTime(node.timestamp)}</span>
                   <button className="bh-btn px-2! py-0.5! text-xs opacity-0 focus:opacity-100 group-hover:opacity-100" onClick={() => setLabelFor(node.id)}>

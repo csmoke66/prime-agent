@@ -138,6 +138,12 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
                   <span className="min-w-0 flex-1 truncate">{sessionTitle(k.entry)}</span>
                   <span className="shrink-0 text-dim">{activityLabel(k.entry)}</span>
                 </button>
+                {typeof k.entry.summary.spawnCode === "string" && k.entry.summary.spawnCode.trim() ? (
+                  <details className="pl-4 text-dim">
+                    <summary className="cursor-pointer text-[11px]">Spawn program</summary>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">{k.entry.summary.spawnCode}</pre>
+                  </details>
+                ) : null}
               </li>
             ))}
           </ul>

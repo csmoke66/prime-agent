@@ -432,6 +432,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "mcp", description: "Open the MCP connections menu", kind: "panel" },
   { name: "plugins", description: "Browse and connect external services", argumentHint: "[search]", kind: "panel" },
   { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", argumentHint: '[--name "session name" --] [prompt]', aliases: ["clear"], kind: "panel" },
+  { name: "edit_context", description: "Edit the model-visible context as JSON", kind: "panel" },
   { name: "compact", description: "Compact the session context; optional instructions focus the summary", argumentHint: "[instructions]", kind: "session" },
   { name: "refine", description: "Refine continual harness prompt notes, skills, subagents, and memory", kind: "session" },
   { name: "harness", description: "Browse and delete local and global harness entries", kind: "panel" },

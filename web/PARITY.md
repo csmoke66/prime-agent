@@ -64,6 +64,54 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [-] Alt-screen, mouse tracking, OSC52/OSC133, terminal image protocols, suspend (Ctrl+Z), external editor, terminal selection, `/quit`
 
 
+
+## Re-audit: every TUI slash command (`bh-types` registry)
+Verified = opened/run in headless Chromium against an isolated daemon (`BEEHIVE_DAEMON_SOCKET`, `BEEHIVE_CODING_AGENT_DIR`); other rows were checked in code and unit tests only.
+
+| Command | Web | Status |
+| --- | --- | --- |
+| `/settings` | Settings modal | verified |
+| `/export` | daemon writes into export dir, browser downloads HTML/JSONL | verified (JSONL download) |
+| `/import` | upload + `import_jsonl` | verified (panel opens) |
+| `/share` | export HTML, `WebHost::share_gist` (needs `gh`) | verified (panel opens); gist creation needs host `gh` |
+| `/copy`, `/btw`, `/session`, `/cost`, `/system-prompt`, `/context`, `/logs` | chat view | code + unit tests; `/logs` verified |
+| `/name`, `/rename` | inline rename dialog / direct rename | verified |
+| `/changelog`, `/hotkeys` | info panels | verified |
+| `/fork`, `/clone`, `/tree` | fork picker, clone, tree | verified (open; empty session) |
+| `/login`, `/logout` | provider list + flow runner (API key / OAuth link + paste) | verified (list); OAuth needs a real provider |
+| `/mcp`, `/plugins` | services panel with login/token flows | verified |
+| `/new`, `/clear` | new-session dialog | verified (created a session) |
+| `/edit_context` | JSON editor over `get/set_session_context` (added) | verified (opens, loads) |
+| `/compact`, `/refine`, `/goal` | sent as session commands | code |
+| `/harness` | browser + delete via `WebHost` | verified (opens) |
+| `/run` | workflows panel | verified |
+| `/heartbeat`, `/heartbeats` | heartbeat panel | verified |
+| `/resume` | go to sessions / resume by id or path | code |
+| `/reload` | `reload` command + toast | code |
+| `/quit` | [-] closing the tab; the daemon keeps running |  |
+
+## Re-audit: keybinding actions (`definitions.rs`)
+| Action | Web |
+| --- | --- |
+| `app.interrupt`, `app.input.clear` (Esc) | done |
+| `app.clear` (Ctrl+C), `app.exit` (Ctrl+D) | [-] browser copy/close shortcuts; abort is Esc / Stop button |
+| `app.suspend`, `app.editor.external` | [-] no terminal job control or `$EDITOR` in a browser |
+| `app.model.select`, `cycleForward/Backward` | done (Ctrl+L, Alt+M, Shift+Alt+M) |
+| `app.model.toggleScope` (Alt+S) | done (scoped checkbox + Alt+S in the model picker) |
+| `app.tools.expand` (Ctrl+O), `app.subagents.focus` (Alt+A), `app.prompt.stash` (Ctrl+S) | done |
+| `app.message.followUp/navigate*/move*` | done |
+| `app.clipboard.pasteImage` | done (paste event); `copyLoginUrl`: link is a clickable anchor with copy button |
+| `app.session.new/tree/fork/resume` | done via palette and sidebar (no default keys) |
+| `app.agents.*` back/open/reply/new/delete/rename/group/searchContent | done in the sidebar (see Hotkeys panel) |
+| `app.agents.program` | done: per-subagent "Spawn program" disclosure in the inspector (added) |
+| `app.agents.expand` | done: sidebar caret |
+| `app.modal.back/open` | Esc closes; click opens |
+| `app.tree.*` fold/filters/label | done (tabs, fold carets, Label button); label timestamps toggle added |
+| `tui.editor.*`, `tui.input.*`, `tui.select.*`, `tui.viewport.*` | native `<textarea>`, list focus and page scroll |
+
+## Panels / overlays
+Model picker, thinking menu, session options, tree, fork, settings, MCP/plugins, auth flow runner, harness, heartbeats, workflows, export/import/share, hotkeys, changelog, logs, context editor, rename, new session, onboarding: all present. The `app.agents` program view, scope toggle and context editor were added in this pass.
+
 ## Known limitations (report)
 - Provider auth, MCP login, the harness browser and `/share` go through the `WebHost` trait (`bh-web`), implemented in `bh-cli/src/web_host.rs`. `/share` needs `gh` logged in on the host. OAuth callbacks that listen on localhost need the browser on the same machine as `beehive web`.
 - Direct worker transport (TUI fast path) is not used; everything goes through the supervisor connection.

@@ -7,10 +7,13 @@ import { fmtBytes } from "./ui/format";
 import { rest } from "./api";
 import { useAsync } from "./useAsync";
 import { HOTKEYS } from "./hotkeys";
+import { keyLabel, loadKeybindings } from "../app/keybindings";
 
 export function HotkeysPanel({ onClose }: { onClose: () => void }) {
+  const loaded = useAsync(loadKeybindings, []);
+  if (loaded.loading) return null;
   return (
-    <Modal title="Keyboard shortcuts" size="lg" onClose={onClose}>
+    <Modal title="Keyboard shortcuts" size="lg" subtitle="Bindings follow your keybindings.json." onClose={onClose}>
       <div className="grid gap-5 sm:grid-cols-2">
         {HOTKEYS.map((group) => (
           <section key={group.title}>
@@ -19,7 +22,7 @@ export function HotkeysPanel({ onClose }: { onClose: () => void }) {
               {group.keys.map((k) => (
                 <div key={k.keys + k.action} className="flex items-baseline justify-between gap-3 text-sm">
                   <dt className="text-muted">{k.action}</dt>
-                  <dd className="shrink-0"><kbd className="bh-kbd">{k.keys}</kbd></dd>
+                  <dd className="shrink-0"><kbd className="bh-kbd">{k.id ? keyLabel(k.id) : k.keys}</kbd></dd>
                 </div>
               ))}
             </dl>

@@ -4,6 +4,9 @@ mod api;
 mod assets;
 mod auth;
 mod bridge;
+mod flows;
+mod host;
+mod host_api;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,8 +15,13 @@ use anyhow::Result;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{Extension, Router};
 use tokio::net::TcpListener;
+
+pub use host::{
+    AuthMode, AuthType, FlowOutcome, FlowRequest, FlowUi, ProviderRow, PromptInput, ShareLinks,
+    WebHost,
+};
 
 /// Everything the server needs from the launching command.
 #[derive(Debug, Clone)]
@@ -35,8 +43,15 @@ pub(crate) struct AppState {
     pub(crate) scratch: PathBuf,
 }
 
-/// The full application router: auth gate, bridge, REST helpers, and embedded assets.
-pub fn router(options: WebOptions) -> Router {
+/// The host plus the flows it is running, shared by the host-backed handlers.
+pub(crate) struct HostState<H> {
+    pub(crate) host: H,
+    pub(crate) flows: flows::Flows,
+}
+
+/// The full application router: auth gate, bridge, REST helpers, host-backed endpoints, and
+/// embedded assets.
+pub fn router<H: WebHost>(options: WebOptions, host: H) -> Router {
     let scratch = std::env::temp_dir().join(format!("beehive-web-{}", std::process::id()));
     let state = Arc::new(AppState { options, scratch });
     Router::new()
@@ -56,6 +71,19 @@ pub fn router(options: WebOptions) -> Router {
         .route("/api/changelog", get(api::changelog))
         .route("/api/logs", get(api::list_logs))
         .route("/api/logs/{name}", get(api::read_log))
+        .route("/api/auth/providers", get(host_api::providers::<H>))
+        .route("/api/auth/flows", post(flows::start::<H>))
+        .route("/api/auth/flows/{id}", get(flows::poll::<H>).delete(flows::cancel::<H>))
+        .route("/api/auth/flows/{id}/answer", post(flows::answer::<H>))
+        .route(
+            "/api/harness",
+            get(host_api::harness::<H>).delete(host_api::delete_harness::<H>),
+        )
+        .route("/api/share", post(host_api::share::<H>))
+        .layer(Extension(Arc::new(HostState {
+            host,
+            flows: flows::Flows::default(),
+        })))
         .fallback(assets::serve)
         .layer(middleware::from_fn_with_state(
             Arc::clone(&state),
@@ -69,7 +97,11 @@ pub fn router(options: WebOptions) -> Router {
 /// # Errors
 ///
 /// Returns an error when the server loop fails.
-pub async fn serve(listener: TcpListener, options: WebOptions) -> Result<()> {
-    axum::serve(listener, router(options)).await?;
+pub async fn serve<H: WebHost>(
+    listener: TcpListener,
+    options: WebOptions,
+    host: H,
+) -> Result<()> {
+    axum::serve(listener, router(options, host)).await?;
     Ok(())
 }

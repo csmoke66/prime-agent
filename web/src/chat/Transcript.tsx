@@ -1,7 +1,8 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Markdown } from "./markdown";
+import { AgentMail } from "./AgentMail";
 import { Images, ToolCard, resultView } from "./tools";
-import { assistantText, formatDuration, parseSkillBlock, resultsById, textOfContent, type Block, type Msg, type SessionData } from "./model";
+import { assistantText, formatDuration, counterpartName, parseSkillBlock, resultsById, textOfContent, type Block, type Msg, type SessionData } from "./model";
 import { abortRetry, loadOlder, useChat, type DetailLevel } from "./store";
 
 const keys = new WeakMap<object, number>();
@@ -129,16 +130,11 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
     return <StatusRow kind={type === "model_prompt_error" || type === "skill_problems" || d.outcome === "skipped" ? "warning" : ok || type === "session_slash_command_result" ? "info" : "error"}>{text}</StatusRow>;
   }
   if (type === "agent_message" || type === "rlm_child_failure" || type === "rlm_child_terminal_notice") {
-    const from = d.from ?? {};
-    const who = from.sessionName ?? from.activeSessionId ?? d.childName ?? "agent";
-    return (
-      <div className="my-1 ml-[1.15rem] rounded border-l-2 border-info/60 bg-panel px-2 py-1 text-[13px]">
-        <div className="mb-0.5 text-[10px] uppercase tracking-wider text-info">Agent message · {String(who)}</div>
-        <Markdown text={String(d.message ?? text)} />
-      </div>
-    );
+    const child = type === "agent_message" ? undefined : (d.sessionName as string | undefined) ?? /child:([^\]\s]+)\]/.exec(text)?.[1];
+    const who = child ?? counterpartName(d.from);
+    return <AgentMail direction="received" who={who} message={type === "agent_message" ? String(d.message ?? text) : text} />;
   }
-  if (type === "inbox_notice") return <StatusRow kind="info">{text}</StatusRow>;
+  if (type === "inbox_notice") return <StatusRow kind="info">{typeof d.sender === "string" ? `${d.sender} (${d.class ?? "inbox"}): ` : ""}{text}</StatusRow>;
   if (type === "async_bash_completion")
     return (
       <Collapsible title={<>background shell finished{d.exitCode != null ? ` (exit ${d.exitCode})` : ""}</>} open={detail >= 2}>

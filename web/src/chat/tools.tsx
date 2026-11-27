@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Code } from "./markdown";
-import { textOfContent, type Block, type ToolExec } from "./model";
+import { sentMessages, textOfContent, type Block, type ToolExec } from "./model";
+import { AgentMail } from "./AgentMail";
 import type { DetailLevel } from "./store";
 
 export interface ResultView {
@@ -164,6 +165,8 @@ function PythonCard({ args, view, state, detail }: { args: any; view: ResultView
     return { added: acc.added + s.added, removed: acc.removed + s.removed };
   }, { added: 0, removed: 0 });
   const duration = fmtMs(details.durationMs);
+  const mail = sentMessages(details);
+  const isReceipt = mail.some((m) => m.id && /^\{["']id["']: ["']/.test(text.replace(/^["']/, "")) && text.includes(m.id));
   const showDiffs = detail >= 1;
   return (
     <>
@@ -182,11 +185,12 @@ function PythonCard({ args, view, state, detail }: { args: any; view: ResultView
             {Array.isArray(details.error.traceback) ? "\n" + details.error.traceback.join("\n") : ""}
           </pre>
         ) : (
-          <OutputBlock text={text} error={state === "error"} />
+          <OutputBlock text={isReceipt ? "" : text} error={state === "error"} />
         )}
         <Images blocks={view?.content ?? []} />
       </Frame>
       {diffs.length ? <DiffSummary diffs={diffs} totals={totals} expanded={showDiffs} /> : null}
+      {mail.map((m, i) => <AgentMail key={m.id ?? i} direction={m.direction} who={m.who} message={m.message} />)}
     </>
   );
 }

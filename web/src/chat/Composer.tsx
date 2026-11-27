@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../wire";
-import { BUILTIN_COMMANDS, filterCommands, parseBang, pathTokenAt, type SlashCommand } from "./model";
-import { abort, abortBash, runBash, sendPrompt, toast, useChat, type ImageAttachment, type SendMode } from "./store";
+import { rest } from "../panels/api";
+import { BUILTIN_COMMANDS, filterCommands, parseBang, pathTokenAt, queueOf, skillSourceTag, spellPathToken, type SlashCommand } from "./model";
+import { abort, abortBash, mutateQueued, runBash, sendPrompt, toast, useChat, type ImageAttachment, type SendMode } from "./store";
 import { runSlash } from "./slash";
+import { loadKeybindings, matches } from "../app/keybindings";
 
 const HISTORY_KEY = "bh:prompt-history";
 const stashKey = (id: string) => `bh:stash:${id}`;
@@ -55,7 +56,10 @@ export function Composer() {
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const historyIndex = useRef<number | null>(null);
+  useEffect(() => { void loadKeybindings(); }, []);
   const draftBeforeHistory = useRef("");
+  /** The parked message being edited (Alt+Up), with the draft to restore afterwards. */
+  const browse = useRef<{ lane: "steering" | "followUp"; index: number; text: string; draft: string } | null>(null);
   const streaming = !!state.isStreaming;
   const bash = parseBang(text) ?? (text.trimStart().startsWith("!") ? { command: "", excludeFromContext: false } : null);
 
@@ -89,7 +93,7 @@ export function Composer() {
 
   // Autocomplete: slash commands at the start of the draft, `@path` tokens anywhere.
   const skillCommands = useMemo<SlashCommand[]>(
-    () => commands.filter((c) => c.source === "skill").map((c) => ({ name: String(c.name), description: String(c.description ?? "Skill"), argumentHint: "<request>", kind: "session" as const })),
+    () => commands.filter((c) => c.source === "skill").map((c) => ({ name: String(c.name), description: String(c.description ?? "Skill"), argumentHint: "your request", kind: "session" as const, sourceTag: skillSourceTag(c.sourceInfo) })),
     [commands],
   );
   useEffect(() => {
@@ -97,7 +101,7 @@ export function Composer() {
     const slash = /^\/([^\s]*)$/.exec(text.slice(0, caret));
     if (slash && caret === text.length) {
       const list = filterCommands([...BUILTIN_COMMANDS, ...skillCommands], slash[1]).slice(0, 8);
-      setSuggestions(list.map((c) => ({ label: `/${c.name}`, detail: `${c.argumentHint ? c.argumentHint + " — " : ""}${c.description}`, insert: `/${c.name}${c.argumentHint ? " " : ""}`, from: 0, to: text.length })));
+      setSuggestions(list.map((c) => ({ label: `/${c.name}`, detail: `${c.argumentHint ? c.argumentHint + " — " : ""}${c.description}${c.sourceTag ? ` #${c.sourceTag}` : ""}`, insert: `/${c.name}${c.argumentHint ? " " : ""}`, from: 0, to: text.length })));
       setSelected(0);
       return;
     }
@@ -107,10 +111,10 @@ export function Composer() {
     const timer = window.setTimeout(async () => {
       try {
         const cwd = useChat.getState().data.state.cwd ?? "";
-        const result = await api<any>(`/files?cwd=${encodeURIComponent(cwd)}&prefix=${encodeURIComponent(token.query)}`);
-        const files: string[] = (Array.isArray(result) ? result : (result.files ?? result.entries ?? [])).map((f: any) => (typeof f === "string" ? f : f.path ?? f.name));
+        const mode = token.query.includes("/") || token.query.startsWith(".") || token.query.startsWith("~") ? "prefix" : "search";
+        const result = await rest.files(cwd, token.query, mode);
         if (cancelled) return;
-        setSuggestions(files.slice(0, 8).map((f) => ({ label: f, insert: `@${f}${f.endsWith("/") ? "" : " "}`, from: token.start, to: caret })));
+        setSuggestions(result.entries.slice(0, 8).map(({ value }) => ({ label: value, insert: spellPathToken(value, token.quote), from: token.start, to: caret })));
         setSelected(0);
       } catch {
         if (!cancelled) setSuggestions([]);
@@ -144,7 +148,53 @@ export function Composer() {
     }
   };
 
+  const parked = () => {
+    const queue = queueOf(state);
+    return [
+      ...queue.steering.map((text, index) => ({ lane: "steering" as const, index, text })),
+      ...queue.followUps.map((text, index) => ({ lane: "followUp" as const, index, text })),
+    ];
+  };
+
+  const browseQueue = (direction: -1 | 1) => {
+    const items = parked();
+    const current = browse.current;
+    const flat = current ? items.findIndex((i) => i.lane === current.lane && i.index === current.index) : items.length;
+    const next = flat + direction;
+    if (!current && direction === 1) return;
+    if (next >= items.length || (current && flat < 0)) {
+      if (current) setDraft(current.draft);
+      browse.current = null;
+      return;
+    }
+    if (next < 0) return;
+    const item = items[next];
+    if (!current) toast("Editing a queued message — Enter saves it, Esc cancels");
+    browse.current = { ...item, draft: current?.draft ?? text };
+    setDraft(item.text);
+  };
+
+  const moveQueued = async (direction: -1 | 1) => {
+    const current = browse.current;
+    if (!current) return;
+    const index = current.index + direction;
+    const lane = queueOf(state)[current.lane === "steering" ? "steering" : "followUps"];
+    if (index < 0 || index >= lane.length) return;
+    if ((await mutateQueued(current.lane, current.index, current.text, { type: "move", direction })) === "applied") browse.current = { ...current, index };
+  };
+
+  const saveQueued = async (): Promise<void> => {
+    const current = browse.current;
+    if (!current) return;
+    const value = text.trim();
+    const status = await mutateQueued(current.lane, current.index, current.text, value ? { type: "replace", text: value, lane: "steering" } : { type: "delete" });
+    if (status !== "applied") return;
+    browse.current = null;
+    setDraft(current.draft);
+  };
+
   const submit = async (mode: SendMode) => {
+    if (browse.current) return saveQueued();
     const value = text.trim();
     if (!value && !images.length) return;
     const attached = images;
@@ -215,17 +265,23 @@ export function Composer() {
       }
       if (event.key === "Escape") { event.preventDefault(); return setDismissed(true); }
     }
+    if (matches(event.nativeEvent, "app.message.navigateOlder")) { event.preventDefault(); return browseQueue(-1); }
+    if (matches(event.nativeEvent, "app.message.navigateNewer")) { event.preventDefault(); return browseQueue(1); }
+    if (matches(event.nativeEvent, "app.message.moveEarlier")) { event.preventDefault(); return void moveQueued(-1); }
+    if (matches(event.nativeEvent, "app.message.moveLater")) { event.preventDefault(); return void moveQueued(1); }
+    if (matches(event.nativeEvent, "app.message.followUp") && !browse.current) { event.preventDefault(); return void submit("followUp"); }
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       if (event.altKey || event.ctrlKey || event.metaKey) { event.preventDefault(); return void submit("followUp"); }
       if (!event.shiftKey) { event.preventDefault(); return void submit("steer"); }
     }
     if (event.key === "Escape") {
+      if (browse.current) { setDraft(browse.current.draft); browse.current = null; return; }
       if (bash && state.isBashRunning) return void abortBash();
       if (streaming) return void abort();
       if (text || images.length) { setText(""); setImages([]); }
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); return stash(); }
+    if (matches(event.nativeEvent, "app.prompt.stash")) { event.preventDefault(); return stash(); }
     if (event.key === "ArrowUp" && !event.shiftKey && !event.altKey && (text === "" || historyIndex.current !== null) && area.current?.selectionStart === 0 && browseHistory(-1)) return event.preventDefault();
     if (event.key === "ArrowDown" && !event.shiftKey && !event.altKey && historyIndex.current !== null && browseHistory(1)) return event.preventDefault();
     if (event.key === "c" && event.ctrlKey && streaming && area.current?.selectionStart === area.current?.selectionEnd) { event.preventDefault(); void abort(); }

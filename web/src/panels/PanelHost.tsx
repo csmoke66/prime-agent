@@ -11,7 +11,9 @@ import { McpPanel } from "./McpPanel";
 import { HarnessPanel } from "./HarnessPanel";
 import { AuthPanel } from "./AuthPanel";
 import { HotkeysPanel, ChangelogPanel, LogsPanel } from "./InfoPanels";
-import { ExportPanel, ImportPanel, SharePanel } from "./SharePanels";
+import { ExportPanel, ImportPanel, SharePanel, exportToPath, importFromPath } from "./SharePanels";
+import { resetKeybindings } from "../app/keybindings";
+import { ContextEditPanel } from "./ContextEditPanel";
 import { HeartbeatsPanel } from "./HeartbeatsPanel";
 import { WorkflowsPanel } from "./WorkflowsPanel";
 import { InlineRename } from "./InlineRename";
@@ -20,7 +22,7 @@ import { createSession, renameLive } from "./sessionActions";
 import { rest } from "./api";
 import { useAsync } from "./useAsync";
 
-const NEEDS_SESSION = new Set<PanelName>(["tree", "fork", "export", "share", "workflows", "rename"]);
+const NEEDS_SESSION = new Set<PanelName>(["tree", "fork", "edit_context", "export", "share", "workflows", "rename"]);
 const currentSession = (): string | undefined => {
   const route = parseRoute(location.hash);
   return route.name === "session" ? route.activeSessionId : undefined;
@@ -38,8 +40,18 @@ function runPanelSlash(name: string, args: string, activeSessionId?: string): vo
       if (!args.trim()) return navigate({ name: "sessions" });
       void resumeBySelector(args.trim());
       return;
+    case "export":
+      if (!session) return void toast.info("Open a session first");
+      if (!args.trim()) return openPanel("export", { args, activeSessionId: session });
+      void exportToPath(session, args.trim()).catch((e) => toast.error(errorText(e)));
+      return;
+    case "import":
+      if (!args.trim()) return openPanel("import", { args });
+      void importFromPath(args.trim()).catch((e) => toast.error(errorText(e)));
+      return;
     case "reload":
       if (!session) return void toast.info("Open a session first");
+      resetKeybindings();
       wire.call({ type: "reload", activeSessionId: session }).then(() => toast.success("Reloaded keybindings, skills, prompts"), (e) => toast.error(`Reload failed: ${errorText(e)}`));
       return;
     case "name":
@@ -131,12 +143,13 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "changelog": return <ChangelogPanel onClose={onClose} />;
     case "logs": return <LogsPanel onClose={onClose} />;
     case "export": return <ExportPanel activeSessionId={activeSessionId!} onClose={onClose} />;
+    case "edit_context": return <ContextEditPanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "import": return <ImportPanel onClose={onClose} />;
     case "share": return <SharePanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "heartbeats": return <HeartbeatsPanel activeSessionId={activeSessionId} onClose={onClose} />;
     case "workflows": return <WorkflowsPanel activeSessionId={activeSessionId!} initial={args} onClose={onClose} />;
     case "rename": return <RenameDialog activeSessionId={activeSessionId!} onClose={onClose} />;
-    case "onboarding": return <AuthPanel mode="login" onboarding onClose={onClose} />;
+    case "onboarding": return <AuthPanel mode="login" onboarding onClose={() => { void markOnboardingDone(); onClose(); }} />;
     case "messages": return null;
   }
 }
@@ -167,14 +180,20 @@ function RenameDialog({ activeSessionId, onClose }: { activeSessionId: string; o
   );
 }
 
-/** First-run guide: shown once per tab when no provider is configured. */
+/** Like the TUI, a finished onboarding (a provider is now configured) is remembered in `settings.json`; leaving early is not. */
+async function markOnboardingDone(): Promise<void> {
+  const { providers } = await rest.authProviders("login");
+  if (providers.some((p) => p.configured)) await rest.saveSettings({ onboardingShown: true });
+}
+
+/** First-run guide: shown when onboarding never finished and no provider is configured; once per tab. */
 function Onboarding() {
   useEffect(() => {
     if (sessionStorage.getItem("bh.onboardingShown") === "1") return;
     let live = true;
-    rest.authProviders().then(
-      ({ providers }) => {
-        if (!live || providers.some((p) => p.configured)) return;
+    Promise.all([rest.settings(), rest.authProviders("login")]).then(
+      ([settings, { providers }]) => {
+        if (!live || settings.onboardingShown === true || providers.some((p) => p.configured)) return;
         sessionStorage.setItem("bh.onboardingShown", "1");
         openPanel("onboarding");
       },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
+import { spellPathToken, applySessionEvent, emptySession, filterCommands, fromSnapshot, parseBang, parseSkillBlock, pathTokenAt, queueOf, sequenceVerdict, BUILTIN_COMMANDS } from "./model";
 
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 
@@ -60,7 +60,10 @@ describe("parsers", () => {
   it("parses bash prefixes and @path tokens", () => {
     expect(parseBang("!!ls -l")).toEqual({ command: "ls -l", excludeFromContext: true });
     expect(parseBang("! pwd")).toEqual({ command: "pwd", excludeFromContext: false });
-    expect(pathTokenAt("see @src/ma", 11)).toEqual({ start: 4, query: "src/ma" });
+    expect(pathTokenAt("see @src/ma", 11)).toEqual({ start: 4, query: "src/ma", quote: "" });
+    expect(pathTokenAt('see @"my di', 11)).toEqual({ start: 4, query: "my di", quote: '"' });
+    expect(spellPathToken("my dir/", "")).toBe('@"my dir/');
+    expect(spellPathToken("a b.txt", "'")).toBe("@'a b.txt' ");
     expect(pathTokenAt("mail a@b", 8)).toBeNull();
   });
   it("ranks slash commands by prefix", () => {
@@ -70,5 +73,17 @@ describe("parsers", () => {
     const state = { sessionActions: { steering: ["a"], followUps: ["b", "c"], active: { kind: "turn", phase: "preparing", label: "x" } } };
     expect(queueOf(state)).toEqual({ steering: ["a"], followUps: ["b", "c"], starting: "x" });
     expect(fromSnapshot({ state: { isStreaming: true }, messages: [assistant("a")], lastEventSequence: 4 }).lastSequence).toBe(4);
+  });
+});
+
+import { counterpartName as _counterpartName, sentMessages as _sentMessages } from "./model";
+describe("agent message rows", () => {
+  it("names the counterpart like the TUI", () => {
+    expect(_counterpartName({ sessionName: " ", activeSessionId: "a1" })).toBe("a1");
+    expect(_counterpartName(undefined)).toBe("unknown");
+  });
+  it("turns python receipts into sent and queued rows", () => {
+    const rows = _sentMessages({ sentAgentMessages: [{ id: "m1", message: "Ping", deliveryStatus: "delivered", target: { sessionName: "Worker" } }, { message: "Later", deliveryStatus: "queued", target: { sessionId: "s" } }, { id: "bad" }] });
+    expect(rows).toEqual([{ direction: "sent", who: "Worker", message: "Ping", id: "m1" }, { direction: "queued", who: "s", message: "Later", id: undefined }]);
   });
 });

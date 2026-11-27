@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { wire } from "../wire";
 import { Modal } from "./ui/Modal";
 import { Badge, ConfirmButton, Empty, ErrorLine, SearchInput, Spinner, type Tone } from "./ui/bits";
 import { fuzzyFilter } from "./ui/format";
-import { rest } from "./api";
+import { type FlowRequest } from "./api";
+import { FlowRunner } from "./FlowRunner";
 import { useAsync } from "./useAsync";
 import { toast, errorText } from "./toasts";
 
@@ -27,7 +28,7 @@ export function McpPanel({ activeSessionId, initialSearch, onClose }: { activeSe
   const [search, setSearch] = useState(initialSearch);
   const data = useAsync(() => wire.call<Data>({ type: "get_mcp_connections", activeSessionId }), [activeSessionId]);
   const [busy, setBusy] = useState("");
-  const [secret, setSecret] = useState<{ kind: "token" | "key"; target: string; label: string } | null>(null);
+  const [flow, setFlow] = useState<{ request: FlowRequest; label: string } | null>(null);
   const [error, setError] = useState("");
 
   const services: Service[] =
@@ -49,12 +50,13 @@ export function McpPanel({ activeSessionId, initialSearch, onClose }: { activeSe
     }
   };
 
-  const login = (s: Service) =>
-    run(s.serviceId, async () => {
-      const result = await rest.mcpAuth("login", s.serviceId);
-      if (result.authUrl) window.open(result.authUrl, "_blank", "noopener");
-      return result.status;
-    });
+  const flowDone = useCallback(
+    (outcome: { kind: string; message?: string }) => {
+      if (outcome.kind === "status") toast.success(outcome.message ?? "Done");
+      data.reload();
+    },
+    [data.reload],
+  );
 
   return (
     <Modal title="Services & MCP" subtitle="Connect external services for agents to use." size="lg" onClose={onClose}>
@@ -62,18 +64,11 @@ export function McpPanel({ activeSessionId, initialSearch, onClose }: { activeSe
         <SearchInput value={search} onChange={setSearch} placeholder="Search services…" autoFocus />
         <ErrorLine>{data.error || error}</ErrorLine>
         {data.loading && <Spinner label="Loading services" />}
-        {secret && (
-          <SecretForm
-            label={secret.label}
-            kind={secret.kind}
-            onCancel={() => setSecret(null)}
-            onSubmit={(value) =>
-              run(secret.target, async () => {
-                if (secret.kind === "token") await wire.call({ type: "set_mcp_static_token", activeSessionId, server: secret.target, token: value });
-                else return (await rest.mcpAuth("key", secret.target, value)).status;
-              }).then(() => setSecret(null))
-            }
-          />
+        {flow && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-sm font-medium">{flow.label}<button className="bh-btn" onClick={() => setFlow(null)}>Close</button></div>
+            <FlowRunner key={JSON.stringify(flow.request)} request={flow.request} onFinished={flowDone} />
+          </div>
         )}
         {shown.map((s) => {
           const status = STATUS[s.connectionStatus];
@@ -90,8 +85,8 @@ export function McpPanel({ activeSessionId, initialSearch, onClose }: { activeSe
                 {connected && (
                   <ConfirmButton label="Disconnect" confirmLabel="Disconnect?" disabled={busy === s.serviceId} onConfirm={() => void run(s.serviceId, async () => void (await wire.call({ type: "remove_mcp_connection", activeSessionId, server: s.serviceId })))} />
                 )}
-                {!connected && s.pasteToken && <button className="bh-btn" onClick={() => setSecret({ kind: "token", target: s.serviceId, label: s.label })}>Paste token</button>}
-                {!connected && !s.pasteToken && s.connectable !== false && <button className="bh-btn bh-btn-primary" disabled={busy === s.serviceId} onClick={() => void login(s)}>{busy === s.serviceId ? "Connecting…" : "Connect"}</button>}
+                {!connected && s.pasteToken && <button className="bh-btn" onClick={() => setFlow({ request: { kind: "mcpPaste", server: s.serviceId }, label: s.label || s.serviceId })}>Paste token</button>}
+                {!connected && !s.pasteToken && s.connectable !== false && <button className="bh-btn bh-btn-primary" onClick={() => setFlow({ request: { kind: "mcpLogin", server: s.serviceId }, label: s.label || s.serviceId })}>Connect</button>}
                 {s.docsUrl && <a className="bh-btn" href={s.docsUrl} target="_blank" rel="noreferrer">Docs</a>}
               </div>
             </div>
@@ -105,26 +100,12 @@ export function McpPanel({ activeSessionId, initialSearch, onClose }: { activeSe
               <div key={c.id} className="bh-card flex items-center gap-3 px-3 py-2.5">
                 <span className="flex-1 text-sm font-medium">{c.label || c.id}</span>
                 <Badge tone={c.configured ? "success" : "neutral"}>{c.configured ? "Configured" : "Not configured"}</Badge>
-                <button className="bh-btn" onClick={() => setSecret({ kind: "key", target: c.id, label: c.label || c.id })}>{c.configured ? "Replace key" : "Add key"}</button>
+                <button className="bh-btn" onClick={() => setFlow({ request: { kind: "mcpKey", credential: c.id }, label: c.label || c.id })}>{c.configured ? "Replace key" : "Add key"}</button>
               </div>
             ))}
           </>
         )}
       </div>
     </Modal>
-  );
-}
-
-function SecretForm({ label, kind, onSubmit, onCancel }: { label: string; kind: "token" | "key"; onSubmit: (value: string) => Promise<void>; onCancel: () => void }) {
-  const [value, setValue] = useState("");
-  return (
-    <form className="bh-card flex flex-col gap-2 border-primary/50 p-3" onSubmit={(e) => { e.preventDefault(); if (value.trim()) void onSubmit(value.trim()); }}>
-      <label className="text-sm text-muted">{kind === "token" ? `Access token for ${label}` : `API key for ${label}`}</label>
-      <input className="bh-input font-mono" type="password" autoComplete="off" autoFocus value={value} onChange={(e) => setValue(e.target.value)} />
-      <div className="flex justify-end gap-2">
-        <button type="button" className="bh-btn" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="bh-btn bh-btn-primary" disabled={!value.trim()}>Save</button>
-      </div>
-    </form>
   );
 }

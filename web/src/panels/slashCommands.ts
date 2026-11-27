@@ -26,6 +26,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "mcp", description: "Open the MCP connections menu", owner: "panel" },
   { name: "plugins", description: "Browse and connect external services", hint: "[search]", owner: "panel" },
   { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", hint: '[--name "session name" --] [prompt]', aliases: ["clear"], owner: "panel" },
+  { name: "edit_context", description: "Edit the model-visible context as JSON", owner: "panel" },
   { name: "compact", description: "Compact the session context; optional instructions focus the summary", hint: "[instructions]", owner: "chat" },
   { name: "refine", description: "Refine continual harness prompt notes, skills, subagents, and memory", owner: "chat" },
   { name: "harness", description: "Browse and delete local and global harness entries", owner: "panel" },

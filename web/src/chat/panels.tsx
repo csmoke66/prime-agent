@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconDown, IconEdit, IconRestore, IconTarget, IconUp, IconX } from "../app/icons";
 import { Markdown } from "./markdown";
 import { queueOf, type SideTurn } from "./model";
+import { matches } from "../app/keybindings";
+import { clampLevel, orderModels, supportedLevels, type CatalogModel } from "./modelPicker";
+import { rest } from "../panels/api";
+import { useAsync } from "../panels/useAsync";
 import {
   abortAndSendQueued,
   clearQueue,
@@ -12,6 +16,7 @@ import {
   openInfo,
   sendPrompt,
   setModel,
+  setThinking,
   startSideQuestion,
   useChat,
 } from "./store";
@@ -58,31 +63,68 @@ export function ModelPicker({ onClose }: { onClose: () => void }) {
   const providers = useChat((s) => s.configuredProviders);
   const [query, setQuery] = useState("");
   const [onlyConfigured, setOnlyConfigured] = useState(true);
+  const [highlight, setHighlight] = useState(0);
+  const [navigated, setNavigated] = useState(false);
+  const [edited, setEdited] = useState<Record<string, string>>({});
+  const recent = useAsync(async () => (((await rest.settings()).recentModels ?? []) as string[]), []);
   useEffect(() => { void loadModels(); }, []);
   const current = state.model ?? {};
+  const scopedKeys = useMemo(() => ((state.scopedModels ?? []) as { model?: { provider?: string; id?: string } }[]).flatMap((e) => (e.model ? [`${e.model.provider}/${e.model.id}`] : [])), [state.scopedModels]);
+  const [scoped, setScoped] = useState(scopedKeys.length > 0);
+  useEffect(() => {
+    if (!scopedKeys.length) return;
+    const onKey = (e: KeyboardEvent) => { if (matches(e, "app.model.toggleScope")) { e.preventDefault(); setScoped((v) => !v); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scopedKeys.length]);
   const list = useMemo(() => {
     const q = query.toLowerCase();
-    return (models ?? [])
-      .filter((m) => (!onlyConfigured || providers.includes(m.provider)) && `${m.provider}/${m.id} ${m.name ?? ""}`.toLowerCase().includes(q))
-      .slice(0, 200);
-  }, [models, query, onlyConfigured, providers]);
+    const shown = (models ?? []).filter((m: CatalogModel) => (!scoped || scopedKeys.includes(`${m.provider}/${m.id}`)) && (!onlyConfigured || providers.includes(m.provider)) && `${m.provider}/${m.id} ${m.name ?? ""}`.toLowerCase().includes(q));
+    return orderModels(shown, current, recent.data ?? []).slice(0, 200);
+  }, [models, query, onlyConfigured, providers, scoped, scopedKeys, recent.data, current.id, current.provider]);
+  useEffect(() => { setHighlight(0); setNavigated(false); }, [query, scoped, onlyConfigured]);
+
+  const levelOf = (m: CatalogModel): string => {
+    const levels = supportedLevels(m);
+    return edited[`${m.provider}/${m.id}`] ?? clampLevel(levels, state.thinkingLevel ?? "off");
+  };
+  const choose = (m: CatalogModel) => {
+    const key = `${m.provider}/${m.id}`;
+    void setModel(m.provider, m.id).then(() => (edited[key] ? setThinking(edited[key]) : undefined));
+    onClose();
+  };
+  const stepLevel = (m: CatalogModel, delta: number) => {
+    const levels = supportedLevels(m);
+    const next = levels[Math.min(levels.length - 1, Math.max(0, levels.indexOf(levelOf(m)) + delta))];
+    setEdited({ ...edited, [`${m.provider}/${m.id}`]: next });
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const m = list[highlight];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setNavigated(true); setHighlight((h) => Math.min(list.length - 1, Math.max(0, h + (e.key === "ArrowDown" ? 1 : -1)))); }
+    else if (e.key === "Enter" && m) { e.preventDefault(); choose(m); }
+    else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && m && (query === "" || navigated)) { e.preventDefault(); stepLevel(m, e.key === "ArrowRight" ? 1 : -1); }
+  };
   return (
     <Modal title="Select model" onClose={onClose}>
+      <p className="mb-2 text-xs text-dim">↑/↓ choose, ←/→ thinking level, Enter applies.</p>
       <div className="mb-3 flex items-center gap-2">
-        <input autoFocus className="bh-input" placeholder="Search models…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input autoFocus className="bh-input" placeholder="Search models…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown} />
+        {scopedKeys.length ? <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted" title="Alt+S"><input type="checkbox" checked={scoped} onChange={(e) => setScoped(e.target.checked)} /> scoped</label> : null}
         <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted"><input type="checkbox" checked={onlyConfigured} onChange={(e) => setOnlyConfigured(e.target.checked)} /> signed in</label>
       </div>
       {!models ? <div className="text-muted">Loading…</div> : null}
       <ul className="space-y-0.5">
-        {list.map((m) => {
+        {list.map((m, i) => {
           const active = m.id === current.id && m.provider === current.provider;
+          const levels = supportedLevels(m);
           return (
             <li key={`${m.provider}/${m.id}`}>
-              <button className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-selected ${active ? "bg-selected" : ""}`} onClick={() => { void setModel(m.provider, m.id); onClose(); }}>
+              <button ref={(el) => { if (el && i === highlight) el.scrollIntoView({ block: "nearest" }); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-selected ${i === highlight ? "bg-selected" : ""}`} onMouseEnter={() => setHighlight(i)} onClick={() => choose(m)}>
                 <span className="w-24 shrink-0 truncate text-xs text-dim">{m.provider}</span>
                 <span className="min-w-0 flex-1 truncate">{m.name ?? m.id}</span>
-                {m.reasoning ? <span className="text-[11px] text-primary">reasoning</span> : null}
+                {levels.length > 1 ? <span className="text-[11px] text-primary" title="←/→ changes the thinking level">{levelOf(m)}</span> : null}
                 {m.contextWindow ? <span className="text-[11px] text-dim">{Math.round(m.contextWindow / 1000)}k</span> : null}
+                {m.cost && (m.cost.input || m.cost.output) ? <span className="text-[11px] text-dim">${m.cost.input ?? 0}/${m.cost.output ?? 0}</span> : null}
                 {active ? <span className="text-success">✓</span> : null}
               </button>
             </li>

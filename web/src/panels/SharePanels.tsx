@@ -7,13 +7,54 @@ import { rest } from "./api";
 import { createSession } from "./sessionActions";
 import { toast, errorText } from "./toasts";
 
+/** Have the daemon write the session into the export dir; returns the file name to download or share. */
+async function exportSession(activeSessionId: string, format: "html" | "jsonl"): Promise<string> {
+  const { exportDir } = await rest.info();
+  const name = `session-${Date.now()}.${format}`;
+  await wire.call({ type: format === "html" ? "export_html" : "export_jsonl", activeSessionId, outputPath: `${exportDir}/${name}` }, 120_000);
+  return name;
+}
+
+/** `/export <path>`: write the session on the host; `.jsonl` exports the raw session, anything else HTML. */
+export async function exportToPath(activeSessionId: string, path: string): Promise<void> {
+  const format = path.toLowerCase().endsWith(".jsonl") ? "export_jsonl" : "export_html";
+  const data = await wire.call<{ path?: string }>({ type: format, activeSessionId, outputPath: path }, 120_000);
+  toast.success(`Exported to ${data?.path ?? path}`);
+}
+
+/** Start a session in the server's directory and import a JSONL file from the host into it. */
+export async function importFromPath(inputPath: string): Promise<void> {
+  const info = await rest.info().catch(() => undefined);
+  const id = await createSession({ cwd: info?.cwd ?? "/" });
+  await wire.call({ type: "import_jsonl", activeSessionId: id, inputPath }, 120_000);
+  toast.success("Session imported");
+  navigate({ name: "session", activeSessionId: id });
+}
+
 /** `/export`: download the session as HTML or JSONL. */
 export function ExportPanel({ activeSessionId, onClose }: { activeSessionId: string; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const download = async (format: "html" | "jsonl") => {
+    setBusy(true);
+    setError("");
+    try {
+      const link = document.createElement("a");
+      link.href = rest.downloadUrl(await exportSession(activeSessionId, format));
+      link.download = "";
+      link.click();
+      onClose();
+    } catch (reason) {
+      setError(errorText(reason));
+      setBusy(false);
+    }
+  };
   return (
     <Modal title="Export session" subtitle="Downloads a copy to this browser." size="sm" onClose={onClose}>
       <div className="flex flex-col gap-2">
-        <a className="bh-btn justify-center" href={rest.exportUrl(activeSessionId, "html")} download onClick={onClose}>HTML (readable transcript)</a>
-        <a className="bh-btn justify-center" href={rest.exportUrl(activeSessionId, "jsonl")} download onClick={onClose}>JSONL (re-importable)</a>
+        <button className="bh-btn justify-center" disabled={busy} onClick={() => void download("html")}>HTML (readable transcript)</button>
+        <button className="bh-btn justify-center" disabled={busy} onClick={() => void download("jsonl")}>JSONL (re-importable)</button>
+        <ErrorLine>{error}</ErrorLine>
       </div>
     </Modal>
   );
@@ -31,11 +72,7 @@ export function ImportPanel({ onClose }: { onClose: () => void }) {
     setError("");
     try {
       const { path } = await rest.upload(file);
-      const info = await rest.info().catch(() => undefined);
-      const id = await createSession({ cwd: info?.cwd ?? "/" });
-      await wire.call({ type: "import_jsonl", activeSessionId: id, inputPath: path }, 120_000);
-      toast.success("Session imported");
-      navigate({ name: "session", activeSessionId: id });
+      await importFromPath(path);
       onClose();
     } catch (reason) {
       setError(errorText(reason));
@@ -70,7 +107,7 @@ export function SharePanel({ activeSessionId, onClose }: { activeSessionId: stri
   const start = async () => {
     setState({ busy: true, error: "" });
     try {
-      setState({ busy: false, error: "", result: await rest.share(activeSessionId) });
+      setState({ busy: false, error: "", result: await rest.share(await exportSession(activeSessionId, "html")) });
     } catch (reason) {
       setState({ busy: false, error: errorText(reason) });
     }

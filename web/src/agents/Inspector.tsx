@@ -131,7 +131,7 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
 
       {kids.length ? (
         <Section title="Subagents" right={<span className="font-normal normal-case tracking-normal">{kids.length}</span>}>
-          <ul className="space-y-0.5">
+          <ul className="space-y-0.5" data-activity-focus>
             {kids.map((k) => (
               <li key={k.entry.agentId} style={{ paddingLeft: (k.depth - (node?.depth ?? 0) - 1) * 10 }}>
                 <button className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-selected" onClick={() => void openEntry(k.entry, (id) => navigate({ name: "session", activeSessionId: id }))}>
@@ -139,6 +139,12 @@ export function Inspector({ activeSessionId }: { activeSessionId: string }) {
                   <span className="min-w-0 flex-1 truncate">{sessionTitle(k.entry)}</span>
                   <span className="shrink-0 text-dim">{activityLabel(k.entry)}</span>
                 </button>
+                {typeof k.entry.summary.spawnCode === "string" && k.entry.summary.spawnCode.trim() ? (
+                  <details className="pl-4 text-dim">
+                    <summary className="cursor-pointer text-[11px]">Spawn program</summary>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">{k.entry.summary.spawnCode}</pre>
+                  </details>
+                ) : null}
               </li>
             ))}
           </ul>

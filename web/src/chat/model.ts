@@ -407,6 +407,8 @@ export interface SlashCommand {
   aliases?: string[];
   /** `session` commands travel to the daemon as prompt text; `chat` run here; `panel` belong to the panels owner. */
   kind: "session" | "chat" | "panel";
+  /** Where a skill command comes from (`user`, `project`, `temporary`, `npm:…`), shown after the description. */
+  sourceTag?: string;
 }
 
 export const BUILTIN_COMMANDS: SlashCommand[] = [
@@ -432,6 +434,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "mcp", description: "Open the MCP connections menu", kind: "panel" },
   { name: "plugins", description: "Browse and connect external services", argumentHint: "[search]", kind: "panel" },
   { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", argumentHint: '[--name "session name" --] [prompt]', aliases: ["clear"], kind: "panel" },
+  { name: "edit_context", description: "Edit the model-visible context as JSON", kind: "panel" },
   { name: "compact", description: "Compact the session context; optional instructions focus the summary", argumentHint: "[instructions]", kind: "session" },
   { name: "refine", description: "Refine continual harness prompt notes, skills, subagents, and memory", kind: "session" },
   { name: "harness", description: "Browse and delete local and global harness entries", kind: "panel" },
@@ -454,15 +457,30 @@ export function resolveCommand(name: string): SlashCommand | undefined {
 }
 
 /** Rank commands for a typed prefix: prefix matches first, then substring. */
+const isSubsequence = (needle: string, hay: string): boolean => {
+  let from = 0;
+  return [...needle].every((ch) => (from = hay.indexOf(ch, from) + 1) > 0);
+};
+
+/** The TUI menu's source label for a skill's `sourceInfo`. */
+export function skillSourceTag(info: { scope?: string; source?: string } | undefined): string | undefined {
+  if (!info) return undefined;
+  const scope = info.scope === "user" || info.scope === "project" ? info.scope : "temporary";
+  const source = (info.source ?? "").trim();
+  if (source === "builtin") return "builtin";
+  return source.startsWith("npm:") ? `${scope}:${source}` : scope;
+}
+
 export function filterCommands(commands: SlashCommand[], query: string): SlashCommand[] {
   const q = query.toLowerCase();
   const score = (c: SlashCommand) => {
     const names = [c.name, ...(c.aliases ?? [])].map((n) => n.toLowerCase());
     if (names.some((n) => n.startsWith(q))) return 0;
     if (names.some((n) => n.includes(q))) return 1;
-    return c.description.toLowerCase().includes(q) ? 2 : 3;
+    if (names.some((n) => isSubsequence(q, n))) return 2;
+    return c.description.toLowerCase().includes(q) ? 3 : 4;
   };
-  return commands.filter((c) => score(c) < 3).sort((a, b) => score(a) - score(b));
+  return commands.filter((c) => score(c) < 4).sort((a, b) => score(a) - score(b));
 }
 
 /** `!cmd` runs a command whose output joins the context, `!!cmd` one excluded from it. */
@@ -474,10 +492,35 @@ export function parseBang(text: string): { command: string; excludeFromContext: 
   return command ? { command, excludeFromContext: excluded } : null;
 }
 
+/** First non-blank of the identity fields, as the TUI names an agent-message counterpart. */
+export function counterpartName(identity: Record<string, any> | undefined, keys: string[] = ["sessionName", "activeSessionId", "clientId", "sessionId"]): string {
+  for (const key of keys) {
+    const value = identity?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "unknown";
+}
+
+/** Sent `agent_message.send` receipts of a python cell (`details.sentAgentMessages`) as mail rows. */
+export function sentMessages(details: Record<string, any> | undefined): { direction: "sent" | "queued"; who: string; message: string; id?: string }[] {
+  const list = Array.isArray(details?.sentAgentMessages) ? details.sentAgentMessages : [];
+  return list.flatMap((m: any) => (typeof m?.message === "string" ? [{ direction: m.deliveryStatus === "delivered" ? ("sent" as const) : ("queued" as const), who: counterpartName(m.target, ["sessionName", "activeSessionId", "sessionId"]), message: m.message, id: m.id }] : []));
+}
+
 /** The `@path` token under the caret, if any. */
-export function pathTokenAt(text: string, caret: number): { start: number; query: string } | null {
+export function pathTokenAt(text: string, caret: number): { start: number; query: string; quote: string } | null {
   const before = text.slice(0, caret);
-  const match = /(?:^|\s)@([^\s]*)$/.exec(before);
+  const quoted = /(?:^|\s)@(["'])([^"']*)$/.exec(before);
+  if (quoted) return { start: caret - quoted[2].length - 2, query: quoted[2], quote: quoted[1] };
+  const match = /(?:^|\s)@([^\s"']*)$/.exec(before);
   if (!match) return null;
-  return { start: caret - match[1].length - 1, query: match[1] };
+  return { start: caret - match[1].length - 1, query: match[1], quote: "" };
+}
+
+/** How a completed path is written after `@`: in the quote the user typed, else quoted only when it needs it. */
+export function spellPathToken(value: string, typedQuote: string): string {
+  const isDir = value.endsWith("/");
+  const quote = typedQuote || (/[\s"'=]/.test(value) ? (value.includes('"') ? "'" : '"') : "");
+  if (!quote) return `@${value}${isDir ? "" : " "}`;
+  return `@${quote}${value}${isDir ? "" : `${quote} `}`;
 }

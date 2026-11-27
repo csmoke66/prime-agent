@@ -27,14 +27,25 @@ const json = (method: string, body: unknown): RequestInit => ({ method, headers:
 
 export type Settings = Record<string, any>;
 export type AuthProvider = { id: string; name: string; authType: "oauth" | "apiKey"; configured: boolean; available: boolean; status?: string };
+export type FlowRequest =
+  | { kind: "providerKey"; provider: string; key: string }
+  | { kind: "providerLogin"; provider: string }
+  | { kind: "providerLogout"; provider: string }
+  | { kind: "mcpLogin"; server: string }
+  | { kind: "mcpPaste"; server: string }
+  | { kind: "mcpKey"; credential: string }
+  | { kind: "mcpLogout"; server: string };
 export type LogFile = { name: string; size: number };
 export type HarnessEntry = { scope: "local" | "global"; kind: string; id: string; title?: string; content?: string; path?: string; [key: string]: any };
 
+import type { FlowEvent } from "./flowModel";
+
 export const rest = {
-  info: () => send<{ version: string; cwd: string; agentDir: string; socketPath: string }>("/info"),
+  info: () => send<{ version: string; cwd: string; agentDir: string; socketPath: string; exportDir: string }>("/info"),
   settings: () => send<Settings>("/settings"),
   saveSettings: (settings: Settings) => send<Settings>("/settings", json("PUT", settings)),
-  files: (cwd: string, prefix: string) => send<{ entries: { path: string; isDir: boolean }[] } | string[]>(`/files?cwd=${encodeURIComponent(cwd)}&prefix=${encodeURIComponent(prefix)}`),
+  files: (cwd: string, text: string, mode: "prefix" | "search" = "prefix") =>
+    send<{ entries: { value: string; path: string; isDir: boolean }[] }>(`/files?cwd=${encodeURIComponent(cwd)}&${mode === "search" ? "search" : "prefix"}=${encodeURIComponent(text)}`),
   changelog: () => send<{ markdown: string }>("/changelog"),
   logs: () => send<{ dir: string; files: LogFile[] }>("/logs"),
   logTail: async (name: string, tail = 200) => {
@@ -42,14 +53,15 @@ export const rest = {
     if (!response.ok) throw new Error(await response.text());
     return response.text();
   },
-  keybindings: () => send<{ bindings: Record<string, string[]> }>("/keybindings"),
-  authProviders: () => send<{ providers: AuthProvider[] }>("/auth/providers"),
-  authLogin: (provider: string, apiKey?: string) => send<{ status: string; authUrl?: string }>("/auth/login", json("POST", { provider, apiKey })),
-  authLogout: (provider: string) => send<{ status: string }>("/auth/logout", json("POST", { provider })),
-  mcpAuth: (action: "login" | "key" | "logout", target: string, key?: string) => send<{ status: string; authUrl?: string }>("/mcp/auth", json("POST", { action, target, key })),
+  keybindings: () => send<Record<string, unknown>>("/keybindings"),
+  authProviders: (mode: "login" | "logout") => send<{ providers: AuthProvider[] }>(`/auth/providers?mode=${mode}`),
+  startFlow: (request: FlowRequest) => send<{ flowId: number }>("/auth/flows", json("POST", request)),
+  pollFlow: (flowId: number, since: number) => send<{ events: FlowEvent[]; next: number }>(`/auth/flows/${flowId}?since=${since}`),
+  answerFlow: (flowId: number, value: string | null) => send<{ ok: boolean }>(`/auth/flows/${flowId}/answer`, json("POST", { value })),
+  cancelFlow: (flowId: number) => send<{ ok: boolean }>(`/auth/flows/${flowId}`, { method: "DELETE" }),
   harness: (sessionFile?: string) => send<{ entries: HarnessEntry[] }>(`/harness?sessionFile=${encodeURIComponent(sessionFile ?? "")}`),
   deleteHarness: (entry: HarnessEntry, sessionFile?: string) => send<{ ok: boolean }>("/harness", json("DELETE", { sessionFile, entry })),
-  share: (activeSessionId: string) => send<{ previewUrl: string; gistUrl: string }>("/share", json("POST", { activeSessionId })),
+  share: (file: string) => send<{ previewUrl: string; gistUrl: string }>("/share", json("POST", { file })),
   upload: (file: File) => send<{ path: string }>("/upload", { method: "POST", body: file }),
-  exportUrl: (activeSessionId: string, format: "html" | "jsonl") => `/api/export?activeSessionId=${encodeURIComponent(activeSessionId)}&format=${format}`,
+  downloadUrl: (name: string) => `/api/download/${encodeURIComponent(name)}`,
 };

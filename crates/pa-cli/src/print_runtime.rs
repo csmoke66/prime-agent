@@ -92,10 +92,6 @@ fn run_acp_mode(options: &RunOptions) -> Result<i32, String> {
 }
 
 async fn acp_mode_main(options: &RunOptions) -> Result<i32, String> {
-    // The disclosure prints on the ACP client's stderr before any
-    // transport starts (TS pushes the daemon-created session's diagnostics
-    // to the client; the Rust stderr surface prints it here).
-    crate::telemetry_notice::print_if_due(&options.config);
     // Flag > env > default: the same `PRIME_AGENT_DAEMON_SOCKET` contract
     // as every other mode (the `prime-agent` launcher written by
     // install-rust.sh pins that env, so the ACP path must honor it or it
@@ -414,9 +410,6 @@ async fn print_mode_main(
     options: &RunOptions,
     lease: &mut Option<pa_daemon::lease::SessionLease>,
 ) -> Result<i32, String> {
-    // `print` or `json`: the telemetry execution mode is the app mode (TS
-    // main.ts `executionMode: appMode`).
-    crate::telemetry_notice::print_if_due(&options.config);
     let (session_manager, opened_lease) = select_session_manager_with_lease(options)?;
     *lease = opened_lease;
     let session_manager = session_manager.unwrap_or_else(|| {
@@ -629,11 +622,6 @@ async fn build_headless_engine_parts(
     execution_mode: &str,
     lease: &mut Option<pa_daemon::lease::SessionLease>,
 ) -> Result<HeadlessEngine, String> {
-    // Every headless mode discloses immediately (TS main: only the
-    // interactive `deferTelemetryNoticeForOnboarding` holds the notice
-    // back behind onboarding; `--list-models` never reaches this
-    // assembly, matching the TS exit before its diagnostics report).
-    crate::telemetry_notice::print_if_due(&options.config);
     let (session_manager, opened_lease) = select_session_manager_with_lease(options)?;
     *lease = opened_lease;
     build_engine(

@@ -1,0 +1,1 @@
+- Usage telemetry is no longer sent anywhere: the analytics sink and the first-run telemetry notice are removed, and events stay in the local mirror only.

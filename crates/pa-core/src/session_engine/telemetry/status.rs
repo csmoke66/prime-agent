@@ -83,22 +83,15 @@ fn switch_from(env: impl Fn(&str) -> Option<String>, setting: Option<bool>) -> T
     setting.map_or(TelemetrySwitch::Default, TelemetrySwitch::Settings)
 }
 
-/// No build of this application registers a remote analytics destination.
-#[must_use]
-pub fn telemetry_endpoint() -> Option<&'static str> {
-    None
-}
-
-/// The `status` report: state and why, the endpoint, the installation id.
+/// The `status` report: state and why, the installation id.
 #[must_use]
 pub fn telemetry_status_text(settings: &SettingsManager, agent_dir: &Path) -> String {
     let switch = telemetry_switch(settings);
     let state = if switch.enabled() { "on" } else { "off" };
-    let endpoint = telemetry_endpoint().unwrap_or("none");
     let installation_id = pa_telemetry::existing_install_id(agent_dir)
         .unwrap_or_else(|| "not created yet".to_string());
     format!(
-        "Telemetry is {state} ({}).\nEndpoint: {endpoint}\nInstallation id: {installation_id}",
+        "Telemetry is {state} ({}).\nEvents stay on this machine.\nInstallation id: {installation_id}",
         switch.reason()
     )
 }
@@ -233,7 +226,7 @@ mod tests {
         std::fs::create_dir_all(&agent_dir).unwrap();
         std::fs::write(
             agent_dir.join("settings.json"),
-            r#"{ "telemetry": { "enabled": false, "noticeShown": true } }"#,
+            r#"{ "telemetry": { "enabled": false } }"#,
         )
         .unwrap();
         let settings = SettingsManager::create(dir.path(), &agent_dir);
@@ -241,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn status_names_the_endpoint_and_the_installation_id() {
+    fn status_names_the_installation_id() {
         let dir = tempfile::tempdir().unwrap();
         let agent_dir = dir.path().join("agent");
         let settings = SettingsManager::create(dir.path(), &agent_dir);
@@ -254,6 +247,5 @@ mod tests {
         let id = pa_telemetry::install_id(&agent_dir).unwrap();
         let after = telemetry_status_text(&settings, &agent_dir);
         assert!(after.contains(&format!("Installation id: {id}")));
-        assert!(telemetry_endpoint().is_none());
     }
 }

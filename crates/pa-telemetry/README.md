@@ -1,7 +1,7 @@
 # pa-telemetry
 
 Modular telemetry: the event schema, queueing/batching, sinks, and the
-pseudonymous installation identity for Prime Agent product analytics.
+pseudonymous installation identity. Events never leave the machine.
 
 ## Scope
 
@@ -12,10 +12,7 @@ pseudonymous installation identity for Prime Agent product analytics.
   `shutdown`. One background worker, capped queue (drop-oldest), batched
   flush (size + interval + explicit), fan-out to every sink. Best-effort by
   contract: never blocks, never panics, never fails the agent.
-- `TelemetrySink` trait + shipped sinks: `AnalyticsSink` (the one product
-  destination: the TS endpoint `ANALYTICS_ENDPOINT` and wire format
-  `{installation_id, events: [{id, name, timestamp, properties}]}`, no
-  credentials, 1.5s timeout; the platform backend forwards to PostHog),
+- `TelemetrySink` trait + shipped sinks:
   `FileSink` (local JSONL transparency mirror at `<agentDir>/telemetry.jsonl`),
   `NoopSink` (opt-out fast path), `MockSink` (tests, also re-exported for
   downstream crate tests).
@@ -35,7 +32,7 @@ pseudonymous installation identity for Prime Agent product analytics.
 
 ## Non-goals
 
-- No settings reading: the enabled/disclosure flow is owned by pa-core
+- No settings reading: the enabled flow is owned by pa-core
   settings + pa-cli wiring (this crate only answers "does the environment
   override?").
 - No event emission from this crate: seams live in pa-core/pa-daemon/pa-cli,
@@ -54,12 +51,7 @@ pseudonymous installation identity for Prime Agent product analytics.
 - `install_id(agent_dir)`
 - `rename_onto(from, to)`
 - `parse_bool_override(value)`, `existing_install_id(agent_dir)`
-- Sinks: `AnalyticsSink` (+ `ANALYTICS_ENDPOINT`), `FileSink`, `NoopSink`, `MockSink`
-  (+ `RecordedBatch`)
-- `AnalyticsSink::new(endpoint, builder)` takes the caller's HTTP client
-  builder (its TLS configuration) and applies the product timeout; pa-core
-  composition supplies the shared TLS builder without adding a workspace
-  dependency to this leaf crate.
+- Sinks: `FileSink`, `NoopSink`, `MockSink` (+ `RecordedBatch`)
 
 ## Placement
 

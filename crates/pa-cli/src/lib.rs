@@ -45,7 +45,6 @@ pub(crate) mod session_export;
 pub(crate) mod sessions_table_format;
 pub(crate) mod skills_command;
 pub(crate) mod subscription_login;
-pub(crate) mod telemetry_notice;
 
 /// The runtime boundary: everything a mode-runner crate implements to plug
 /// into the `prime-agent` binary, plus the entry point that drives it.

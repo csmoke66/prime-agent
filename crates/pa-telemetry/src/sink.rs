@@ -23,7 +23,7 @@ pub enum SinkOutcome {
 /// (RPITIT is not dyn-compatible); the `'a` lifetime lets implementations borrow `&self`.
 ///
 /// `install_id` is the pseudonymous installation id used as the sink-side
-/// identity (the analytics body's `installation_id`).
+/// identity.
 pub trait TelemetrySink: Send + Sync {
     /// Send one batch. Called serially by the telemetry worker, so at most one
     /// `send_batch` future per sink is in flight at a time.

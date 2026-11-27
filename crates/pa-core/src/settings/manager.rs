@@ -377,15 +377,6 @@ impl SettingsManager {
     /// # Errors
     ///
     /// Returns an error when the global settings file cannot be written.
-    pub fn set_telemetry_notice_shown(&mut self, shown: bool) -> Result<()> {
-        let telemetry = self.global.telemetry.get_or_insert_with(Default::default);
-        telemetry.notice_shown = Some(shown);
-        self.save_global(&["telemetry.noticeShown"])
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error when the global settings file cannot be written.
     pub fn set_onboarding_shown(&mut self, shown: bool) -> Result<()> {
         self.global.onboarding_shown = Some(shown);
         self.save_global(&["onboardingShown"])
@@ -837,16 +828,6 @@ impl SettingsManager {
         ]
         .iter()
         .all(|scope| scope.and_then(|t| t.enabled).unwrap_or(true))
-    }
-
-    #[must_use]
-    pub fn get_telemetry_notice_shown(&self) -> bool {
-        self.runtime_overrides
-            .telemetry
-            .as_ref()
-            .and_then(|t| t.notice_shown)
-            .or_else(|| self.global.telemetry.as_ref().and_then(|t| t.notice_shown))
-            .unwrap_or(false)
     }
 
     /// `requestTiming`: unset means OFF — the per-request timing timeline

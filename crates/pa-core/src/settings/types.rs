@@ -300,7 +300,6 @@ pub struct AgentInboxSettings {
 #[serde(rename_all = "camelCase")]
 pub struct TelemetrySettings {
     pub enabled: Option<bool>,
-    pub notice_shown: Option<bool>,
     /// Local JSONL mirror at `<agentDir>/telemetry.jsonl` (default on:
     /// user-observable transparency).
     pub local_mirror: Option<bool>,

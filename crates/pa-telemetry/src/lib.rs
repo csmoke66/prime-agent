@@ -63,7 +63,7 @@ pub use platform::{base_properties, SCHEMA_VERSION};
 pub use properties::Properties;
 pub use rename::rename_onto;
 pub use sink::{SinkOutcome, TelemetrySink};
-pub use sinks::{AnalyticsSink, FileSink, MockSink, NoopSink, RecordedBatch, ANALYTICS_ENDPOINT};
+pub use sinks::{FileSink, MockSink, NoopSink, RecordedBatch};
 
 #[cfg(test)]
 mod tests {

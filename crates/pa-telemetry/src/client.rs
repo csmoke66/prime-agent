@@ -59,8 +59,8 @@ struct Channel {
 /// Client configuration.
 #[derive(Clone)]
 pub struct TelemetryClientConfig {
-    /// Pseudonymous installation id (the analytics body's
-    /// `installation_id`). Load via [`crate::install_id`].
+    /// Pseudonymous installation id (the sink-side
+    /// identity). Load via [`crate::install_id`].
     pub install_id: String,
     /// Base properties merged under every event's own properties
     /// (version, os, execution mode...).

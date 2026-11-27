@@ -124,7 +124,6 @@ fn stale_managers_preserve_other_writers_and_explicit_same_value_choices() {
         fixture(r#"{"theme":"light","telemetry":{"enabled":false,"futureSetting":"keep"}}"#);
     let mut second = SettingsManager::from_storage(storage.clone());
     second.set_theme("dark".into()).unwrap();
-    second.set_telemetry_notice_shown(true).unwrap();
     first.set_theme("light".into()).unwrap();
     first.set_telemetry_enabled(true).unwrap();
     second.set_quiet_startup(true).unwrap();
@@ -132,7 +131,7 @@ fn stale_managers_preserve_other_writers_and_explicit_same_value_choices() {
         document(storage.as_ref()),
         json!({
             "theme":"light", "quietStartup":true,
-            "telemetry":{"enabled":true,"noticeShown":true,"futureSetting":"keep"}
+            "telemetry":{"enabled":true,"futureSetting":"keep"}
         })
     );
 }

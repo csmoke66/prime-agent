@@ -8,8 +8,7 @@ use crate::time::EpochMs;
 
 /// A single telemetry event. Carries a stable event name and a
 /// primitive-only property map. The id and timestamp are captured at
-/// `track()` time, so a retried batch re-sends the same ids (the analytics
-/// endpoint forwards the id as the `PostHog` event uuid, which dedupes).
+/// `track()` time, so a retried batch re-sends the same ids.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TelemetryEvent {
     /// Random uuid v4 per event.
@@ -46,7 +45,7 @@ impl TelemetryEvent {
     }
 
     /// The sink-facing object form: `{"id", "name", "timestamp" (ISO-8601),
-    /// "properties"}` - the analytics endpoint's event shape; the JSONL
+    /// "properties"}` ; the JSONL
     /// mirror adds `distinct_id`.
     pub(crate) fn to_value(&self) -> Value {
         json!({

@@ -149,7 +149,7 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "heartbeats": return <HeartbeatsPanel activeSessionId={activeSessionId} onClose={onClose} />;
     case "workflows": return <WorkflowsPanel activeSessionId={activeSessionId!} initial={args} onClose={onClose} />;
     case "rename": return <RenameDialog activeSessionId={activeSessionId!} onClose={onClose} />;
-    case "onboarding": return <AuthPanel mode="login" onboarding onClose={onClose} />;
+    case "onboarding": return <AuthPanel mode="login" onboarding onClose={() => { void markOnboardingDone(); onClose(); }} />;
     case "messages": return null;
   }
 }
@@ -180,14 +180,20 @@ function RenameDialog({ activeSessionId, onClose }: { activeSessionId: string; o
   );
 }
 
-/** First-run guide: shown once per tab when no provider is configured. */
+/** Like the TUI, a finished onboarding (a provider is now configured) is remembered in `settings.json`; leaving early is not. */
+async function markOnboardingDone(): Promise<void> {
+  const { providers } = await rest.authProviders("login");
+  if (providers.some((p) => p.configured)) await rest.saveSettings({ onboardingShown: true });
+}
+
+/** First-run guide: shown when onboarding never finished and no provider is configured; once per tab. */
 function Onboarding() {
   useEffect(() => {
     if (sessionStorage.getItem("bh.onboardingShown") === "1") return;
     let live = true;
-    rest.authProviders("login").then(
-      ({ providers }) => {
-        if (!live || providers.some((p) => p.configured)) return;
+    Promise.all([rest.settings(), rest.authProviders("login")]).then(
+      ([settings, { providers }]) => {
+        if (!live || settings.onboardingShown === true || providers.some((p) => p.configured)) return;
         sessionStorage.setItem("bh.onboardingShown", "1");
         openPanel("onboarding");
       },

@@ -42,12 +42,12 @@ export function Images({ blocks }: { blocks: Block[] }) {
 export function DiffView({ diff }: { diff: string }) {
   const lines = diff.split("\n");
   return (
-    <pre className="bh-pre overflow-x-auto text-[12px] leading-5">
+    <pre className="bh-pre overflow-x-auto !p-0 text-[12px] leading-[1.45]">
       {lines.map((line, i) => {
         const c = line[0];
-        const cls = c === "+" ? "bg-[#0f2a14] text-[#9fd29a]" : c === "-" ? "bg-[#331218] text-[#e8a0ae]" : "text-muted";
+        const cls = c === "+" ? "bg-[#0f2a14] text-[#7ee787]" : c === "-" ? "bg-[#331218] text-[#ff9aa2]" : "text-muted";
         return (
-          <div key={i} className={`px-3 ${cls}`}>
+          <div key={i} className={`px-2 ${cls}`}>
             {line || " "}
           </div>
         );
@@ -66,39 +66,46 @@ export const diffStats = (diff: string) => {
   return { added, removed };
 };
 
+const STATE_STYLE = {
+  running: { bar: "border-primary-soft", bg: "bg-tool-pending", label: "running", tone: "text-primary-soft" },
+  done: { bar: "border-success/70", bg: "bg-tool-success", label: "ok", tone: "text-success" },
+  error: { bar: "border-error", bg: "bg-tool-error", label: "error", tone: "text-error" },
+} as const;
+
+export const fmtMs = (ms: unknown): string | null => (typeof ms === "number" ? (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`) : null);
+
+/** One timeline row per tool call: state bar, tool name, command preview, outcome chips, expandable body. */
 function Frame({
-  icon,
+  name,
   title,
-  subtitle,
   state,
   open,
   onToggle,
   children,
-  right,
+  meta,
 }: {
-  icon: string;
+  name: string;
   title: ReactNode;
-  subtitle?: ReactNode;
   state: "running" | "done" | "error";
   open: boolean;
   onToggle: () => void;
   children?: ReactNode;
-  right?: ReactNode;
+  meta?: ReactNode;
 }) {
-  const bg = state === "error" ? "bg-tool-error" : state === "running" ? "bg-tool-pending" : "bg-tool-success";
-  const border = state === "error" ? "border-error/40" : state === "running" ? "border-primary/40" : "border-grid/40";
+  const st = STATE_STYLE[state];
   return (
-    <div className={`my-2 overflow-hidden rounded-xl border ${border} ${bg}`}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-white/[0.03]">
-        <span className={state === "running" ? "bh-pulse text-primary-soft" : state === "error" ? "text-error" : "text-success"}>{icon}</span>
-        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-        {subtitle ? <span className="hidden truncate text-xs text-dim sm:block">{subtitle}</span> : null}
-        {right}
-        <span className={`text-dim transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
-          ›
+    <div className={`my-0.5 rounded-r border-l-2 ${st.bar} ${st.bg}`}>
+      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-2 py-1 text-left font-mono text-[12px] hover:bg-white/[0.03]">
+        {state === "running" ? <span className="bh-spin shrink-0" aria-label="running" /> : <span className={`w-3 shrink-0 text-center ${st.tone}`} aria-hidden>{state === "error" ? "✕" : "✓"}</span>}
+        <span className="shrink-0 font-semibold text-primary-soft">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-fg/90">{title}</span>
+        <span className="flex shrink-0 items-center gap-2 text-[11px] text-dim">
+          {meta}
+          <span className={st.tone}>{st.label}</span>
+          <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
         </span>
       </button>
-      {open ? <div className="border-t border-grid/30 px-3 py-2">{children}</div> : null}
+      {open ? <div className="border-t border-grid/25 px-2 py-1.5">{children}</div> : null}
     </div>
   );
 }
@@ -127,11 +134,18 @@ export function ToolCard({ call, exec, result, detail }: { call: { id: string; n
 }
 
 function BashCard({ args, view, state, detail }: { args: any; view: ResultView | null; state: "running" | "done" | "error"; detail: DetailLevel }) {
-  const [open, toggle] = useOpen(state === "running", detail, 2);
   const text = resultText(view);
+  const [open, toggle] = useOpen(state === "running" && text.trim() !== "", detail, 2);
   return (
-    <Frame icon="$" title={<code className="font-mono">{String(args.command ?? "").split("\n")[0]}</code>} state={state} open={open} onToggle={toggle}>
-      <Code code={String(args.command ?? "")} lang="bash" />
+    <Frame
+      name="bash"
+      title={<><span className="text-success">$ </span>{String(args.command ?? "").split("\n")[0]}</>}
+      meta={<>{typeof view?.details?.exitCode === "number" ? <span className={view.details.exitCode ? "text-error" : ""}>exit {view.details.exitCode}</span> : null}<span>{fmtMs(view?.details?.durationMs)}</span></>}
+      state={state}
+      open={open}
+      onToggle={toggle}
+    >
+      {String(args.command ?? "").includes("\n") || String(args.command ?? "").length > 100 ? <Code code={String(args.command ?? "")} lang="bash" /> : null}
       <OutputBlock text={text} error={state === "error"} />
       <Images blocks={view?.content ?? []} />
     </Frame>
@@ -149,14 +163,14 @@ function PythonCard({ args, view, state, detail }: { args: any; view: ResultView
     const s = diffStats(d.diff);
     return { added: acc.added + s.added, removed: acc.removed + s.removed };
   }, { added: 0, removed: 0 });
-  const duration = typeof details.durationMs === "number" ? (details.durationMs < 1000 ? `${Math.round(details.durationMs)}ms` : `${(details.durationMs / 1000).toFixed(1)}s`) : null;
+  const duration = fmtMs(details.durationMs);
   const showDiffs = detail >= 1;
   return (
     <>
       <Frame
-        icon="λ"
-        title={<code className="font-mono">{first}</code>}
-        subtitle={[code.split("\n").length > 1 ? `${code.split("\n").length} lines` : "", duration ?? ""].filter(Boolean).join(" · ")}
+        name="python"
+        title={first}
+        meta={<>{code.split("\n").length > 1 ? <span>{code.split("\n").length} lines</span> : null}<span>{duration}</span></>}
         state={state}
         open={open}
         onToggle={toggle}
@@ -183,14 +197,14 @@ function DiffSummary({ diffs, totals, expanded }: { diffs: { path: string; diff:
   const byPath = new Map<string, string[]>();
   for (const d of diffs) byPath.set(d.path, [...(byPath.get(d.path) ?? []), d.diff]);
   return (
-    <div className="-mt-1 mb-2 ml-3 border-l-2 border-primary/40 pl-3">
+    <div className="mb-0.5 ml-3 border-l-2 border-primary/40 pl-2">
       <button type="button" className="text-xs text-muted hover:text-fg" onClick={() => setOverride(!open)} aria-expanded={open}>
         {open ? "▾" : "▸"} {byPath.size} file{byPath.size === 1 ? "" : "s"} edited <span className="text-success">+{totals.added}</span> <span className="text-error">−{totals.removed}</span>
       </button>
       {open
         ? [...byPath].map(([path, edits]) => (
-            <div key={path} className="mt-1 overflow-hidden rounded-lg border border-grid/40">
-              <div className="bg-panel px-3 py-1 font-mono text-xs text-muted">{path}</div>
+            <div key={path} className="mt-1 overflow-hidden rounded border border-grid/40">
+              <div className="bg-panel px-2 py-0.5 font-mono text-xs text-muted">{path}</div>
               {edits.map((d, i) => (
                 <DiffView key={i} diff={d} />
               ))}
@@ -208,13 +222,9 @@ function EditCard({ args, view, state, detail }: { args: any; view: ResultView |
   const stats = diff ? diffStats(diff) : null;
   return (
     <Frame
-      icon="✎"
-      title={
-        <>
-          edit <span className="font-mono text-muted">{path}</span>
-        </>
-      }
-      right={stats ? <span className="text-xs"><span className="text-success">+{stats.added}</span> <span className="text-error">−{stats.removed}</span></span> : null}
+      name="edit"
+      title={path}
+      meta={stats ? <span><span className="text-success">+{stats.added}</span> <span className="text-error">−{stats.removed}</span></span> : null}
       state={state}
       open={open}
       onToggle={toggle}
@@ -229,7 +239,7 @@ function GenericCard({ name, args, view, state, detail }: { name: string; args: 
   const argText = Object.keys(args ?? {}).length ? JSON.stringify(args, null, 2) : "";
   const brief = typeof args === "object" && args ? Object.values(args).find((v) => typeof v === "string") : undefined;
   return (
-    <Frame icon="⚙" title={name} subtitle={typeof brief === "string" ? brief.slice(0, 80) : undefined} state={state} open={open} onToggle={toggle}>
+    <Frame name={name} title={typeof brief === "string" ? brief.slice(0, 160) : ""} state={state} open={open} onToggle={toggle}>
       {argText ? <Code code={argText} lang="json" /> : null}
       <OutputBlock text={resultText(view)} error={state === "error"} />
       <Images blocks={view?.content ?? []} />

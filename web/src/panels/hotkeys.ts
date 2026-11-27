@@ -7,8 +7,9 @@ export const HOTKEYS: HotkeyGroup[] = [
     title: "Global",
     keys: [
       { keys: "Ctrl/⌘+K", action: "Command palette" },
-      { keys: "g s", action: "Go to sessions" },
-      { keys: "g a", action: "Go to agents view" },
+      { keys: "g h", action: "Go home (no session open)" },
+      { keys: "Ctrl+B", action: "Toggle the sessions sidebar" },
+      { keys: "Ctrl+I", action: "Toggle the inspector" },
       { keys: "?", action: "Show this keyboard reference" },
       { keys: "Esc", action: "Close dialog / interrupt response / clear prompt" },
     ],

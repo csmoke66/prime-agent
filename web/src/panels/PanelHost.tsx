@@ -35,7 +35,7 @@ function runPanelSlash(name: string, args: string, activeSessionId?: string): vo
       void cloneSession(session);
       return;
     case "resume":
-      if (!args.trim()) return navigate({ name: "agents" });
+      if (!args.trim()) return navigate({ name: "sessions" });
       void resumeBySelector(args.trim());
       return;
     case "reload":

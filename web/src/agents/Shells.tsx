@@ -57,9 +57,9 @@ export function ShellList({ source, empty }: { source: Source; empty: string }) 
       <ErrorLine>{error}</ErrorLine>
       {rows?.length === 0 && <Empty title={empty} />}
       {rows?.map((row) => (
-        <div key={row.id} className="bh-card flex flex-col gap-2 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="min-w-0 flex-1 truncate text-left font-mono text-xs" onClick={() => setOpen(open === row.id ? null : row.id)} title={row.command}>{oneLine(row.command, 90) || row.id}</button>
+        <div key={row.id} className="bh-card flex flex-col gap-1 px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <button className="w-full truncate text-left font-mono text-[11px]" onClick={() => setOpen(open === row.id ? null : row.id)} title={row.command}>{oneLine(row.command, 90) || row.id}</button>
             <Badge tone={row.status === "running" ? "success" : "neutral"}>{row.status}{row.exitCode !== undefined && row.status !== "running" ? ` (${row.exitCode})` : ""}</Badge>
             {row.persistent && <Badge tone="primary">persistent</Badge>}
             <span className="text-xs text-dim">{fmtDuration(row.durationMs)}</span>
@@ -81,10 +81,7 @@ export function KernelBash({ activeSessionId }: { activeSessionId: string }) {
     kill: (activityId) => wire.call({ type: "kill_kernel_bash", activeSessionId, activityId }),
   }));
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium uppercase tracking-wider text-dim">Kernel bash</h3>
-      <ShellList source={source} empty="No bash activity" />
-    </section>
+    <ShellList source={source} empty="No bash activity" />
   );
 }
 

@@ -14,12 +14,12 @@ function Collapsible({ title, open: initial, children, tone = "text-muted" }: { 
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? initial;
   return (
-    <div className="my-1.5">
-      <button type="button" className={`flex items-center gap-1.5 text-xs ${tone} hover:text-fg`} aria-expanded={open} onClick={() => setOverride(!open)}>
-        <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
+    <div className="my-0.5">
+      <button type="button" className={`flex items-center gap-1.5 font-mono text-[11px] ${tone} hover:text-fg`} aria-expanded={open} onClick={() => setOverride(!open)}>
+        <span className={`w-2.5 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>›</span>
         {title}
       </button>
-      {open ? <div className="mt-1 border-l-2 border-grid/40 pl-3">{children}</div> : null}
+      {open ? <div className="mt-0.5 border-l border-grid/40 pl-2.5">{children}</div> : null}
     </div>
   );
 }
@@ -29,8 +29,10 @@ function UserRow({ message }: { message: Msg }) {
   const text = textOfContent(blocks);
   const skill = parseSkillBlock(text);
   return (
-    <div className="bh-fade-in my-3 flex justify-end">
-      <div className="max-w-[90%] rounded-2xl rounded-br-md bg-user-msg px-4 py-2.5 sm:max-w-[80%]">
+    <div className="bh-fade-in mb-1 mt-3 border-l-2 border-primary-soft bg-user-msg">
+      <div className="flex gap-2 px-2.5 py-1.5">
+        <span className="select-none font-mono font-bold text-primary-soft" aria-hidden>❯</span>
+        <div className="min-w-0 flex-1">
         {skill ? (
           <>
             <Collapsible title={<>skill <b className="font-mono">{skill.name}</b></>} open={false} tone="text-primary-soft">
@@ -45,6 +47,7 @@ function UserRow({ message }: { message: Msg }) {
           <div className="whitespace-pre-wrap break-words">{text}</div>
         )}
         <Images blocks={blocks} />
+        </div>
       </div>
     </div>
   );
@@ -55,13 +58,13 @@ function AssistantBody({ message, results, data, detail, streaming }: { message:
   const blocks: Block[] = Array.isArray(message.content) ? message.content : [];
   const error = message.stopReason === "error" ? message.errorMessage : message.stopReason === "aborted" ? "Interrupted" : null;
   return (
-    <div className="bh-fade-in my-3">
+    <div className="bh-fade-in my-0.5 pl-[1.15rem]">
       {blocks.map((block, i) => {
-        if (block.type === "text") return block.text ? <Markdown key={i} text={block.text} /> : null;
+        if (block.type === "text") return block.text ? <div key={i} className="my-1"><Markdown text={block.text} /></div> : null;
         if (block.type === "thinking")
           return block.thinking ? (
             <Collapsible key={i} title={<span className={THINKING_COLOR[level] ?? "text-muted"}>thinking</span>} open={detail >= 1 || (streaming && i === blocks.length - 1)}>
-              <div className="whitespace-pre-wrap text-[13px] italic text-muted">{block.thinking}</div>
+              <div className="whitespace-pre-wrap text-[12px] italic text-[#8b8b94]">{block.thinking}</div>
             </Collapsible>
           ) : null;
         if (block.type === "toolCall") {
@@ -70,7 +73,7 @@ function AssistantBody({ message, results, data, detail, streaming }: { message:
         }
         return null;
       })}
-      {error ? <div className={`mt-2 rounded-lg border px-3 py-2 text-sm ${message.stopReason === "error" ? "border-error/40 bg-tool-error text-error" : "border-warning/30 text-warning"}`}>{error}</div> : null}
+      {error ? <div className={`mt-1 rounded border px-2 py-1 text-[12px] ${message.stopReason === "error" ? "border-error/40 bg-tool-error text-error" : "border-warning/30 text-warning"}`}>{error}</div> : null}
       {!streaming && message.role === "assistant" && assistantText(message) ? <CopyButton text={assistantText(message)} /> : null}
     </div>
   );
@@ -81,7 +84,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="mt-1 text-[11px] text-dim opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
+      className="text-[11px] text-dim opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
       onClick={() => void navigator.clipboard?.writeText(text).then(() => { setDone(true); window.setTimeout(() => setDone(false), 1200); })}
     >
       {done ? "Copied" : "Copy"}
@@ -91,22 +94,22 @@ function CopyButton({ text }: { text: string }) {
 
 function StatusRow({ kind, children }: { kind: string; children: ReactNode }) {
   const cls = kind === "error" ? "text-error" : kind === "warning" ? "text-warning" : "text-muted";
-  return <div className={`bh-fade-in my-2 whitespace-pre-wrap break-words text-center text-[13px] ${cls}`}>{children}</div>;
+  return <div className={`bh-fade-in my-1 whitespace-pre-wrap break-words pl-[1.15rem] font-mono text-[11.5px] ${cls}`}>{children}</div>;
 }
 
 function BashRow({ m }: { m: Msg }) {
   const [open, setOpen] = useState(false);
   const failed = m.exitCode !== 0 && m.exitCode != null;
   return (
-    <div className={`my-2 overflow-hidden rounded-xl border ${failed ? "border-error/40 bg-tool-error" : "border-grid/40 bg-tool-success"}`}>
-      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="text-success">$</span>
-        <code className="min-w-0 flex-1 truncate font-mono">{m.command}</code>
+    <div className={`my-0.5 rounded-r border-l-2 ${failed ? "border-error bg-tool-error" : "border-success/70 bg-tool-success"}`}>
+      <button type="button" className="flex w-full items-center gap-2 px-2 py-1 text-left font-mono text-[12px]" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="font-semibold text-success">!</span>
+        <code className="min-w-0 flex-1 truncate">{m.command}</code>
         {m.excludeFromContext ? <span className="text-[11px] text-dim">not in context</span> : null}
-        <span className="text-xs text-dim">{m.cancelled ? "cancelled" : m.exitCode != null ? `exit ${m.exitCode}` : ""}</span>
+        <span className={`text-[11px] ${failed ? "text-error" : "text-dim"}`}>{m.cancelled ? "cancelled" : m.exitCode != null ? `exit ${m.exitCode}` : ""}</span>
       </button>
       {open || (m.output && m.output.length < 400) ? (
-        <pre className="bh-pre max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-grid/30 px-3 py-2 text-[12px] text-muted">{m.output}{m.truncated && m.fullOutputPath ? `\n[truncated — full output: ${m.fullOutputPath}]` : ""}</pre>
+        <pre className="bh-pre max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-grid/25 !rounded-none px-2 text-[12px] text-muted">{m.output}{m.truncated && m.fullOutputPath ? `\n[truncated — full output: ${m.fullOutputPath}]` : ""}</pre>
       ) : null}
     </div>
   );
@@ -129,8 +132,8 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
     const from = d.from ?? {};
     const who = from.sessionName ?? from.activeSessionId ?? d.childName ?? "agent";
     return (
-      <div className="my-2 rounded-xl border border-info/30 bg-panel px-3 py-2 text-sm">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-info">Agent message · {String(who)}</div>
+      <div className="my-1 ml-[1.15rem] rounded border-l-2 border-info/60 bg-panel px-2 py-1 text-[13px]">
+        <div className="mb-0.5 text-[10px] uppercase tracking-wider text-info">Agent message · {String(who)}</div>
         <Markdown text={String(d.message ?? text)} />
       </div>
     );
@@ -150,13 +153,13 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
     );
   if (type === "refinement_outcome")
     return (
-      <div className="my-2 rounded-xl border border-primary/30 bg-panel px-3 py-2 text-sm">
+      <div className="my-1 ml-[1.15rem] rounded border-l-2 border-primary/60 bg-panel px-2 py-1 text-[13px]">
         <div className="mb-1 text-[11px] uppercase tracking-wide text-primary-soft">Refinement</div>
         <Markdown text={text} />
       </div>
     );
   return (
-    <div className="my-2 rounded-xl border border-grid/40 bg-panel px-3 py-2 text-sm">
+    <div className="my-1 ml-[1.15rem] rounded border-l-2 border-grid/60 bg-panel px-2 py-1 text-[13px]">
       <div className="mb-1 text-[11px] font-semibold text-muted">[{type}]</div>
       <Markdown text={text} />
     </div>
@@ -165,7 +168,7 @@ function CustomRow({ m, detail }: { m: Msg; detail: DetailLevel }) {
 
 function SummaryRow({ title, m }: { title: string; m: Msg }) {
   return (
-    <div className="my-3 rounded-xl border border-primary/30 bg-panel/60 px-3 py-1">
+    <div className="my-2 border-y border-primary/30 bg-panel/60 px-2 py-0.5">
       <Collapsible title={<span className="text-primary-soft">◆ {title}{m.tokensBefore ? ` · ${m.tokensBefore.toLocaleString()} tokens before` : ""}</span>} open={false}>
         {m.customInstructions ? <div className="mb-1 text-xs text-dim">focus: {m.customInstructions}</div> : null}
         <Markdown text={String(m.summary ?? "")} className="text-sm" />
@@ -205,21 +208,21 @@ function Working({ data }: { data: SessionData }) {
   }, []);
   const { retry, compaction, userBash } = data;
   return (
-    <div className="space-y-2">
+    <div className="space-y-1 pl-[1.15rem]">
       {userBash?.running ? (
-        <div className="overflow-hidden rounded-xl border border-primary/40 bg-tool-pending">
+        <div className="overflow-hidden rounded border-l-2 border-primary-soft bg-tool-pending">
           <div className="flex items-center gap-2 px-3 py-2 text-[13px]"><span className="bh-pulse text-primary-soft">$</span><code className="flex-1 truncate font-mono">{userBash.command}</code></div>
           {userBash.output ? <pre className="bh-pre max-h-72 overflow-auto whitespace-pre-wrap border-t border-grid/30 px-3 py-2 text-[12px] text-muted">{userBash.output}</pre> : null}
         </div>
       ) : null}
       {compaction?.active ? (
-        <div className="rounded-xl border border-primary/40 bg-panel px-3 py-2 text-sm">
+        <div className="rounded border-l-2 border-primary-soft bg-panel px-2 py-1 text-[13px]">
           <div className="bh-pulse text-primary-soft">◆ Compacting context… <span className="text-dim">({compaction.reason})</span></div>
           {compaction.summary ? <div className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-muted">{compaction.summary}</div> : null}
         </div>
       ) : null}
       {retry ? (
-        <div role="status" className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-panel px-3 py-2 text-sm text-warning">
+        <div role="status" className="flex flex-wrap items-center gap-2 rounded border-l-2 border-warning bg-panel px-2 py-1 text-[13px] text-warning">
           <span className="bh-pulse">↻</span>
           <span className="min-w-0 flex-1">
             Retry {retry.attempt}/{retry.maxAttempts}
@@ -229,8 +232,8 @@ function Working({ data }: { data: SessionData }) {
         </div>
       ) : null}
       {data.state.isStreaming && !compaction?.active ? (
-        <div className="flex items-center gap-2 text-xs text-dim" aria-live="polite">
-          <span className="bh-pulse text-primary-soft">⬢</span> Working{data.turnStartedAt ? ` · ${formatDuration(Date.now() - data.turnStartedAt)}` : ""}
+        <div className="flex items-center gap-2 font-mono text-[11px] text-dim" aria-live="polite">
+          <span className="bh-spin" /> Working{data.turnStartedAt ? ` · ${formatDuration(Date.now() - data.turnStartedAt)}` : ""}
         </div>
       ) : null}
     </div>
@@ -288,13 +291,13 @@ export function Transcript() {
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={ref} onScroll={onScroll} className="h-full overflow-y-auto overscroll-contain" role="log" aria-label="Conversation">
-        <div className="mx-auto w-full max-w-3xl px-4 py-4">
+        <div className="w-full px-3 py-2">
           {data.historyBeforeEntryId ? (
             <button className="mx-auto mb-3 block text-xs text-dim hover:text-fg" onClick={() => void loadOlder()} disabled={loadingOlder}>
               {loadingOlder ? "Loading earlier messages…" : "Load earlier messages"}
             </button>
           ) : null}
-          {empty ? <div className="py-24 text-center text-muted">Send a message to start.</div> : null}
+          {empty ? <div className="py-16 text-center text-dim">Send a message to start.</div> : null}
           {data.messages.map((m) => (
             <Row key={keyOf(m)} m={m} results={results} data={data} detail={detail} />
           ))}

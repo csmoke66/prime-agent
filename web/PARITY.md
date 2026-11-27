@@ -13,7 +13,8 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Connection status + automatic reconnect + session re-attach
 - [x] Command palette (Ctrl/Cmd+K), global shortcuts, responsive layout
 
-## Session list / picker (B)
+## Session list / sidebar (B)
+- [x] One persistent, collapsible, resizable left sidebar replaces the Sessions and Agents views: live + saved (inactive, dimmed) agents in TUI order (custom groups, then Running/Idle/Inactive), nested subagent tree, status glyphs, goal/queue/subagent badges, filter (+ message-text search), new/import, rename, group, stop/delete, persistent shells
 - [x] Saved sessions list with streaming progress (`list_saved_sessions`), search, content search (`search_session_content`)
 - [x] Active sessions list (`list`), status badges
 - [x] New session (cwd, name, initial prompt, model) (`create`/`new_session`)
@@ -43,7 +44,8 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Incident / error notices, retry banners
 
 ## Agents view + panels (B)
-- [x] Agents view: roster tree (parent/child), groups, status, activity, search, delete, rename
+- [x] Agents (sidebar): roster tree (parent/child), groups, status, activity, search, delete, rename
+- [x] Right inspector (Ctrl+I; drawer on narrow screens): context meter, goal, queue, subagents, agent-message controls, kernel bash, reply box
 - [x] Live roster updates (`roster_subscribe`, `roster_update`)
 - [~] Agent messages: inbox, send/reply (`send_message`, `agent_messages_*`), pause/resume/clear
 - [x] Cancel / delete rlm child (`cancel_rlm_child`, `delete_rlm_subagent`)

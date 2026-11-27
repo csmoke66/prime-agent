@@ -233,19 +233,19 @@ export function Composer() {
 
   const border = bash ? "border-success/60" : dragging ? "border-primary" : "border-grid/60 focus-within:border-primary-soft";
   return (
-    <div className="border-t border-grid/30 bg-surface px-3 pb-3 pt-2 sm:px-4">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="border-t border-grid/30 bg-surface px-2 pb-1.5 pt-1.5">
+      <div className="w-full">
         <div
-          className={`relative rounded-2xl border bg-panel transition-colors ${border}`}
+          className={`relative rounded border bg-panel transition-colors ${border}`}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files); }}
         >
           {suggestions.length ? (
-            <ul role="listbox" className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-auto rounded-xl border border-grid/50 bg-surface p-1 shadow-xl">
+            <ul role="listbox" className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-auto rounded border border-grid/50 bg-surface p-0.5 shadow-xl">
               {suggestions.map((s, i) => (
                 <li key={s.label} role="option" aria-selected={i === selected}>
-                  <button type="button" className={`flex w-full items-baseline gap-3 rounded-lg px-3 py-1.5 text-left text-sm ${i === selected ? "bg-selected" : ""}`} onMouseEnter={() => setSelected(i)} onMouseDown={(e) => { e.preventDefault(); accept(s); }}>
+                  <button type="button" className={`flex w-full items-baseline gap-3 rounded px-2 py-0.5 text-left text-[12px] ${i === selected ? "bg-selected" : ""}`} onMouseEnter={() => setSelected(i)} onMouseDown={(e) => { e.preventDefault(); accept(s); }}>
                     <span className="font-mono text-primary-soft">{s.label}</span>
                     {s.detail ? <span className="truncate text-xs text-dim">{s.detail}</span> : null}
                   </button>
@@ -263,15 +263,16 @@ export function Composer() {
               ))}
             </div>
           ) : null}
-          <div className="flex items-end gap-1 p-2">
-            {bash ? <span className="mb-2 ml-1 font-mono text-success" title={bash.excludeFromContext ? "Output excluded from context" : "Output joins the context"}>{bash.excludeFromContext ? "!!" : "!"}</span> : null}
+          <div className="flex items-end gap-1 p-1">
+            {!bash ? <span className="mb-1.5 ml-1 select-none font-mono font-bold text-primary-soft" aria-hidden>❯</span> : null}
+            {bash ? <span className="mb-1.5 ml-1 font-mono text-success" title={bash.excludeFromContext ? "Output excluded from context" : "Output joins the context"}>{bash.excludeFromContext ? "!!" : "!"}</span> : null}
             <textarea
               ref={area}
               value={text}
               rows={1}
               aria-label="Message"
-              placeholder={streaming ? "Steer the agent… (Enter steers, Alt+Enter queues a follow-up)" : "Message — / commands, @ files, ! shell"}
-              className="max-h-64 min-h-[2.25rem] flex-1 resize-none bg-transparent focus-visible:!outline-none px-2 py-1.5 text-[15px] leading-6 outline-none placeholder:text-dim"
+              placeholder={streaming ? "Steer…" : "Message · / · @ · !"}
+              className="max-h-64 min-h-[1.75rem] flex-1 resize-none bg-transparent px-2 py-1 font-mono text-[13px] leading-5 outline-none placeholder:text-dim focus-visible:!outline-none"
               onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); setDismissed(false); if (historyIndex.current !== null && e.target.value !== loadHistory()[historyIndex.current]) historyIndex.current = null; }}
               onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
               onKeyDown={onKeyDown}

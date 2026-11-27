@@ -1,0 +1,1 @@
+- Redesigned the web UI as an agent console: one left sidebar lists all sessions and agents (grouped like the TUI, subagents nested, inactive dimmed), the transcript is a dense full-width log with tool-call rows, and an optional right inspector shows context, goal, queue and subagents.

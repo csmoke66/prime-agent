@@ -20,9 +20,8 @@ export function ErrorLine({ children }: { children: ReactNode }) {
 
 export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
   return (
-    <div className="grid place-items-center gap-1 px-4 py-10 text-center">
-      <span className="text-2xl text-grid">&#x2B22;</span>
-      <p className="text-sm text-muted">{title}</p>
+    <div className="grid place-items-center gap-0.5 px-3 py-3 text-center">
+      <p className="text-xs text-muted">{title}</p>
       {hint ? <p className="text-xs text-dim">{hint}</p> : null}
     </div>
   );

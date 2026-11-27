@@ -32,8 +32,7 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const close = (fn: () => void) => () => { setOpen(false); fn(); };
     const nav: Item[] = [
-      { id: "nav-sessions", group: "Go to", label: "Sessions", hint: "g s", run: close(() => navigate({ name: "sessions" })) },
-      { id: "nav-agents", group: "Go to", label: "Agents view", hint: "g a", run: close(() => navigate({ name: "agents" })) },
+      { id: "nav-sessions", group: "Go to", label: "Home", hint: "g h", run: close(() => navigate({ name: "sessions" })) },
       { id: "nav-new", group: "Go to", label: "New session", run: close(() => openPanel("new")) },
     ];
     const sessions: Item[] = roster

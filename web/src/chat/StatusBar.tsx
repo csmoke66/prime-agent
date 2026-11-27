@@ -25,14 +25,14 @@ function Menu({ label, button, children }: { label: string; button: ReactNode; c
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} className="rounded-md px-2 py-1 text-xs hover:bg-selected" onClick={() => setOpen(!open)}>{button}</button>
-      {open ? <div role="menu" className="bh-fade-in absolute bottom-full right-0 z-30 mb-1 min-w-44 rounded-xl border border-grid/50 bg-surface p-1 shadow-xl sm:left-0 sm:right-auto">{children(() => setOpen(false))}</div> : null}
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} className="rounded px-1.5 py-0.5 text-xs hover:bg-selected" onClick={() => setOpen(!open)}>{button}</button>
+      {open ? <div role="menu" className="bh-fade-in absolute bottom-full right-0 z-30 mb-1 min-w-44 rounded border border-grid/50 bg-surface p-0.5 shadow-xl sm:left-0 sm:right-auto">{children(() => setOpen(false))}</div> : null}
     </div>
   );
 }
 
 const Item = ({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) => (
-  <button type="button" role="menuitemradio" aria-checked={!!active} className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm hover:bg-selected ${active ? "text-primary-soft" : ""}`} onClick={onClick}>
+  <button type="button" role="menuitemradio" aria-checked={!!active} className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected ${active ? "text-primary-soft" : ""}`} onClick={onClick}>
     <span className="w-3">{active ? "✓" : ""}</span>{children}
   </button>
 );
@@ -79,8 +79,8 @@ export function StatusBar() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-grid/30 bg-surface px-2 py-1 text-xs text-muted sm:px-3">
-        <button type="button" className="max-w-[14rem] truncate rounded-md px-2 py-1 font-medium text-fg hover:bg-selected" title="Select model (Ctrl+L)" onClick={() => setPicker(true)}>{modelLabel(state)}</button>
+      <div className="flex flex-wrap items-center gap-x-0.5 gap-y-0 border-t border-grid/30 bg-bg px-1.5 py-0.5 font-mono text-[11px] text-muted">
+        <button type="button" className="max-w-[14rem] truncate rounded px-1.5 py-0.5 font-medium text-fg hover:bg-selected" title="Select model (Ctrl+L)" onClick={() => setPicker(true)}>{modelLabel(state)}</button>
         {reasoning ? (
           <Menu label="Thinking level" button={<span>thinking: <b className="font-medium text-primary-soft">{state.thinkingLevel ?? "off"}</b></span>}>
             {(close) => levels.map((level) => <Item key={level} active={level === state.thinkingLevel} onClick={() => { void setThinking(level); close(); }}>{level}</Item>)}
@@ -91,7 +91,7 @@ export function StatusBar() {
         </Menu>
         <span className="flex-1" />
         {state.isCompacting ? <button className="bh-btn !px-2 !py-0.5" onClick={() => void abortCompaction()}>Stop compaction</button> : null}
-        {state.goal?.status === "active" ? <span className="px-1 text-success" title="Goal active">◎</span> : null}
+        {state.goal?.status === "active" ? <span className="px-1 text-success" title="Goal active">◎ goal</span> : null}
         {queued ? <span className="px-1 text-warning" title="Queued messages">⏳ {queued}</span> : null}
         <span className={`px-1 ${pctTone}`} title={state.contextUsage ? `${state.contextUsage.tokens.toLocaleString()} / ${state.contextUsage.contextWindow.toLocaleString()} tokens` : "Context usage unknown"}>
           ctx {pct === null ? "–" : `${pct.toFixed(0)}%`}
@@ -99,9 +99,9 @@ export function StatusBar() {
         <span className="px-1" title={`in ${totals.input.toLocaleString()} · out ${totals.output.toLocaleString()} · cache r/w ${totals.cacheRead.toLocaleString()}/${totals.cacheWrite.toLocaleString()} (loaded transcript)`}>
           ↑{formatTokens(totals.input)} ↓{formatTokens(totals.output)} · {formatCost(totals.cost)}
         </span>
-        <button type="button" className="rounded-md px-2 py-1 hover:bg-selected" title="Compact the context" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => void runSlash("/compact", "steer")}>compact</button>
-        <button type="button" className="rounded-md px-2 py-1 hover:bg-selected" title="Conversation detail (Ctrl+O)" onClick={cycleDetail}>detail {["▫", "◪", "▣"][detail]}</button>
-        <button type="button" className="rounded-md px-2 py-1 hover:bg-selected" aria-label="Session options" title="Session options" onClick={() => setOptions(true)}>⚙</button>
+        <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected" title="Compact the context" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => void runSlash("/compact", "steer")}>compact</button>
+        <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected" title="Conversation detail (Ctrl+O)" onClick={cycleDetail}>detail {["▫", "◪", "▣"][detail]}</button>
+        <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected" aria-label="Session options" title="Session options" onClick={() => setOptions(true)}>⚙</button>
       </div>
       {picker ? <ModelPicker onClose={() => setPicker(false)} /> : null}
       {options ? <SessionSettings onClose={() => setOptions(false)} /> : null}

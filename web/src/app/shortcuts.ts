@@ -11,7 +11,7 @@ const isTyping = (target: EventTarget | null): boolean => {
 };
 
 /**
- * Global shortcuts: Ctrl/⌘+K palette, `?` hotkeys, `g s` / `g a` navigation (outside text fields).
+ * Global shortcuts: Ctrl/⌘+K palette, `?` hotkeys, `g h` home (outside text fields).
  * Chat-specific keys belong to the chat view.
  */
 export function useGlobalShortcuts(): void {
@@ -29,9 +29,9 @@ export function useGlobalShortcuts(): void {
         openPanel("hotkeys");
       } else if (event.key === "g") {
         pendingG = Date.now();
-      } else if (pendingG && Date.now() - pendingG < 900 && (event.key === "s" || event.key === "a")) {
+      } else if (pendingG && Date.now() - pendingG < 900 && event.key === "h") {
         pendingG = 0;
-        navigate({ name: event.key === "s" ? "sessions" : "agents" });
+        navigate({ name: "sessions" });
       }
     };
     window.addEventListener("keydown", onKey);

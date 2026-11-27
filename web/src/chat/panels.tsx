@@ -27,7 +27,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-3 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`bh-fade-in flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-grid/50 bg-surface shadow-2xl outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`bh-fade-in flex max-h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-grid/50 bg-surface shadow-2xl outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}>
         <div className="flex items-center gap-2 border-b border-grid/30 px-4 py-2.5">
           <h2 className="flex-1 text-sm font-semibold">{title}</h2>
           <button className="bh-btn !px-2 !py-0.5" onClick={onClose} aria-label="Close">✕</button>
@@ -100,12 +100,12 @@ export function QueuePanel() {
   const count = queue.steering.length + queue.followUps.length;
   if (!count && !queue.starting) return null;
   const lanes: { lane: "steering" | "followUp"; label: string; items: string[] }[] = [
-    { lane: "steering", label: "Steering", items: queue.steering },
-    { lane: "followUp", label: "Follow-up", items: queue.followUps },
+    { lane: "steering", label: "Steer", items: queue.steering },
+    { lane: "followUp", label: "Next", items: queue.followUps },
   ];
   return (
-    <div className="border-t border-grid/30 bg-surface px-3 pt-2 sm:px-4">
-      <div className="mx-auto w-full max-w-3xl rounded-xl border border-grid/40 bg-panel p-2 text-sm">
+    <div className="border-t border-grid/30 bg-surface px-2 pt-1.5">
+      <div className="max-h-28 w-full overflow-y-auto rounded border border-grid/40 bg-panel p-1 text-[12px]">
         <div className="mb-1 flex items-center gap-2 text-xs text-muted">
           <span className="font-medium">Queued ({count})</span>
           {queue.starting ? <span className="truncate text-dim">starting: {queue.starting}</span> : null}
@@ -117,8 +117,8 @@ export function QueuePanel() {
           items.map((text, index) => {
             const isEditing = editing?.lane === lane && editing.index === index;
             return (
-              <div key={`${lane}-${index}-${text}`} className="flex items-start gap-2 rounded-lg px-2 py-1 hover:bg-selected/60">
-                <span className="mt-0.5 w-16 shrink-0 text-[11px] uppercase tracking-wide text-dim">{label}</span>
+              <div key={`${lane}-${index}-${text}`} className="flex items-center gap-2 rounded px-1.5 hover:bg-selected/60">
+                <span className={`w-12 shrink-0 font-mono text-[10px] uppercase ${lane === "steering" ? "text-warning" : "text-info"}`}>{label}</span>
                 {isEditing ? (
                   <input
                     autoFocus
@@ -135,7 +135,7 @@ export function QueuePanel() {
                     }}
                   />
                 ) : (
-                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{text}</span>
+                  <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
                 )}
                 <span className="flex shrink-0 gap-0.5 text-xs">
                   <IconBtn label="Move earlier" disabled={index === 0} onClick={() => void mutateQueued(lane, index, text, { type: "move", direction: -1 })}>↑</IconBtn>
@@ -164,8 +164,8 @@ export function GoalBar() {
   const tone = goal.status === "active" ? "text-success" : goal.status === "paused" ? "text-warning" : goal.status === "error" || goal.status === "budget_limited" ? "text-error" : "text-muted";
   const act = (text: string) => void sendPrompt(text, "steer");
   return (
-    <div className="border-b border-grid/30 bg-surface px-3 py-1.5 text-xs sm:px-4">
-      <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="border-b border-grid/30 bg-surface px-2.5 py-1 text-[11px]">
+      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
         <span className={`font-medium ${tone}`}>◎ goal · {String(goal.status).replace("_", " ")}</span>
         <span className="min-w-0 flex-1 truncate text-muted" title={goal.objective}>{goal.objective}</span>
         {budget !== null ? <span className="text-dim">{budget}% of {goal.tokenBudget.toLocaleString()} tokens</span> : <span className="text-dim">{(goal.tokensUsed ?? 0).toLocaleString()} tokens</span>}
@@ -173,7 +173,7 @@ export function GoalBar() {
         {goal.status === "paused" || goal.status === "budget_limited" ? <button className="bh-btn !px-2 !py-0.5" onClick={() => act("/goal resume")}>Resume</button> : null}
         <button className="bh-btn bh-btn-danger !px-2 !py-0.5" onClick={() => act("/goal clear")}>Clear</button>
       </div>
-      {goal.lastError ? <div className="mx-auto mt-1 w-full max-w-3xl text-error">{goal.lastError}</div> : null}
+      {goal.lastError ? <div className="mt-1 w-full text-error">{goal.lastError}</div> : null}
     </div>
   );
 }
@@ -185,8 +185,8 @@ export function SidePane() {
   if (!open) return null;
   const running = side.some((t: SideTurn) => t.status === "running");
   return (
-    <div className="border-t border-primary/40 bg-panel px-3 py-2 sm:px-4">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="border-t border-primary/40 bg-panel px-2.5 py-1.5">
+      <div className="w-full">
         <div className="mb-1 flex items-center text-xs text-primary-soft">
           <span className="flex-1 font-medium">/btw — side conversation (not added to the session)</span>
           <button className="bh-btn !px-2 !py-0.5" onClick={() => void closeSidePane()}>Close (Esc)</button>

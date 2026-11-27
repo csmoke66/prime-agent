@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { wire } from "../wire";
 import { navigate, useRoute } from "./router";
 import { retainRoster, useRoster } from "../agents/rosterStore";
@@ -26,6 +26,7 @@ type RowProps = {
   tick: number;
   searching: boolean;
   active: boolean;
+  focused: boolean;
   collapsed: boolean;
   renaming: "name" | "group" | null;
   group?: string;
@@ -34,7 +35,7 @@ type RowProps = {
   onMode: (mode: "name" | "group" | null) => void;
 };
 
-function Row({ node, tick, searching, active, collapsed, renaming, group, onToggle, onOpen, onMode }: RowProps) {
+function Row({ node, tick, searching, active, focused, collapsed, renaming, group, onToggle, onOpen, onMode }: RowProps) {
   const entry = node.entry;
   const s = entry.summary;
   const subs = descendantCount(node);
@@ -44,9 +45,9 @@ function Row({ node, tick, searching, active, collapsed, renaming, group, onTogg
   const dim = entry.status === "inactive";
   const meta = [activityLabel(entry), modelLabel(s).replace(/^[^/]*\//, ""), relativeTime(s.lastActivityAt ?? s.modified ?? s.created)].filter(Boolean).join(" · ");
   return (
-    <li role="treeitem" aria-selected={active} aria-expanded={node.children.length ? !collapsed : undefined}>
+    <li role="treeitem" aria-selected={active} data-agent-id={entry.agentId} aria-expanded={node.children.length ? !collapsed : undefined}>
       <div
-        className={`group relative flex cursor-pointer items-start gap-1 border-l-2 py-1 pr-1.5 ${active ? "border-primary-soft bg-selected" : "border-transparent hover:bg-selected/60"} ${dim && !active ? "opacity-60 hover:opacity-100" : ""}`}
+        className={`group relative flex cursor-pointer items-start gap-1 border-l-2 py-1 pr-1.5 ${focused ? "outline outline-1 -outline-offset-1 outline-primary-soft" : ""} ${active ? "border-primary-soft bg-selected" : "border-transparent hover:bg-selected/60"} ${dim && !active ? "opacity-60 hover:opacity-100" : ""}`}
         style={{ paddingLeft: searching ? 6 : 4 + node.depth * 12 }}
         onClick={onOpen}
       >
@@ -144,6 +145,45 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     write(next);
   };
 
+  const visible = useMemo(
+    () => found ?? sections.filter((s) => !folded.has(s.key)).flatMap((s) => flatten(s.roots, collapsed)),
+    [found, sections, folded, collapsed],
+  );
+  const [cursor, setCursor] = useState<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  /** The agents-view keys of the TUI, on the focused tree: arrows move/fold, Enter opens, Space replies, Ctrl+R/Alt+G/Ctrl+X manage. */
+  const onTreeKey = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).closest("input, textarea")) return;
+    const index = visible.findIndex((n) => n.entry.agentId === (cursor ?? visible.find((v) => Boolean(activeId) && v.entry.summary.activeSessionId === activeId)?.entry.agentId));
+    const node = visible[index];
+    const move = (to: number) => { const next = visible[Math.max(0, Math.min(visible.length - 1, to))]; if (next) { setCursor(next.entry.agentId); treeRef.current?.querySelector(`[data-agent-id="${CSS.escape(next.entry.agentId)}"]`)?.scrollIntoView({ block: "nearest" }); } };
+    const open = (reply: boolean) => node && void openEntry(node.entry, (sid) => navigate({ name: "session", activeSessionId: sid })).then(() => { onNavigate?.(); if (reply) window.setTimeout(() => window.dispatchEvent(new Event("bh:chat-focus")), 100); });
+    const handled = (): void => e.preventDefault();
+    if (e.key === "ArrowDown") { handled(); move(index + 1); }
+    else if (e.key === "ArrowUp") { handled(); move(index < 0 ? 0 : index - 1); }
+    else if (!node) return;
+    else if (e.key === "ArrowRight") { handled(); if (node.children.length && collapsed.has(node.entry.agentId)) toggle(collapsed, node.entry.agentId, setCollapsed); else open(false); }
+    else if (e.key === "ArrowLeft") {
+      handled();
+      if (node.children.length && !collapsed.has(node.entry.agentId)) toggle(collapsed, node.entry.agentId, setCollapsed);
+      else { const parent = visible.slice(0, index).reverse().find((n) => n.depth < node.depth); if (parent) setCursor(parent.entry.agentId); }
+    }
+    else if (e.key === "Enter") { handled(); open(false); }
+    else if (e.key === " ") { handled(); open(true); }
+    else if (e.ctrlKey && e.key.toLowerCase() === "r") { handled(); setEditing({ id: node.entry.agentId, mode: "name" }); }
+    else if (e.altKey && e.code === "KeyG" && node.entry.summary.sessionId && !node.entry.summary.rlmChildId) { handled(); setEditing({ id: node.entry.agentId, mode: "group" }); }
+    else if (e.ctrlKey && e.key.toLowerCase() === "x") {
+      handled();
+      const label = destructiveLabel(node.entry);
+      if (label && destructiveKind(node.entry) && window.confirm(`${label} "${sessionTitle(node.entry)}"?`)) void runDestructive(node.entry);
+    }
+    else if (e.ctrlKey && e.key.toLowerCase() === "n") { handled(); openPanel("new"); onNavigate?.(); }
+    else if (e.ctrlKey && e.key.toLowerCase() === "f") { handled(); setContent((v) => !v); filterRef.current?.focus(); }
+    else if (e.key === "/") { handled(); filterRef.current?.focus(); }
+  };
+
   const row = (node: AgentNode, flat: boolean) => {
     const entry = node.entry;
     const id = entry.agentId;
@@ -154,6 +194,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         tick={tick}
         searching={flat}
         active={Boolean(activeId) && entry.summary.activeSessionId === activeId}
+        focused={cursor === id}
         collapsed={collapsed.has(id)}
         renaming={editing?.id === id ? editing.mode : null}
         group={groups[String(entry.summary.sessionId)]}
@@ -168,12 +209,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     <aside className="flex h-full min-h-0 flex-col bg-surface" aria-label="Sessions and agents">
       <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-2">
         <input
+          ref={filterRef}
           className="bh-input !py-1"
           placeholder={content ? "Search message text…" : "Filter agents…"}
           aria-label="Filter agents"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); if (e.key === "ArrowDown") { e.preventDefault(); treeRef.current?.focus(); } }}
         />
         <button className={`bh-btn !px-1.5 ${content ? "!border-primary text-primary-soft" : ""}`} title="Search message text" aria-pressed={content} onClick={() => setContent(!content)}>¶</button>
       </div>
@@ -185,7 +227,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <span>{counts.running} running &middot; {counts.total} total</span>
         {saved.state.loading ? <span className="bh-pulse">scanning saved…</span> : saved.state.remaining > 0 ? <button className="hover:text-fg" onClick={() => void saved.loadMore()}>+{saved.state.remaining} more</button> : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2" role="tree" aria-label="Agents">
+      <div ref={treeRef} className="min-h-0 flex-1 overflow-y-auto pb-2 outline-none" role="tree" aria-label="Agents" tabIndex={0} onKeyDown={onTreeKey} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setCursor(null); }}>
         {!ready && !entries.length ? <p className="px-3 py-3 text-xs text-dim bh-pulse">Loading agents…</p> : null}
         {ready && !entries.length && !saved.state.loading ? <p className="px-3 py-3 text-xs text-dim">No agents yet. Start a new session.</p> : null}
         {found ? (

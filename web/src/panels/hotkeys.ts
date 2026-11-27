@@ -38,11 +38,11 @@ export const HOTKEYS: HotkeyGroup[] = [
   {
     title: "Agents view",
     keys: [
-      { keys: "↑ / ↓", action: "Move selection" },
+      { keys: "↑ / ↓", action: "Move selection (focus the agent list with Tab or ↓ from the filter)" },
       { keys: "→ / Enter", action: "Open selected agent" },
       { keys: "←", action: "Return to parent scope" },
       { keys: "Space", action: "Reply to selected agent" },
-      { keys: "Ctrl+N", action: "New session" },
+      { keys: "Ctrl+N", action: "New session (browsers may reserve this key; use the button)" },
       { keys: "Ctrl+X", action: "Stop or delete selected agent" },
       { keys: "Ctrl+R", action: "Rename selected agent" },
       { keys: "Alt+G", action: "Move selected agent to a group" },

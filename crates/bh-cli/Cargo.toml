@@ -12,6 +12,7 @@ bh-ai = { path = "../bh-ai" }
 bh-agent = { path = "../bh-agent" }
 bh-daemon = { path = "../bh-daemon" }
 bh-tui = { path = "../bh-tui" }
+bh-web = { path = "../bh-web" }
 bh-telemetry = { path = "../bh-telemetry" }
 uuid = { version = "1", features = ["v4", "v7"] }
 tokio = { workspace = true }

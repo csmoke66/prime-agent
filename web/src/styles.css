@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* Palette from crates/bh-types/themes/beehive.json (`vars`). */
+:root {
+  --bh-bg: #050506;
+  --bh-surface: #0d0d10;
+  --bh-panel: #151518;
+  --bh-fg: #f4f4f5;
+  --bh-muted: #a1a1aa;
+  --bh-dim: #71717a;
+  --bh-grid: #52525b;
+  --bh-primary: #7c6faf;
+  --bh-primarySoft: #8d7fc0;
+  --bh-success: #7da876;
+  --bh-warning: #f59e0b;
+  --bh-error: #d06f82;
+  --bh-info: #38bdf8;
+  --bh-infoDim: #1f6f99;
+  --bh-neutral: #d4d4d8;
+  --bh-stringMint: #8ba888;
+  --bh-selectedBg: #222226;
+  --bh-userMsgBg: #1a1a1f;
+  --bh-customMsgBg: #151518;
+  --bh-toolPendingBg: #101015;
+  --bh-toolSuccessBg: #0e1510;
+  --bh-toolErrorBg: #1a0d12;
+  --bh-toolDiffAddedBg: #015f00;
+  --bh-toolDiffRemovedBg: #5e0000;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --color-bg: var(--bh-bg);
+  --color-surface: var(--bh-surface);
+  --color-panel: var(--bh-panel);
+  --color-fg: var(--bh-fg);
+  --color-muted: var(--bh-muted);
+  --color-dim: var(--bh-dim);
+  --color-grid: var(--bh-grid);
+  --color-primary: var(--bh-primary);
+  --color-primary-soft: var(--bh-primarySoft);
+  --color-success: var(--bh-success);
+  --color-warning: var(--bh-warning);
+  --color-error: var(--bh-error);
+  --color-info: var(--bh-info);
+  --color-selected: var(--bh-selectedBg);
+  --color-user-msg: var(--bh-userMsgBg);
+  --color-tool-pending: var(--bh-toolPendingBg);
+  --color-tool-success: var(--bh-toolSuccessBg);
+  --color-tool-error: var(--bh-toolErrorBg);
+  --color-mint: var(--bh-stringMint);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bh-bg);
+  color: var(--bh-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+::selection { background: color-mix(in srgb, var(--bh-primary) 45%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: var(--bh-grid) transparent; }
+code, pre, kbd { font-family: var(--font-mono); }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--bh-primarySoft); outline-offset: 1px; }
+
+@keyframes bh-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.bh-fade-in { animation: bh-fade-in 160ms ease-out both; }
+@keyframes bh-pulse { 50% { opacity: 0.4; } }
+.bh-pulse { animation: bh-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .bh-fade-in, .bh-pulse { animation: none; } }
+
+/* Shared building blocks used by every view. */
+.bh-btn { display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .75rem; border-radius: .5rem;
+  border: 1px solid var(--bh-grid); background: var(--bh-panel); color: var(--bh-fg); font-size: .8125rem; transition: background .12s, border-color .12s; }
+.bh-btn:hover { background: var(--bh-selectedBg); border-color: var(--bh-primary); }
+.bh-btn-primary { background: var(--bh-primary); border-color: var(--bh-primary); color: #fff; }
+.bh-btn-primary:hover { background: var(--bh-primarySoft); }
+.bh-btn-danger:hover { border-color: var(--bh-error); color: var(--bh-error); }
+.bh-input { width: 100%; padding: .45rem .7rem; border-radius: .5rem; border: 1px solid var(--bh-grid); background: var(--bh-surface); color: var(--bh-fg); }
+.bh-input:focus { border-color: var(--bh-primarySoft); outline: none; }
+.bh-card { border: 1px solid color-mix(in srgb, var(--bh-grid) 60%, transparent); background: var(--bh-surface); border-radius: .75rem; }
+.bh-kbd { font-size: .7rem; padding: .05rem .35rem; border: 1px solid var(--bh-grid); border-bottom-width: 2px; border-radius: .3rem; color: var(--bh-muted); background: var(--bh-panel); }

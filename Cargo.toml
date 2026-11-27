@@ -9,6 +9,7 @@ members = [
     "crates/bh-core",
     "crates/bh-daemon",
     "crates/bh-tui",
+    "crates/bh-web",
     "crates/bh-cli",
     "crates/bh-perf",
 ]

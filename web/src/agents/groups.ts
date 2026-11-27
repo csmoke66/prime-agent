@@ -1,36 +1,54 @@
 import { useSyncExternalStore } from "react";
+import { wire } from "../wire";
+import { errorText, toast } from "../panels/toasts";
 
-// Local presentation groups keyed by durable session id (the TUI keeps these in `agents-view-groups`;
-// the browser keeps them in localStorage). They never affect roster status.
-const KEY = "bh.agentGroups";
+// Presentation groups keyed by durable session id, shared with the TUI agents view through
+// `<agent-dir>/agents-view-groups` (served by `/api/groups`). They never affect roster status.
 const listeners = new Set<() => void>();
 
 export type Groups = Record<string, string>;
 
-export function readGroups(): Groups {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
+let cache: Groups = {};
 
-let cache = readGroups();
-
-export function withGroup(groups: Groups, sessionId: string, label: string): Groups {
-  const next = { ...groups };
-  if (label.trim()) next[sessionId] = label.trim();
-  else delete next[sessionId];
-  return next;
-}
-
-export function setGroup(sessionId: string, label: string): void {
-  cache = withGroup(cache, sessionId, label);
-  localStorage.setItem(KEY, JSON.stringify(cache));
+function publish(next: Groups): void {
+  cache = next;
   listeners.forEach((l) => l());
 }
 
+async function load(): Promise<void> {
+  try {
+    const response = await fetch("/api/groups", { credentials: "same-origin" });
+    if (response.ok) publish(await response.json());
+  } catch {
+    /* offline: keep the last groups */
+  }
+}
+
+export async function setGroup(sessionId: string, label: string): Promise<void> {
+  try {
+    const response = await fetch("/api/groups", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId, label: label.trim() }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    publish(await response.json());
+  } catch (error) {
+    toast.error(`Could not save the group: ${errorText(error)}`);
+  }
+}
+
+let started = false;
+
 export function useGroups(): Groups {
+  if (!started) {
+    started = true;
+    void load();
+    wire.onStatus((status) => {
+      if (status === "ready") void load();
+    });
+  }
   return useSyncExternalStore(
     (cb) => (listeners.add(cb), () => listeners.delete(cb)),
     () => cache,

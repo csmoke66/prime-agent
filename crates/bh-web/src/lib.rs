@@ -62,6 +62,7 @@ pub fn router<H: WebHost>(options: WebOptions, host: H) -> Router {
             get(api::get_settings).put(api::put_settings),
         )
         .route("/api/keybindings", get(api::get_keybindings))
+        .route("/api/groups", get(api::get_groups).put(api::put_group))
         .route("/api/files", get(api::list_files))
         .route(
             "/api/upload",

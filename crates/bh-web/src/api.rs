@@ -95,6 +95,69 @@ pub(crate) async fn get_keybindings(State(state): State<Arc<AppState>>) -> ApiRe
     Ok(Json(Value::Object(bindings)))
 }
 
+/// The TUI agents view's presentation groups: `<agent-dir>/agents-view-groups/<sessionId>` holds
+/// the label. Sharing the directory keeps the browser and the TUI on the same groups.
+fn groups_dir(state: &AppState) -> PathBuf {
+    state.options.agent_dir.join("agents-view-groups")
+}
+
+fn valid_session_id(id: &str) -> bool {
+    !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+pub(crate) async fn get_groups(State(state): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
+    let mut groups = Map::new();
+    let entries = match std::fs::read_dir(groups_dir(&state)) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Json(Value::Object(groups))),
+        Err(e) => return Err(internal(e)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(internal)?;
+        let name = entry.file_name();
+        let Some(id) = name.to_str().filter(|id| valid_session_id(id)) else {
+            continue;
+        };
+        let label = std::fs::read_to_string(entry.path()).map_err(internal)?;
+        if !label.is_empty() {
+            groups.insert(id.to_owned(), Value::String(label));
+        }
+    }
+    Ok(Json(Value::Object(groups)))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct GroupChange {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    label: String,
+}
+
+/// Set (or, with an empty label, clear) one session's group, written atomically like the TUI does.
+pub(crate) async fn put_group(
+    State(state): State<Arc<AppState>>,
+    Json(change): Json<GroupChange>,
+) -> ApiResult<Json<Value>> {
+    if !valid_session_id(&change.session_id) {
+        return Err(bad_request("invalid session id"));
+    }
+    let dir = groups_dir(&state);
+    let target = dir.join(&change.session_id);
+    let label = change.label.trim();
+    if label.is_empty() {
+        match std::fs::remove_file(&target) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(internal(e)),
+            _ => {}
+        }
+    } else {
+        std::fs::create_dir_all(&dir).map_err(internal)?;
+        let temp = dir.join(format!(".web-{}", std::process::id()));
+        std::fs::write(&temp, label).map_err(internal)?;
+        std::fs::rename(&temp, &target).map_err(internal)?;
+    }
+    get_groups(State(state)).await
+}
+
 #[derive(Deserialize)]
 pub(crate) struct FilesQuery {
     #[serde(default)]

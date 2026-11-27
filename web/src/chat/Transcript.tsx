@@ -5,9 +5,8 @@ import { Images, ToolCard, resultView } from "./tools";
 import { assistantText, formatDuration, counterpartName, parseSkillBlock, resultsById, textOfContent, type Block, type Msg, type SessionData } from "./model";
 import { abortRetry, loadOlder, useChat, type DetailLevel } from "./store";
 
-const keys = new WeakMap<object, number>();
-let nextKey = 0;
-const keyOf = (m: Msg): string | number => m.key ?? (keys.get(m) ?? (keys.set(m, ++nextKey), nextKey));
+// Stable across store updates that replace message objects, so rows never remount.
+const keyOf = (m: Msg, index: number): string => String(m.key ?? `${index}:${m.role}:${(m as any).timestamp ?? ""}`);
 
 const THINKING_COLOR: Record<string, string> = { off: "text-dim", minimal: "text-info", low: "text-info", medium: "text-muted", high: "text-muted", xhigh: "text-error", max: "text-error" };
 
@@ -30,7 +29,7 @@ function UserRow({ message }: { message: Msg }) {
   const text = textOfContent(blocks);
   const skill = parseSkillBlock(text);
   return (
-    <div className="bh-fade-in mb-2 mt-4 rounded-md border border-line bg-user-msg">
+    <div className="mb-2 mt-4 rounded-md border border-line bg-user-msg">
       <div className="flex gap-2 px-2.5 py-1.5">
         <span className="select-none font-mono font-bold text-primary" aria-hidden>❯</span>
         <div className="min-w-0 flex-1">
@@ -59,7 +58,7 @@ function AssistantBody({ message, results, data, detail, streaming }: { message:
   const blocks: Block[] = Array.isArray(message.content) ? message.content : [];
   const error = message.stopReason === "error" ? message.errorMessage : message.stopReason === "aborted" ? "Interrupted" : null;
   return (
-    <div className="bh-fade-in relative my-1.5 flex flex-col gap-1.5 pl-[1.15rem]">
+    <div className="relative my-1.5 flex flex-col gap-1.5 pl-[1.15rem]">
       {blocks.map((block, i) => {
         if (block.type === "text") return block.text ? <div key={i}><Markdown text={block.text} /></div> : null;
         if (block.type === "thinking")
@@ -95,7 +94,7 @@ function CopyButton({ text }: { text: string }) {
 
 function StatusRow({ kind, children }: { kind: string; children: ReactNode }) {
   const cls = kind === "error" ? "text-error" : kind === "warning" ? "text-warning" : "text-muted";
-  return <div className={`bh-fade-in my-1.5 whitespace-pre-wrap break-words pl-[1.15rem] font-mono text-[11.5px] ${cls}`}>{children}</div>;
+  return <div className={`my-1.5 whitespace-pre-wrap break-words pl-[1.15rem] font-mono text-[11.5px] ${cls}`}>{children}</div>;
 }
 
 function BashRow({ m }: { m: Msg }) {
@@ -294,8 +293,8 @@ export function Transcript() {
             </button>
           ) : null}
           {empty ? <div className="py-16 text-center text-dim">Send a message to start.</div> : null}
-          {data.messages.map((m) => (
-            <Row key={keyOf(m)} m={m} results={results} data={data} detail={detail} />
+          {data.messages.map((m, i) => (
+            <Row key={keyOf(m, i)} m={m} results={results} data={data} detail={detail} />
           ))}
           {data.live ? <AssistantBody message={data.live} results={results} data={data} detail={detail} streaming /> : null}
           <Working data={data} />

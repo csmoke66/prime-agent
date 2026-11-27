@@ -91,7 +91,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [content, setContent] = useState(false);
   const [contentIds, setContentIds] = useState<Set<string> | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [folded, setFolded] = useState<Set<string>>(new Set(["status:inactive"]));
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ id: string; mode: "name" | "group" } | null>(null);
   const [showShells, setShowShells] = useState(false);
     const activeId = route.name === "session" ? route.activeSessionId : "";

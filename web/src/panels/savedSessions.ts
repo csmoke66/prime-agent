@@ -112,6 +112,9 @@ export function useSavedSessions(cwd?: string) {
 
   useEffect(() => {
     if (wire.status === "ready") void load(false);
+    return wire.onStatus((status) => {
+      if (status === "ready") void load(false);
+    });
   }, [load]);
 
   return { state, dispatch, reload: () => load(false), loadMore: () => load(true) };

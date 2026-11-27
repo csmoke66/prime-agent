@@ -15,11 +15,27 @@ use crate::utils::stream_failure::{
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static H2_ALPN_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
+/// The longest a provider may stay silent before a read fails. Streaming providers send events or
+/// keep-alive pings far more often; without a bound, a connection the network dropped without a
+/// FIN/RST leaves the turn waiting forever, with the session stuck busy.
+const PROVIDER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// TCP keep-alive probes find a dead peer within about a minute, and the read timeout bounds a
+/// live peer that stops sending. Either failure surfaces as a connection error the turn's
+/// auto-retry handles.
+fn with_dead_peer_detection(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .tcp_keepalive_interval(std::time::Duration::from_secs(10))
+        .tcp_keepalive_retries(3)
+        .read_timeout(PROVIDER_READ_TIMEOUT)
+}
+
 /// The HTTP/1.1 client every provider shares, pinned with `http1_only()` so that enabling the
 /// reqwest `http2` feature (bedrock) cannot change the transport of any other provider.
 fn client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
+        with_dead_peer_detection(reqwest::Client::builder())
             .tls_backend_preconfigured(crate::utils_inner::tls::tls_config(&[b"http/1.1"]))
             .http1_only()
             .pool_idle_timeout(std::time::Duration::from_secs(90))
@@ -32,7 +48,7 @@ fn client() -> &'static reqwest::Client {
 /// default transport; cleartext bedrock endpoints go through `providers/bedrock/h2.rs` instead.
 fn h2_alpn_client() -> &'static reqwest::Client {
     H2_ALPN_CLIENT.get_or_init(|| {
-        crate::utils_inner::tls::http_client_builder()
+        with_dead_peer_detection(crate::utils_inner::tls::http_client_builder())
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .build()
             .expect("reqwest h2 client")

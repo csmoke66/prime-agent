@@ -64,7 +64,6 @@ fn holder_process(pid: Option<u32>) -> (HolderFlavor, Option<std::path::PathBuf>
         .ok()
         .map(|path| path.canonicalize().unwrap_or(path));
     let flavor = classify_from(exe.as_deref(), own.as_deref());
-    let _ = std::fs::write("/dev/shm/dbg.txt", format!("{exe:?} {own:?} {flavor:?}"));
     (flavor, exe)
 }
 

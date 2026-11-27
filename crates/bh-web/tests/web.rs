@@ -271,3 +271,19 @@ async fn share_publishes_a_file_from_the_export_dir() {
     let links = api(addr, "POST", "/api/share", serde_json::json!({ "file": "share.html" })).await;
     assert_eq!(links, serde_json::json!({ "gistUrl": "gist:<html>", "previewUrl": "preview" }));
 }
+
+#[tokio::test]
+async fn groups_are_shared_with_the_tui_agents_view_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let groups = dir.path().join("agents-view-groups");
+    std::fs::create_dir_all(&groups).unwrap();
+    std::fs::write(groups.join("s1"), "Work").unwrap();
+    let addr = start(dir.path().join("none.sock"), dir.path().to_path_buf()).await;
+
+    assert_eq!(api(addr, "GET", "/api/groups", serde_json::Value::Null).await, serde_json::json!({ "s1": "Work" }));
+    let added = api(addr, "PUT", "/api/groups", serde_json::json!({ "sessionId": "s2", "label": " Ops " })).await;
+    assert_eq!(added, serde_json::json!({ "s1": "Work", "s2": "Ops" }));
+    assert_eq!(std::fs::read_to_string(groups.join("s2")).unwrap(), "Ops");
+    let cleared = api(addr, "PUT", "/api/groups", serde_json::json!({ "sessionId": "s1", "label": "" })).await;
+    assert_eq!(cleared, serde_json::json!({ "s2": "Ops" }));
+}

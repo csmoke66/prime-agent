@@ -1102,7 +1102,7 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
             .retain(|item| item.queue_key.as_deref() != Some(INBOX_REMINDER_QUEUE_KEY));
         changed |= core_guard.steering.len() + core_guard.follow_up.len() != before;
     } else if let Some((_priority, reminder)) = inbox.unread_reminder() {
-        let reminder = inbox.with_persistence_error_clause(reminder);
+        let reminder = reminder_prompt(&inbox.with_persistence_error_clause(reminder));
         let core_guard = &mut *core_guard;
         let (steering, follow_up) = (&mut core_guard.steering, &mut core_guard.follow_up);
         for item in steering
@@ -1127,19 +1127,22 @@ pub(crate) fn refresh_inbox_wake_rows_locked(
     changed
 }
 
-/// Admit one periodic unread reminder: while the inbox stays non-empty,
-/// a steering row repeats the waiting count (the reminderIntervalMs
-/// cycle in `agent_inbox.rs`); an empty inbox admits nothing. The count,
-/// the render, and the push share ONE `SessionCore` critical section — the
-/// drain sweep's lock order (core first, then the store), like the
-/// arrival admission — so a reminder racing a draining `rlm.inbox.read`
-/// either enqueues ahead of the read's sweep (its row drops with the
-/// rest) or counts the emptied store and admits nothing: a dead count
-/// never queues. The queue key keeps one row — a later reminder replaces
-/// the queued one on either lane (the daemon refuses a replace of any row
-/// that carries the custom twin, so a live mutation never moves one
-/// across lanes: only a journal written before the upgrade can hold a
-/// reminder on the follow-up lane).
+/// The reminder's user-message text: the waiting count plus the request to read it, so the
+/// reminder is the session's latest user instruction instead of a notice the model may read
+/// as superseded by an earlier user message (a "stop").
+fn reminder_prompt(reminder: &str) -> String {
+    format!("{reminder}\nCheck your inbox now.")
+}
+
+/// Admit one periodic unread reminder: while the inbox stays non-empty and
+/// no turn is running, a user message repeats the waiting count (the
+/// reminderIntervalMs cycle in `agent_inbox.rs`); an empty inbox or a
+/// running turn admits nothing. The count, the render, and the push share
+/// ONE `SessionCore` critical section — the drain sweep's lock order (core
+/// first, then the store), like the arrival admission — so a reminder
+/// racing a draining `rlm.inbox.read` either enqueues ahead of the read's
+/// sweep (its row drops with the rest) or counts the emptied store and
+/// admits nothing: a dead count never queues. The queue key keeps one row.
 pub(crate) fn admit_inbox_reminder(
     recovery: &std::sync::Mutex<Option<WorkerRecoveryJournal>>,
     core: &Arc<Mutex<SessionCore>>,
@@ -1170,6 +1173,11 @@ pub(crate) fn admit_inbox_reminder(
         let _ = inbox.count();
         super::inbox_queue_tests::pause_inbox_reminder_after_count(core);
     }
+    // A running turn already reads its own inbox notices; the reminder waits
+    // for the next idle cycle instead of queueing behind it.
+    if core_guard.busy {
+        return;
+    }
     let Some((_priority, message)) = inbox.unread_reminder() else {
         return;
     };
@@ -1181,20 +1189,7 @@ pub(crate) fn admit_inbox_reminder(
         work_notify.notify_one();
         return;
     }
-    let now = pa_core::autonomous::now_millis();
-    let message = inbox.with_persistence_error_clause(message);
-    // The custom twin rides the turn: the reminder delivers as the inbox
-    // system's attributed custom row, its content the model-visible text.
-    let custom_message = pa_core::session_engine::inbox::create_inbox_notice_row(
-        &message,
-        pa_types::inbox_notice::INBOX_NOTICE_CLASS_REMINDER,
-        now,
-    );
-    let (policy, queue_visible) = if core_guard.busy {
-        (TurnPolicy::Queued, true)
-    } else {
-        (TurnPolicy::Injected, false)
-    };
+    let message = reminder_prompt(&inbox.with_persistence_error_clause(message));
     {
         core_guard
             .steering
@@ -1206,14 +1201,14 @@ pub(crate) fn admit_inbox_reminder(
             priority: QueuePriority::Background,
             preview: Some("Inbox reminder".to_string()),
             message,
-            custom_message: Some(custom_message),
+            custom_message: None,
             agent_message: None,
             queue_key: Some(INBOX_REMINDER_QUEUE_KEY.to_string()),
             admission_id: None,
             images: Vec::new(),
             done: None,
-            queue_visible,
-            policy,
+            queue_visible: false,
+            policy: TurnPolicy::Injected,
             forced_batch: false,
         });
     }

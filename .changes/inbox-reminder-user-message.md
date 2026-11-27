@@ -1,0 +1,1 @@
+- Deliver the periodic inbox reminder as a user message asking the agent to check its inbox, and skip it while a turn is running.

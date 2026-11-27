@@ -246,7 +246,7 @@ fn run_json_turn(
 /// ipython cell runs through the staged binary and the skills resolve from
 /// the staged `skills/` directory.
 #[test]
-fn packaged_session_boots_kernel_without_pi_package_dir() {
+fn packaged_session_boots_kernel_without_a_package_dir_override() {
     let _guard = serial_lock();
     let Some(kernel_python) = kernel_python() else {
         return;

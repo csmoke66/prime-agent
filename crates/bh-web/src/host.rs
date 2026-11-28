@@ -76,6 +76,14 @@ pub struct ShareLinks {
     pub preview_url: String,
 }
 
+/// One field of a partial update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldUpdate<T> {
+    Keep,
+    Clear,
+    Set(T),
+}
+
 /// What the web server needs from the session engine; implemented by the composition root.
 ///
 /// Implementations must never log or echo secrets (`FlowRequest::ProviderKey`, prompt answers).
@@ -114,8 +122,8 @@ pub trait WebHost: Send + Sync + 'static {
     /// Returns the store's error text.
     fn child_policy(&self, session_file: &str) -> Result<Value, String>;
 
-    /// Save the family's child models (`None` inherits the global list, empty allows all) and/or
-    /// child effort (`Some(None)` clears the override).
+    /// Save the family's child models (cleared: inherit the global list; an empty list allows all)
+    /// and/or child effort (cleared: no override).
     ///
     /// # Errors
     ///
@@ -123,8 +131,8 @@ pub trait WebHost: Send + Sync + 'static {
     fn set_child_policy(
         &self,
         session_file: &str,
-        models: Option<Option<Vec<String>>>,
-        effort: Option<Option<String>>,
+        models: FieldUpdate<Vec<String>>,
+        effort: FieldUpdate<String>,
     ) -> Result<(), String>;
 
     /// Publish `file` as a secret gist.

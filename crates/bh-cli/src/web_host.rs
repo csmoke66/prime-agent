@@ -14,8 +14,8 @@ use bh_tui::provider_auth::{
     ProviderRow as TuiProviderRow,
 };
 use bh_web::{
-    AuthMode, AuthType, FlowOutcome, FlowRequest, FlowUi, PromptInput, ProviderRow, ShareLinks,
-    WebHost,
+    AuthMode, AuthType, FieldUpdate, FlowOutcome, FlowRequest, FlowUi, PromptInput, ProviderRow,
+    ShareLinks, WebHost,
 };
 use serde_json::Value;
 
@@ -259,25 +259,27 @@ impl WebHost for CliWebHost {
     fn set_child_policy(
         &self,
         session_file: &str,
-        models: Option<Option<Vec<String>>>,
-        effort: Option<Option<String>>,
+        models: FieldUpdate<Vec<String>>,
+        effort: FieldUpdate<String>,
     ) -> Result<(), String> {
         let settings = self.settings();
-        if let Some(models) = models {
-            settings
-                .set_child_models(session_file, models)
-                .map_err(|error| format!("{error:#}"))?;
+        match models {
+            FieldUpdate::Keep => Ok(()),
+            FieldUpdate::Clear => settings.set_child_models(session_file, None),
+            FieldUpdate::Set(models) => settings.set_child_models(session_file, Some(models)),
         }
-        if let Some(effort) = effort {
-            let level = effort
-                .map(|name| serde_json::from_value::<ModelThinkingLevel>(Value::String(name)))
-                .transpose()
-                .map_err(|error| format!("Invalid effort: {error}"))?;
-            settings
-                .set_child_effort(session_file, level)
-                .map_err(|error| format!("{error:#}"))?;
-        }
-        Ok(())
+        .map_err(|error| format!("{error:#}"))?;
+        let level = match effort {
+            FieldUpdate::Keep => return Ok(()),
+            FieldUpdate::Clear => None,
+            FieldUpdate::Set(name) => Some(
+                serde_json::from_value::<ModelThinkingLevel>(Value::String(name))
+                    .map_err(|error| format!("Invalid effort: {error}"))?,
+            ),
+        };
+        settings
+            .set_child_effort(session_file, level)
+            .map_err(|error| format!("{error:#}"))
     }
 
     async fn share_gist(&self, file: &Path) -> Result<ShareLinks, String> {

@@ -4,7 +4,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 
 use bh_web::{
-    serve, AuthMode, AuthType, FlowOutcome, FlowRequest, FlowUi, PromptInput, ProviderRow, ShareLinks,
+    serve, AuthMode, AuthType, FieldUpdate, FlowOutcome, FlowRequest, FlowUi, PromptInput, ProviderRow, ShareLinks,
     WebHost, WebOptions,
 };
 use futures::{SinkExt, StreamExt};
@@ -63,8 +63,8 @@ impl WebHost for FakeHost {
     fn set_child_policy(
         &self,
         _: &str,
-        models: Option<Option<Vec<String>>>,
-        effort: Option<Option<String>>,
+        models: FieldUpdate<Vec<String>>,
+        effort: FieldUpdate<String>,
     ) -> Result<(), String> {
         self.child_changes.lock().unwrap().push(serde_json::json!(format!("{models:?} {effort:?}")));
         Ok(())
@@ -311,6 +311,6 @@ async fn a_child_policy_update_keeps_absent_fields_and_clears_null_ones() {
     let policy = api(addr, "PUT", "/api/child-policy", serde_json::json!({ "sessionFile": "/s.jsonl", "effort": "high" })).await;
     assert_eq!(
         policy,
-        serde_json::json!({ "sessionFile": "/s.jsonl", "changes": ["Some(None) None", "None Some(Some(\"high\"))"] })
+        serde_json::json!({ "sessionFile": "/s.jsonl", "changes": ["Clear Keep", "Keep Set(\"high\")"] })
     );
 }

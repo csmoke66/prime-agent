@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::api::{exports_dir, plain_file_name};
-use crate::host::{AuthMode, WebHost};
+use crate::host::{AuthMode, FieldUpdate, WebHost};
 use crate::{AppState, HostState};
 
 type ApiResult<T> = Result<T, (StatusCode, String)>;
@@ -111,15 +111,24 @@ pub(crate) struct ChildPolicyUpdate {
     #[serde(rename = "sessionFile")]
     session_file: String,
     #[serde(default, deserialize_with = "present")]
-    models: Option<Option<Vec<String>>>,
+    models: Option<Value>,
     #[serde(default, deserialize_with = "present")]
-    effort: Option<Option<String>>,
+    effort: Option<Value>,
 }
 
-fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Option<T>>, D::Error> {
-    Option::<T>::deserialize(deserializer).map(Some)
+/// A key that is present, `null` included (plain `Option` reads `null` as absent).
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
+}
+
+fn field<T: serde::de::DeserializeOwned>(value: Option<Value>) -> Result<FieldUpdate<T>, (StatusCode, String)> {
+    match value {
+        None => Ok(FieldUpdate::Keep),
+        Some(Value::Null) => Ok(FieldUpdate::Clear),
+        Some(value) => serde_json::from_value(value)
+            .map(FieldUpdate::Set)
+            .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string())),
+    }
 }
 
 pub(crate) async fn set_child_policy<H: WebHost>(
@@ -127,7 +136,7 @@ pub(crate) async fn set_child_policy<H: WebHost>(
     Json(update): Json<ChildPolicyUpdate>,
 ) -> ApiResult<Json<Value>> {
     host.host
-        .set_child_policy(&update.session_file, update.models, update.effort)
+        .set_child_policy(&update.session_file, field(update.models)?, field(update.effort)?)
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     host.host
         .child_policy(&update.session_file)

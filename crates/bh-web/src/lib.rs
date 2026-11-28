@@ -19,8 +19,8 @@ use axum::{Extension, Router};
 use tokio::net::TcpListener;
 
 pub use host::{
-    AuthMode, AuthType, FlowOutcome, FlowRequest, FlowUi, ProviderRow, PromptInput, ShareLinks,
-    WebHost,
+    AuthMode, AuthType, FieldUpdate, FlowOutcome, FlowRequest, FlowUi, ProviderRow, PromptInput,
+    ShareLinks, WebHost,
 };
 
 /// Everything the server needs from the launching command.

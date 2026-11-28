@@ -26,6 +26,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 export type Settings = Record<string, any>;
+export type GlobalModel = { selector: string; name: string; allowed: boolean };
+/** The model catalog with the global allowed-models checkmarks (`unrestricted`: nothing is restricted). */
+export type GlobalModels = { unrestricted: boolean; models: GlobalModel[] };
 export type AuthProvider = { id: string; name: string; authType: "oauth" | "apiKey"; configured: boolean; available: boolean; status?: string };
 export type FlowRequest =
   | { kind: "providerKey"; provider: string; key: string }
@@ -46,6 +49,8 @@ export const rest = {
   saveSettings: (settings: Settings) => send<Settings>("/settings", json("PUT", settings)),
   files: (cwd: string, text: string, mode: "prefix" | "search" = "prefix") =>
     send<{ entries: { value: string; path: string; isDir: boolean }[] }>(`/files?cwd=${encodeURIComponent(cwd)}&${mode === "search" ? "search" : "prefix"}=${encodeURIComponent(text)}`),
+  globalModels: () => send<GlobalModels>("/global-models"),
+  setGlobalModels: (models: string[]) => send<GlobalModels>("/global-models", json("PUT", { models })),
   changelog: () => send<{ markdown: string }>("/changelog"),
   logs: () => send<{ dir: string; files: LogFile[] }>("/logs"),
   logTail: async (name: string, tail = 200) => {

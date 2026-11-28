@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Modal } from "./ui/Modal";
 import { ErrorLine } from "./ui/bits";
-import { rest } from "./api";
+import { rest, type GlobalModels } from "./api";
+import { FolderPicker } from "./FolderPicker";
 import { startNewSession } from "./sessionActions";
 import { errorText } from "./toasts";
 
@@ -33,6 +34,13 @@ export function NewSessionDialog({ args, onClose }: { args: string; onClose: () 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>(recentCwds());
+  const [browsing, setBrowsing] = useState(false);
+  const [catalog, setCatalog] = useState<GlobalModels>();
+
+  useEffect(() => {
+    rest.globalModels().then(setCatalog, () => undefined);
+  }, []);
+  const models = (catalog?.models ?? []).filter((m) => catalog?.unrestricted || m.allowed);
 
   useEffect(() => {
     rest.info().then((info) => setCwd((current) => current || info.cwd), () => undefined);
@@ -90,9 +98,13 @@ export function NewSessionDialog({ args, onClose }: { args: string; onClose: () 
       >
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Working directory</span>
-          <input className="bh-input font-mono" list="bh-cwds" value={cwd} onChange={(e) => setCwd(e.target.value)} data-autofocus spellCheck={false} />
+          <div className="flex gap-2">
+            <input className="bh-input font-mono" list="bh-cwds" value={cwd} onChange={(e) => setCwd(e.target.value)} data-autofocus spellCheck={false} />
+            <button type="button" className="bh-btn shrink-0" onClick={() => setBrowsing(!browsing)}>Browse…</button>
+          </div>
           <datalist id="bh-cwds">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
         </label>
+        {browsing ? <FolderPicker start={cwd} onPick={(dir) => { setCwd(dir); setBrowsing(false); }} onCancel={() => setBrowsing(false)} /> : null}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Name <span className="text-dim">(optional)</span></span>
           <input className="bh-input" value={name} onChange={(e) => setName(e.target.value)} />
@@ -103,8 +115,11 @@ export function NewSessionDialog({ args, onClose }: { args: string; onClose: () 
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted">Model <span className="text-dim">(provider/id, default if empty)</span></span>
-            <input className="bh-input font-mono" value={model} onChange={(e) => setModel(e.target.value)} spellCheck={false} />
+            <span className="text-muted">Model</span>
+            <select className="bh-input font-mono" value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">Default model</option>
+              {models.map((m) => <option key={m.selector} value={m.selector}>{m.selector}</option>)}
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted">Thinking level</span>

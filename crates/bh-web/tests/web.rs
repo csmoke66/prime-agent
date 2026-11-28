@@ -70,6 +70,14 @@ impl WebHost for FakeHost {
         Ok(())
     }
 
+    fn global_models(&self) -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({ "unrestricted": true, "models": [] }))
+    }
+
+    fn set_global_models(&self, _: Vec<String>) -> Result<(), String> {
+        Ok(())
+    }
+
     fn share_gist(&self, file: &std::path::Path) -> impl Future<Output = Result<ShareLinks, String>> + Send {
         std::future::ready(std::fs::read_to_string(file).map_err(|error| error.to_string()).map(|html| ShareLinks {
             gist_url: format!("gist:{html}"),

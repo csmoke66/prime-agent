@@ -44,8 +44,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
       { id: "thinking", label: "Default thinking level", description: "Reasoning effort for new sessions", path: "defaultThinkingLevel", fallback: "medium", kind: "enum", values: ["off", "minimal", "low", "medium", "high", "max"] },
       { id: "transport", label: "Transport", description: "Preferred transport for providers that support several", path: "transport", fallback: "auto", kind: "enum", values: ["sse", "websocket", "websocket-cached", "auto"] },
       { id: "default-service-tier", label: "Default service tier", description: "Service tier for new sessions", path: "defaultServiceTier", fallback: "default", kind: "enum", values: ["default", "priority", "flex"] },
-      { id: "default-model", label: "Default model", description: "provider/model used by new sessions", kind: "special" },
-      { id: "allowed-models", label: "Allowed models", description: "Patterns of models that may be used globally, one per line; empty allows all", path: "allowedModels", kind: "lines" },
+      { id: "default-model", label: "Default model", description: "Model used by new sessions", kind: "special" },
+      { id: "allowed-models", label: "Allowed models", description: "Models any session may use; none checked allows all", kind: "special" },
     ],
   },
   {

@@ -143,3 +143,27 @@ pub(crate) async fn set_child_policy<H: WebHost>(
         .map(Json)
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))
 }
+
+pub(crate) async fn global_models<H: WebHost>(
+    Extension(host): Extension<Arc<HostState<H>>>,
+) -> ApiResult<Json<Value>> {
+    host.host
+        .global_models()
+        .map(Json)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct GlobalModelsUpdate {
+    models: Vec<String>,
+}
+
+pub(crate) async fn set_global_models<H: WebHost>(
+    Extension(host): Extension<Arc<HostState<H>>>,
+    Json(update): Json<GlobalModelsUpdate>,
+) -> ApiResult<Json<Value>> {
+    host.host
+        .set_global_models(update.models)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    global_models(Extension(host)).await
+}

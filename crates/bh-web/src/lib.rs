@@ -82,6 +82,10 @@ pub fn router<H: WebHost>(options: WebOptions, host: H) -> Router {
         )
         .route("/api/share", post(host_api::share::<H>))
         .route(
+            "/api/global-models",
+            get(host_api::global_models::<H>).put(host_api::set_global_models::<H>),
+        )
+        .route(
             "/api/child-policy",
             get(host_api::child_policy::<H>).put(host_api::set_child_policy::<H>),
         )

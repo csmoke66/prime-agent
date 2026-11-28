@@ -135,6 +135,20 @@ pub trait WebHost: Send + Sync + 'static {
         effort: FieldUpdate<String>,
     ) -> Result<(), String>;
 
+    /// The global allowed-models checklist: `{ unrestricted, models: [{ selector, name, allowed }] }`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the store's error text.
+    fn global_models(&self) -> Result<Value, String>;
+
+    /// Save the global allowed-model list; an empty list allows all models.
+    ///
+    /// # Errors
+    ///
+    /// Returns the store's error text.
+    fn set_global_models(&self, models: Vec<String>) -> Result<(), String>;
+
     /// Publish `file` as a secret gist.
     ///
     /// # Errors

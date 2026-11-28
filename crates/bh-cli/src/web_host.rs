@@ -282,6 +282,25 @@ impl WebHost for CliWebHost {
             .map_err(|error| format!("{error:#}"))
     }
 
+    fn global_models(&self) -> Result<Value, String> {
+        let choices = self
+            .settings()
+            .global_model_choices()
+            .map_err(|error| format!("{error:#}"))?;
+        let models: Vec<Value> = choices
+            .models
+            .into_iter()
+            .map(|model| serde_json::json!({ "selector": model.selector, "name": model.name, "allowed": model.allowed }))
+            .collect();
+        Ok(serde_json::json!({ "unrestricted": choices.unrestricted, "models": models }))
+    }
+
+    fn set_global_models(&self, models: Vec<String>) -> Result<(), String> {
+        self.settings()
+            .set_global_models(models)
+            .map_err(|error| format!("{error:#}"))
+    }
+
     async fn share_gist(&self, file: &Path) -> Result<ShareLinks, String> {
         match probe_gh_auth() {
             GhAuthStatus::NotLoggedIn => {

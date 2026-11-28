@@ -8,7 +8,7 @@ bin="$HOME/.local/bin"
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 
 mkdir -p "$dest" "$bin" "$apps"
-cp "$here/main.js" "$here/package.json" "$here/package-lock.json" "$here/icon.svg" "$dest/"
+cp "$here/main.js" "$here/package.json" "$here/package-lock.json" "$here/icon.svg" "$here/icon.png" "$dest/"
 (cd "$dest" && npm ci --no-audit --no-fund --loglevel=error)
 # npm may skip dependency install scripts; Electron's fetches its runtime.
 [ -x "$dest/node_modules/electron/dist/electron" ] || (cd "$dest" && node node_modules/electron/install.js)
@@ -25,10 +25,10 @@ Type=Application
 Name=Beehive
 Comment=Beehive agent harness
 Exec=$bin/beehive-desktop
-Icon=$dest/icon.svg
+Icon=$dest/icon.png
 Terminal=false
 Categories=Development;
-StartupWMClass=Beehive
+StartupWMClass=beehive
 EOF
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" || true
 echo "Installed: run beehive-desktop, or open Beehive from your application menu."

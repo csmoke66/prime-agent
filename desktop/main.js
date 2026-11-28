@@ -48,7 +48,7 @@ function createWindow() {
     minHeight: 400,
     backgroundColor: "#0a0a0a",
     title: "Beehive",
-    icon: path.join(__dirname, "icon.svg"),
+    icon: path.join(__dirname, "icon.png"),
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, sandbox: true },
   });

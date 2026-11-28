@@ -4,7 +4,6 @@ import { IconMore } from "../app/icons";
 import { Modal, ModelPicker } from "./panels";
 import { abortCompaction, cycleDetail, setServiceTier, setSessionOption, setThinking, useChat } from "./store";
 import { runSlash } from "./slash";
-import { openPanel } from "../panels/store";
 
 const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const TIERS: { value: string | null; label: string }[] = [
@@ -48,13 +47,13 @@ export function SessionSettings({ onClose }: { onClose: () => void }) {
     <select className="bh-input !w-auto" value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
   );
   return (
-    <Modal title="Session options" onClose={onClose}>
+    <Modal title="Session settings" onClose={onClose}>
       {row("Steering delivery", select(state.steeringMode ?? "all", [["all", "All queued at once"], ["one-at-a-time", "One at a time"]], (mode) => void setSessionOption("set_steering_mode", { mode })))}
       {row("Follow-up delivery", select(state.followUpMode ?? "one-at-a-time", [["all", "All queued at once"], ["one-at-a-time", "One at a time"]], (mode) => void setSessionOption("set_follow_up_mode", { mode })))}
       {row("Transport", select(state.transport ?? "auto", [["auto", "Auto"], ["sse", "SSE"], ["websocket", "WebSocket"], ["websocket-cached", "WebSocket (cached)"]], (transport) => void setSessionOption("set_transport", { transport })))}
       {row("Auto-compaction", <input type="checkbox" checked={!!state.autoCompactionEnabled} onChange={(e) => void setSessionOption("set_auto_compaction", { enabled: e.target.checked })} />)}
       {row("Auto-retry", <input type="checkbox" checked={state.autoRetryEnabled !== false} onChange={(e) => void setSessionOption("set_auto_retry", { enabled: e.target.checked })} />)}
-      <p className="pt-3 text-xs text-dim">Scoped models (the Alt+M cycle list) are configured in settings.</p>
+      <p className="pt-3 text-xs text-dim">These apply to this session only. Global settings, including allowed and scoped models, are under Settings at the bottom of the sidebar.</p>
     </Modal>
   );
 }
@@ -62,7 +61,6 @@ export function SessionSettings({ onClose }: { onClose: () => void }) {
 export function StatusBar() {
   const data = useChat((s) => s.data);
   const detail = useChat((s) => s.detail);
-  const activeSessionId = useChat((s) => s.activeSessionId) ?? undefined;
   const state = data.state;
   const [picker, setPicker] = useState(false);
   const [options, setOptions] = useState(false);
@@ -92,14 +90,7 @@ export function StatusBar() {
         <Menu hideOnMobile label="Service tier" button={<span>tier: {state.serviceTier ?? "default"}</span>}>
           {(close) => TIERS.map((t) => <Item key={t.label} active={(t.value ?? "default") === (state.serviceTier ?? "default") || (t.value === null && state.serviceTier === "auto" && false)} onClick={() => { void setServiceTier(t.value); close(); }}>{t.label}</Item>)}
         </Menu>
-        <Menu hideOnMobile label="Settings" button={<span>settings</span>}>
-          {(close) => (
-            <>
-              <button type="button" role="menuitem" className="flex w-full rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected" onClick={() => { close(); setOptions(true); }}>This session…</button>
-              <button type="button" role="menuitem" className="flex w-full rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected" onClick={() => { close(); openPanel("settings", { activeSessionId }); }}>All settings…</button>
-            </>
-          )}
-        </Menu>
+        <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected max-sm:hidden" title="This session's settings" onClick={() => setOptions(true)}>settings</button>
         <span className="flex-1" />
         {state.isCompacting ? <button className="bh-btn !px-2 !py-0.5" onClick={() => void abortCompaction()}>Stop compaction</button> : null}
         {state.goal?.status === "active" ? <span className="px-1 text-success max-sm:hidden" title="Goal active">◎ goal</span> : null}
@@ -132,8 +123,7 @@ export function StatusBar() {
                 <div className="flex flex-wrap gap-1 border-t border-line pt-2">
                   <button type="button" className="bh-btn" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => { close(); void runSlash("/compact", "steer"); }}>Compact</button>
                   <button type="button" className="bh-btn" onClick={cycleDetail}>Detail {["▫", "◪", "▣"][detail]}</button>
-                  <button type="button" className="bh-btn" onClick={() => { close(); setOptions(true); }}>Options</button>
-                  <button type="button" className="bh-btn" onClick={() => { close(); openPanel("settings", { activeSessionId }); }}>Settings</button>
+                  <button type="button" className="bh-btn" onClick={() => { close(); setOptions(true); }}>Settings</button>
                 </div>
               </div>
             )}

@@ -418,7 +418,6 @@ export interface SlashCommand {
 }
 
 export const BUILTIN_COMMANDS: SlashCommand[] = [
-  { name: "settings", description: "Open settings menu", kind: "panel" },
   { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)", argumentHint: "[path]", kind: "panel" },
   { name: "import", description: "Import and resume a session from a JSONL file", argumentHint: "<path.jsonl>", kind: "panel" },
   { name: "share", description: "Share session as a secret GitHub gist", kind: "panel" },

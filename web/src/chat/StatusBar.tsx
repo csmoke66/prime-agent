@@ -4,6 +4,7 @@ import { IconMore } from "../app/icons";
 import { Modal, ModelPicker } from "./panels";
 import { abortCompaction, cycleDetail, setServiceTier, setSessionOption, setThinking, useChat } from "./store";
 import { runSlash } from "./slash";
+import { openPanel } from "../panels/store";
 
 const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const TIERS: { value: string | null; label: string }[] = [
@@ -61,6 +62,7 @@ export function SessionSettings({ onClose }: { onClose: () => void }) {
 export function StatusBar() {
   const data = useChat((s) => s.data);
   const detail = useChat((s) => s.detail);
+  const activeSessionId = useChat((s) => s.activeSessionId) ?? undefined;
   const state = data.state;
   const [picker, setPicker] = useState(false);
   const [options, setOptions] = useState(false);
@@ -80,7 +82,7 @@ export function StatusBar() {
 
   return (
     <>
-      <div className="flex items-center gap-x-0.5 overflow-hidden border-t border-line bg-bg px-1.5 py-0.5 font-mono text-[11px] text-muted">
+      <div className="relative z-20 flex min-w-0 items-center gap-x-0.5 whitespace-nowrap border-t border-line bg-bg px-1.5 py-0.5 font-mono text-[11px] text-muted">
         <button type="button" className="min-w-0 max-w-[14rem] truncate rounded px-1.5 py-0.5 font-medium text-fg hover:bg-selected" title="Select model (Ctrl+L)" onClick={() => setPicker(true)}>{modelLabel(state)}</button>
         {reasoning ? (
           <Menu hideOnMobile label="Thinking level" button={<span>thinking: <b className="font-medium text-fg">{state.thinkingLevel ?? "off"}</b></span>}>
@@ -89,6 +91,14 @@ export function StatusBar() {
         ) : null}
         <Menu hideOnMobile label="Service tier" button={<span>tier: {state.serviceTier ?? "default"}</span>}>
           {(close) => TIERS.map((t) => <Item key={t.label} active={(t.value ?? "default") === (state.serviceTier ?? "default") || (t.value === null && state.serviceTier === "auto" && false)} onClick={() => { void setServiceTier(t.value); close(); }}>{t.label}</Item>)}
+        </Menu>
+        <Menu hideOnMobile label="Settings" button={<span>settings</span>}>
+          {(close) => (
+            <>
+              <button type="button" role="menuitem" className="flex w-full rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected" onClick={() => { close(); setOptions(true); }}>This session…</button>
+              <button type="button" role="menuitem" className="flex w-full rounded px-2 py-0.5 text-left text-[12px] hover:bg-selected" onClick={() => { close(); openPanel("settings", { activeSessionId }); }}>All settings…</button>
+            </>
+          )}
         </Menu>
         <span className="flex-1" />
         {state.isCompacting ? <button className="bh-btn !px-2 !py-0.5" onClick={() => void abortCompaction()}>Stop compaction</button> : null}
@@ -103,7 +113,6 @@ export function StatusBar() {
         <span className="px-1 sm:hidden" title="Session cost">{formatCost(totals.cost)}</span>
         <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected max-sm:hidden" title="Compact the context" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => void runSlash("/compact", "steer")}>compact</button>
         <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected max-sm:hidden" title="Conversation detail (Ctrl+O)" onClick={cycleDetail}>detail {["▫", "◪", "▣"][detail]}</button>
-        <button type="button" className="rounded px-1.5 py-0.5 hover:bg-selected max-sm:hidden" aria-label="Session options" title="Session options" onClick={() => setOptions(true)}>⚙</button>
         <div className="sm:hidden">
           <Menu label="Session details" button={<IconMore />}>
             {(close) => (
@@ -124,6 +133,7 @@ export function StatusBar() {
                   <button type="button" className="bh-btn" disabled={!!state.isCompacting || !!state.isStreaming} onClick={() => { close(); void runSlash("/compact", "steer"); }}>Compact</button>
                   <button type="button" className="bh-btn" onClick={cycleDetail}>Detail {["▫", "◪", "▣"][detail]}</button>
                   <button type="button" className="bh-btn" onClick={() => { close(); setOptions(true); }}>Options</button>
+                  <button type="button" className="bh-btn" onClick={() => { close(); openPanel("settings", { activeSessionId }); }}>Settings</button>
                 </div>
               </div>
             )}

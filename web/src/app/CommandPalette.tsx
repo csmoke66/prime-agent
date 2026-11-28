@@ -34,6 +34,7 @@ export function CommandPalette() {
     const nav: Item[] = [
       { id: "nav-sessions", group: "Go to", label: "Home", hint: "g h", run: close(() => navigate({ name: "sessions" })) },
       { id: "nav-new", group: "Go to", label: "New session", run: close(() => openPanel("new")) },
+      { id: "nav-settings", group: "Go to", label: "Settings", run: close(() => openPanel("settings", { activeSessionId })) },
       { id: "nav-providers", group: "Go to", label: "Providers", keywords: "login logout sign in api key", run: close(() => openPanel("providers")) },
     ];
     const sessions: Item[] = roster

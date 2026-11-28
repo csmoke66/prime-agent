@@ -4,7 +4,6 @@
 export type SlashCommand = { name: string; description: string; hint?: string; aliases?: string[]; owner: "panel" | "chat" | "none" };
 
 export const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "settings", description: "Open settings menu", owner: "panel" },
   { name: "export", description: "Export session (HTML or JSONL download)", hint: "[path]", owner: "panel" },
   { name: "import", description: "Import and resume a session from a JSONL file", hint: "<path.jsonl>", owner: "panel" },
   { name: "share", description: "Share session as a secret GitHub gist", owner: "panel" },

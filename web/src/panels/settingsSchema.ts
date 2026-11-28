@@ -1,5 +1,5 @@
 // The settings menu layout of the TUI (settings_menu/tabs.rs + mod.rs rows) as data. `path` is the
-// dotted location in settings.json; rows with `session` also apply to the live session over the wire.
+// dotted location in settings.json.
 
 export type SettingRow = {
   id: string;
@@ -10,8 +10,6 @@ export type SettingRow = {
   values?: readonly string[];
   /** Default shown when the key is absent from settings.json. */
   fallback?: unknown;
-  /** Wire command that applies the value to the attached session as well. */
-  session?: { command: string; field: string };
   /** Value is kept in the browser only. */
   local?: boolean;
   min?: number;
@@ -28,11 +26,11 @@ export const SETTINGS_TABS: SettingsTab[] = [
     id: "general",
     label: "General",
     rows: [
-      { id: "autocompact", label: "Auto-compact", description: "Automatically compact context when it gets too large", path: "compaction.enabled", fallback: true, session: { command: "set_auto_compaction", field: "enabled" }, ...BOOL },
+      { id: "autocompact", label: "Auto-compact", description: "Automatically compact context when it gets too large", path: "compaction.enabled", fallback: true, ...BOOL },
       { id: "autocompact-threshold", label: "Auto-compact threshold (%)", description: "Context percentage (1–100) that triggers compaction", path: "compaction.thresholdPercent", fallback: 95, kind: "number", min: 1, max: 100, step: 5 },
       { id: "tool-output-reminder", label: "Tool-result reminder (%)", description: "Remind on every request at or above this share of the model window; 0 disables", path: "compaction.toolOutputReminderPercent", fallback: 0, kind: "number", min: 0, max: 100, step: 5 },
-      { id: "steering-mode", label: "Steering mode", description: "How queued steering messages are delivered while streaming", path: "steeringMode", fallback: "one-at-a-time", kind: "enum", values: ["one-at-a-time", "all"], session: { command: "set_steering_mode", field: "mode" } },
-      { id: "follow-up-mode", label: "Follow-up mode", description: "How queued follow-up messages are delivered when the agent stops", path: "followUpMode", fallback: "one-at-a-time", kind: "enum", values: ["one-at-a-time", "all"], session: { command: "set_follow_up_mode", field: "mode" } },
+      { id: "steering-mode", label: "Steering mode", description: "How queued steering messages are delivered while streaming", path: "steeringMode", fallback: "one-at-a-time", kind: "enum", values: ["one-at-a-time", "all"] },
+      { id: "follow-up-mode", label: "Follow-up mode", description: "How queued follow-up messages are delivered when the agent stops", path: "followUpMode", fallback: "one-at-a-time", kind: "enum", values: ["one-at-a-time", "all"] },
       { id: "quiet-startup", label: "Quiet startup", description: "Disable verbose printing at startup", path: "quietStartup", fallback: false, ...BOOL },
       { id: "warnings", label: "Anthropic extra-usage warning", description: "Warn when a request would bill extra usage", path: "warnings.anthropicExtraUsage", fallback: true, ...BOOL },
       { id: "provider-block-delivery", label: "Provider rejection delivery", description: "Show in chat, silence locally, or route a sanitized report to another session", path: "providerBlockDelivery", fallback: "show", kind: "enum", values: ["show", "silence", "route"] },
@@ -44,7 +42,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
     label: "Models",
     rows: [
       { id: "thinking", label: "Default thinking level", description: "Reasoning effort for new sessions", path: "defaultThinkingLevel", fallback: "medium", kind: "enum", values: ["off", "minimal", "low", "medium", "high", "max"] },
-      { id: "transport", label: "Transport", description: "Preferred transport for providers that support several", path: "transport", fallback: "auto", kind: "enum", values: ["sse", "websocket", "websocket-cached", "auto"], session: { command: "set_transport", field: "transport" } },
+      { id: "transport", label: "Transport", description: "Preferred transport for providers that support several", path: "transport", fallback: "auto", kind: "enum", values: ["sse", "websocket", "websocket-cached", "auto"] },
       { id: "default-service-tier", label: "Default service tier", description: "Service tier for new sessions", path: "defaultServiceTier", fallback: "default", kind: "enum", values: ["default", "priority", "flex"] },
       { id: "default-model", label: "Default model", description: "provider/model used by new sessions", kind: "special" },
       { id: "allowed-models", label: "Allowed models", description: "Patterns of models that may be used globally, one per line; empty allows all", path: "allowedModels", kind: "lines" },
@@ -81,8 +79,6 @@ export const SETTINGS_TABS: SettingsTab[] = [
       { id: "harness-refinements", label: "Harness refinements", description: "Create and load harness refinements", path: "harnessRefinements", fallback: true, ...BOOL },
       { id: "web-search-provider", label: "Web search provider", description: "Search provider for new sessions", path: "webSearchProvider", fallback: "serper", kind: "enum", values: ["serper", "eco", "chatgpt", "claude"] },
       { id: "factory", label: "Factory", description: "Enable factory orchestration for agents", path: "factory.enabled", fallback: false, ...BOOL },
-      { id: "rlm-max-depth", label: "RLM max depth", description: "Maximum child nesting depth (this session; optionally the global default)", kind: "special" },
-      { id: "system-prompt-segments", label: "System prompt segments", description: "Edit named system-prompt segments for this session only", kind: "special" },
     ],
   },
   {
@@ -91,7 +87,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
     rows: [
       { id: "reserve-tokens", label: "Compaction reserve tokens", description: "Tokens kept free for the model's reply", path: "compaction.reserveTokens", kind: "number", min: 0, step: 1000 },
       { id: "keep-recent", label: "Compaction keep-recent tokens", description: "Recent tokens kept verbatim after compaction", path: "compaction.keepRecentTokens", kind: "number", min: 0, step: 1000 },
-      { id: "auto-retry", label: "Auto-retry", description: "Retry failed provider requests", path: "retry.enabled", fallback: true, session: { command: "set_auto_retry", field: "enabled" }, ...BOOL },
+      { id: "auto-retry", label: "Auto-retry", description: "Retry failed provider requests", path: "retry.enabled", fallback: true, ...BOOL },
       { id: "max-retries", label: "Max retries", description: "Attempts before giving up", path: "retry.maxRetries", kind: "number", min: 0, max: 20, step: 1 },
       { id: "retry-delay", label: "Retry base delay (ms)", description: "First backoff delay", path: "retry.baseDelayMs", kind: "number", min: 0, step: 500 },
       { id: "branch-summary-skip", label: "Skip branch-summary prompt", description: "Never ask to summarize when navigating the tree", path: "branchSummary.skipPrompt", fallback: false, ...BOOL },

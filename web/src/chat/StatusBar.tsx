@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatCount, contextPercent, formatCost, formatTokens, modelLabel, queueOf, usageTotals } from "./model";
 import { IconMore } from "../app/icons";
-import { Modal, ModelPicker } from "./panels";
-import { abortCompaction, cycleDetail, setServiceTier, setSessionOption, setThinking, useChat } from "./store";
+import { ModelPicker } from "./panels";
+import { abortCompaction, cycleDetail, setServiceTier, setThinking, useChat } from "./store";
 import { runSlash } from "./slash";
+import { SessionSettings } from "./SessionSettings";
 
 const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const TIERS: { value: string | null; label: string }[] = [
@@ -37,26 +38,6 @@ const Item = ({ active, onClick, children }: { active?: boolean; onClick: () => 
     <span className="w-3">{active ? "✓" : ""}</span>{children}
   </button>
 );
-
-export function SessionSettings({ onClose }: { onClose: () => void }) {
-  const state = useChat((s) => s.data.state);
-  const row = (label: string, control: ReactNode) => (
-    <div className="flex items-center justify-between gap-4 border-b border-line py-2 text-sm"><span>{label}</span>{control}</div>
-  );
-  const select = (value: string, options: [string, string][], onChange: (v: string) => void) => (
-    <select className="bh-input !w-auto" value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-  );
-  return (
-    <Modal title="Session settings" onClose={onClose}>
-      {row("Steering delivery", select(state.steeringMode ?? "all", [["all", "All queued at once"], ["one-at-a-time", "One at a time"]], (mode) => void setSessionOption("set_steering_mode", { mode })))}
-      {row("Follow-up delivery", select(state.followUpMode ?? "one-at-a-time", [["all", "All queued at once"], ["one-at-a-time", "One at a time"]], (mode) => void setSessionOption("set_follow_up_mode", { mode })))}
-      {row("Transport", select(state.transport ?? "auto", [["auto", "Auto"], ["sse", "SSE"], ["websocket", "WebSocket"], ["websocket-cached", "WebSocket (cached)"]], (transport) => void setSessionOption("set_transport", { transport })))}
-      {row("Auto-compaction", <input type="checkbox" checked={!!state.autoCompactionEnabled} onChange={(e) => void setSessionOption("set_auto_compaction", { enabled: e.target.checked })} />)}
-      {row("Auto-retry", <input type="checkbox" checked={state.autoRetryEnabled !== false} onChange={(e) => void setSessionOption("set_auto_retry", { enabled: e.target.checked })} />)}
-      <p className="pt-3 text-xs text-dim">These apply to this session only. Global settings, including allowed and scoped models, are under Settings at the bottom of the sidebar.</p>
-    </Modal>
-  );
-}
 
 export function StatusBar() {
   const data = useChat((s) => s.data);
@@ -131,7 +112,7 @@ export function StatusBar() {
         </div>
       </div>
       {picker ? <ModelPicker onClose={() => setPicker(false)} /> : null}
-      {options ? <SessionSettings onClose={() => setOptions(false)} /> : null}
+      {options ? <SessionSettings onClose={() => setOptions(false)} onPickModel={() => setPicker(true)} /> : null}
     </>
   );
 }

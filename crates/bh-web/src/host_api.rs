@@ -88,3 +88,49 @@ pub(crate) async fn share<H: WebHost>(
         .map_err(|error| (StatusCode::BAD_GATEWAY, error))?;
     Ok(Json(json!(links)))
 }
+
+#[derive(Deserialize)]
+pub(crate) struct ChildPolicyQuery {
+    #[serde(rename = "sessionFile")]
+    session_file: String,
+}
+
+pub(crate) async fn child_policy<H: WebHost>(
+    Extension(host): Extension<Arc<HostState<H>>>,
+    Query(query): Query<ChildPolicyQuery>,
+) -> ApiResult<Json<Value>> {
+    host.host
+        .child_policy(&query.session_file)
+        .map(Json)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))
+}
+
+/// A partial update: an absent key keeps the stored value; `null` clears it (models then inherit).
+#[derive(Deserialize)]
+pub(crate) struct ChildPolicyUpdate {
+    #[serde(rename = "sessionFile")]
+    session_file: String,
+    #[serde(default, deserialize_with = "present")]
+    models: Option<Option<Vec<String>>>,
+    #[serde(default, deserialize_with = "present")]
+    effort: Option<Option<String>>,
+}
+
+fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+pub(crate) async fn set_child_policy<H: WebHost>(
+    Extension(host): Extension<Arc<HostState<H>>>,
+    Json(update): Json<ChildPolicyUpdate>,
+) -> ApiResult<Json<Value>> {
+    host.host
+        .set_child_policy(&update.session_file, update.models, update.effort)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    host.host
+        .child_policy(&update.session_file)
+        .map(Json)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))
+}

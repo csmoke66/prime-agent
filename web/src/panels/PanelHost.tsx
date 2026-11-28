@@ -132,7 +132,7 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "tree": return <TreePanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "fork": return <ForkPanel activeSessionId={activeSessionId!} onClose={onClose} />;
     case "clone": return null;
-    case "settings": return <SettingsPanel activeSessionId={activeSessionId} onClose={onClose} />;
+    case "settings": return <SettingsPanel onClose={onClose} />;
     case "mcp":
     case "plugins":
       return session ? <McpPanel activeSessionId={session} initialSearch={name === "plugins" ? args : ""} onClose={onClose} /> : <NeedsSession onClose={onClose} />;

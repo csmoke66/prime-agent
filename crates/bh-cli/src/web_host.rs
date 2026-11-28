@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use bh_tui::auth_panel::{AuthPanelHandle, AuthPanelRequest, PasteStyle};
 use bh_tui::client_auth::ClientAuthCommands;
-use bh_tui::client_settings::ClientSettings;
+use bh_tui::client_settings::{ClientSettings, InheritedChildModels};
+use bh_types::ai::ModelThinkingLevel;
 use bh_tui::export_share::{gist_outcome, probe_gh_auth, spawn_gist_create, GhAuthStatus};
 use bh_tui::provider_auth::{
     AuthStatusIndicator, AuthType as TuiAuthType, ProviderAuthCommands, ProviderAuthOutcome,
@@ -223,6 +224,60 @@ impl WebHost for CliWebHost {
         self.settings()
             .delete_harness_entry(session_file, entry)
             .map_err(|error| format!("{error:#}"))
+    }
+
+    fn child_policy(&self, session_file: &str) -> Result<Value, String> {
+        let choices = self
+            .settings()
+            .child_model_choices(session_file)
+            .map_err(|error| format!("{error:#}"))?;
+        let inherited = match choices.policy.inherited {
+            InheritedChildModels::All => Value::String("all".into()),
+            InheritedChildModels::Patterns(count) => serde_json::json!(count),
+            InheritedChildModels::Unreadable => Value::String("unreadable".into()),
+        };
+        let models: Vec<Value> = choices
+            .models
+            .into_iter()
+            .map(|model| {
+                serde_json::json!({
+                    "selector": model.selector,
+                    "name": model.name,
+                    "allowed": model.allowed,
+                    "inherited": model.inherited,
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "modelRules": choices.policy.model_rules,
+            "inherited": inherited,
+            "effort": choices.policy.effort.map(ModelThinkingLevel::wire_name),
+            "models": models,
+        }))
+    }
+
+    fn set_child_policy(
+        &self,
+        session_file: &str,
+        models: Option<Option<Vec<String>>>,
+        effort: Option<Option<String>>,
+    ) -> Result<(), String> {
+        let settings = self.settings();
+        if let Some(models) = models {
+            settings
+                .set_child_models(session_file, models)
+                .map_err(|error| format!("{error:#}"))?;
+        }
+        if let Some(effort) = effort {
+            let level = effort
+                .map(|name| serde_json::from_value::<ModelThinkingLevel>(Value::String(name)))
+                .transpose()
+                .map_err(|error| format!("Invalid effort: {error}"))?;
+            settings
+                .set_child_effort(session_file, level)
+                .map_err(|error| format!("{error:#}"))?;
+        }
+        Ok(())
     }
 
     async fn share_gist(&self, file: &Path) -> Result<ShareLinks, String> {

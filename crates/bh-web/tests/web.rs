@@ -20,6 +20,7 @@ const TOKEN: &str = "secret-token";
 #[derive(Default)]
 struct FakeHost {
     deleted: std::sync::Mutex<Vec<serde_json::Value>>,
+    child_changes: std::sync::Mutex<Vec<serde_json::Value>>,
 }
 
 impl WebHost for FakeHost {
@@ -52,6 +53,20 @@ impl WebHost for FakeHost {
 
     fn delete_harness_entry(&self, _: Option<&str>, entry: &serde_json::Value) -> Result<(), String> {
         self.deleted.lock().unwrap().push(entry.clone());
+        Ok(())
+    }
+
+    fn child_policy(&self, session_file: &str) -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({ "sessionFile": session_file, "changes": self.child_changes.lock().unwrap().clone() }))
+    }
+
+    fn set_child_policy(
+        &self,
+        _: &str,
+        models: Option<Option<Vec<String>>>,
+        effort: Option<Option<String>>,
+    ) -> Result<(), String> {
+        self.child_changes.lock().unwrap().push(serde_json::json!(format!("{models:?} {effort:?}")));
         Ok(())
     }
 
@@ -286,4 +301,16 @@ async fn groups_are_shared_with_the_tui_agents_view_directory() {
     assert_eq!(std::fs::read_to_string(groups.join("s2")).unwrap(), "Ops");
     let cleared = api(addr, "PUT", "/api/groups", serde_json::json!({ "sessionId": "s1", "label": "" })).await;
     assert_eq!(cleared, serde_json::json!({ "s2": "Ops" }));
+}
+
+#[tokio::test]
+async fn a_child_policy_update_keeps_absent_fields_and_clears_null_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let addr = start(dir.path().join("none.sock"), dir.path().to_path_buf()).await;
+    api(addr, "PUT", "/api/child-policy", serde_json::json!({ "sessionFile": "/s.jsonl", "models": null })).await;
+    let policy = api(addr, "PUT", "/api/child-policy", serde_json::json!({ "sessionFile": "/s.jsonl", "effort": "high" })).await;
+    assert_eq!(
+        policy,
+        serde_json::json!({ "sessionFile": "/s.jsonl", "changes": ["Some(None) None", "None Some(Some(\"high\"))"] })
+    );
 }

@@ -72,7 +72,7 @@ Verified = opened/run in headless Chromium against an isolated daemon (`BEEHIVE_
 
 | Command | Web | Status |
 | --- | --- | --- |
-| `/settings` | Global settings: sidebar button and Ctrl+K; session settings: status-bar button; not a chat command | verified |
+| `/settings` | Global settings: sidebar button and Ctrl+K. Session settings (model, thinking, tier, transport, delivery modes, auto-compaction/retry, prompt segments, max subagent depth, allowed subagent models, subagent thinking): status-bar button. Not a chat command | verified |
 | `/export` | daemon writes into export dir, browser downloads HTML/JSONL | verified (JSONL download) |
 | `/import` | upload + `import_jsonl` | verified (panel opens) |
 | `/share` | export HTML, `WebHost::share_gist` (needs `gh`) | verified (panel opens); gist creation needs host `gh` |

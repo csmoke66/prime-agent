@@ -81,6 +81,10 @@ pub fn router<H: WebHost>(options: WebOptions, host: H) -> Router {
             get(host_api::harness::<H>).delete(host_api::delete_harness::<H>),
         )
         .route("/api/share", post(host_api::share::<H>))
+        .route(
+            "/api/child-policy",
+            get(host_api::child_policy::<H>).put(host_api::set_child_policy::<H>),
+        )
         .layer(Extension(Arc::new(HostState {
             host,
             flows: flows::Flows::default(),

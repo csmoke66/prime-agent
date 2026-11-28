@@ -21,8 +21,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "fork", description: "Create a new fork from a previous user message", owner: "panel" },
   { name: "clone", description: "Duplicate the current session at the current position", owner: "panel" },
   { name: "tree", description: "Navigate session tree (switch branches)", owner: "panel" },
-  { name: "login", description: "Configure provider authentication", owner: "panel" },
-  { name: "logout", description: "Remove provider authentication", owner: "panel" },
   { name: "mcp", description: "Open the MCP connections menu", owner: "panel" },
   { name: "plugins", description: "Browse and connect external services", hint: "[search]", owner: "panel" },
   { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", hint: '[--name "session name" --] [prompt]', aliases: ["clear"], owner: "panel" },

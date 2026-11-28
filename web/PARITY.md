@@ -56,7 +56,7 @@ Owner: **L** = lead (backend, shell, wire), **A** = chat/session view (`web/src/
 - [x] Settings menu (tabs: model policy, prompt segments, compaction, retry, etc.)
 - [x] MCP connections (`/mcp`, `/plugins`), static tokens, remove
 - [x] Harness browser (`/harness`), `/refine`
-- [x] Auth: `/login`, `/logout` (API key, OAuth via sign-in link + paste, through the `WebHost` seam)
+- [x] Auth: `/login`, `/logout` as one Providers panel on the home page and in Ctrl+K (API key, OAuth via sign-in link + paste, removal; through the `WebHost` seam)
 - [x] `/hotkeys` (effective bindings), `/changelog`, `/logs`, `/reload` (also keybindings), `/name`, `/export [path]` (download, or write `.html`/`.jsonl` on the host), `/import [path]`, `/share`
 - [x] Onboarding view when no provider is configured; completion is saved as `onboardingShown` in `settings.json` like the TUI, leaving early is not
 - [x] Keyboard shortcuts mirroring TUI app bindings (keybindings.json overrides; queue browse Alt+↑/↓ with Enter to save, Ctrl+Alt+↑/↓ reorder, Alt+A inspector, Alt+S, agents list arrows/Enter/Space/Ctrl+R/Alt+G/Ctrl+X/Ctrl+F)
@@ -80,7 +80,7 @@ Verified = opened/run in headless Chromium against an isolated daemon (`BEEHIVE_
 | `/name`, `/rename` | inline rename dialog / direct rename | verified |
 | `/changelog`, `/hotkeys` | info panels | verified |
 | `/fork`, `/clone`, `/tree` | fork picker, clone, tree | verified (open; empty session) |
-| `/login`, `/logout` | provider list + flow runner (API key / OAuth link + paste) | verified (list); OAuth needs a real provider |
+| `/login`, `/logout` | Providers panel (home page, Ctrl+K; not a chat command) + flow runner (API key / OAuth link + paste) | verified (list); OAuth needs a real provider |
 | `/mcp`, `/plugins` | services panel with login/token flows | verified |
 | `/new`, `/clear` | new-session dialog | verified (created a session) |
 | `/edit_context` | JSON editor over `get/set_session_context` (added) | verified (opens, loads) |

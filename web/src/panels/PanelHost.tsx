@@ -137,8 +137,7 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "plugins":
       return session ? <McpPanel activeSessionId={session} initialSearch={name === "plugins" ? args : ""} onClose={onClose} /> : <NeedsSession onClose={onClose} />;
     case "harness": return <HarnessHost activeSessionId={activeSessionId} onClose={onClose} />;
-    case "login":
-    case "logout": return <AuthPanel mode={name} onClose={onClose} />;
+    case "providers": return <AuthPanel onClose={onClose} />;
     case "hotkeys": return <HotkeysPanel onClose={onClose} />;
     case "changelog": return <ChangelogPanel onClose={onClose} />;
     case "logs": return <LogsPanel onClose={onClose} />;
@@ -149,7 +148,7 @@ function ActivePanel({ name, args, activeSessionId, onClose }: { name: PanelName
     case "heartbeats": return <HeartbeatsPanel activeSessionId={activeSessionId} onClose={onClose} />;
     case "workflows": return <WorkflowsPanel activeSessionId={activeSessionId!} initial={args} onClose={onClose} />;
     case "rename": return <RenameDialog activeSessionId={activeSessionId!} onClose={onClose} />;
-    case "onboarding": return <AuthPanel mode="login" onboarding onClose={() => { void markOnboardingDone(); onClose(); }} />;
+    case "onboarding": return <AuthPanel onboarding onClose={() => { void markOnboardingDone(); onClose(); }} />;
     case "messages": return null;
   }
 }

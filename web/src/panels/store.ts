@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type PanelName =
-  | "settings" | "mcp" | "plugins" | "harness" | "heartbeats" | "tree" | "fork" | "clone" | "login" | "logout"
+  | "settings" | "mcp" | "plugins" | "harness" | "heartbeats" | "tree" | "fork" | "clone" | "providers"
   | "hotkeys" | "changelog" | "logs" | "export" | "import" | "share" | "workflows" | "new" | "rename" | "onboarding" | "messages" | "edit_context";
 
 export type PanelRequest = { name: PanelName; args: string; activeSessionId?: string };

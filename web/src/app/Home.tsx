@@ -20,6 +20,7 @@ export function Home() {
           <button className="bh-btn bh-btn-primary" onClick={() => openPanel("new")}><IconPlus /> New session</button>
           <button className="bh-btn" onClick={() => usePalette.setState({ open: true })}>Search</button>
           <button className="bh-btn" onClick={() => openPanel("import")}>Import</button>
+          <button className="bh-btn" onClick={() => openPanel("providers")}>Providers</button>
         </div>
         <ul className="mx-auto max-w-xs divide-y divide-line rounded-lg border border-line bg-surface text-left text-[12px]">
           {TIPS.map(([key, label]) => (

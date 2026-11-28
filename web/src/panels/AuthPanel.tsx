@@ -9,16 +9,24 @@ import { toast } from "./toasts";
 
 type Active = { provider: AuthProvider; request: FlowRequest };
 
-/** `/login` and `/logout`: API keys, subscription (OAuth) sign-in with the sign-in link and code paste, and removal. */
-export function AuthPanel({ mode, onboarding, onClose }: { mode: "login" | "logout"; onboarding?: boolean; onClose: () => void }) {
-  const providers = useAsync(() => rest.authProviders(mode), [mode]);
+/** Providers (the TUI's `/login` and `/logout` in one list): API keys, subscription (OAuth) sign-in with the
+ * sign-in link and code paste, and removal of a configured provider. */
+export function AuthPanel({ onboarding, onClose }: { onboarding?: boolean; onClose: () => void }) {
+  const providers = useAsync(async () => {
+    const [login, logout] = await Promise.all([rest.authProviders("login"), rest.authProviders("logout")]);
+    const removable = new Set(logout.providers.filter((p) => p.configured).map((p) => p.id));
+    const rows = login.providers.filter((p) => p.available || p.configured);
+    for (const p of logout.providers) if (p.configured && !rows.some((r) => r.id === p.id)) rows.push(p);
+    return { providers: rows.map((p) => ({ ...p, removable: removable.has(p.id) })) };
+  }, []);
   const [search, setSearch] = useState("");
   const [keyFor, setKeyFor] = useState<AuthProvider | null>(null);
   const [key, setKey] = useState("");
   const [active, setActive] = useState<Active | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const list = (providers.data?.providers ?? []).filter((p) => (mode === "login" ? p.available : p.configured));
+  // Configured providers first, then the rest by name.
+  const list = [...(providers.data?.providers ?? [])].sort((a, b) => Number(b.configured) - Number(a.configured) || a.name.localeCompare(b.name));
   const shown = fuzzyFilter(list, search, (p) => `${p.name} ${p.id}`);
 
   const begin = (provider: AuthProvider, request: FlowRequest) => {
@@ -37,7 +45,7 @@ export function AuthPanel({ mode, onboarding, onClose }: { mode: "login" | "logo
   );
 
   return (
-    <Modal title={onboarding ? "Welcome to Beehive" : mode === "login" ? "Sign in to a provider" : "Remove provider authentication"} subtitle={onboarding ? "Connect a model provider to get started. You can change this later with /login." : undefined} size="md" onClose={onClose}>
+    <Modal title={onboarding ? "Welcome to Beehive" : "Providers"} subtitle={onboarding ? "Connect a model provider to get started. You can change this later from Providers on the home page." : "Sign in with a subscription or add an API key."} size="md" onClose={onClose}>
       <div className="flex flex-col gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search providers…" autoFocus />
         <ErrorLine>{providers.error}</ErrorLine>
@@ -49,12 +57,13 @@ export function AuthPanel({ mode, onboarding, onClose }: { mode: "login" | "logo
               <span className="min-w-0 flex-1 text-sm font-medium">{p.name}</span>
               <Badge>{p.authType === "oauth" ? "subscription" : "api key"}</Badge>
               {p.configured && <Badge tone="success">{p.status ?? "configured"}</Badge>}
-              {mode === "logout" ? (
-                <button className="bh-btn" disabled={busy} onClick={() => begin(p, { kind: "providerLogout", provider: p.id })}>Remove</button>
-              ) : p.authType === "oauth" ? (
-                <button className="bh-btn" disabled={busy} onClick={() => begin(p, { kind: "providerLogin", provider: p.id })}>Sign in</button>
+              {p.authType === "oauth" ? (
+                <button className="bh-btn" disabled={busy} onClick={() => begin(p, { kind: "providerLogin", provider: p.id })}>{p.configured ? "Sign in again" : "Sign in"}</button>
               ) : (
                 <button className="bh-btn" disabled={busy} onClick={() => setKeyFor(keyFor?.id === p.id ? null : p)}>{p.configured ? "Replace key" : "Add key"}</button>
+              )}
+              {p.removable && (
+                <button className="bh-btn hover:text-error" disabled={busy} onClick={() => { if (window.confirm(`Remove the sign-in for ${p.name}?`)) begin(p, { kind: "providerLogout", provider: p.id }); }}>Remove</button>
               )}
             </div>
             {keyFor?.id === p.id && (

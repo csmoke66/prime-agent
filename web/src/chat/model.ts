@@ -435,8 +435,6 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "fork", description: "Create a new fork from a previous user message", kind: "panel" },
   { name: "clone", description: "Duplicate the current session at the current position", kind: "panel" },
   { name: "tree", description: "Navigate session tree (switch branches)", kind: "panel" },
-  { name: "login", description: "Configure provider authentication", kind: "panel" },
-  { name: "logout", description: "Remove provider authentication", kind: "panel" },
   { name: "mcp", description: "Open the MCP connections menu", kind: "panel" },
   { name: "plugins", description: "Browse and connect external services", argumentHint: "[search]", kind: "panel" },
   { name: "new", description: "Start a new session, optionally named and/or with an initial prompt", argumentHint: '[--name "session name" --] [prompt]', aliases: ["clear"], kind: "panel" },
